@@ -1,0 +1,6 @@
+{
+  "name": "SecureShift - Shift Bidding & Trading",
+  "description": "Dual-sided shift bidding and trading platform for security operations with Guard and Ops Admin command centers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
