@@ -95,7 +95,7 @@ export const BidModal: React.FC<BidModalProps> = ({ shift, isOpen, onClose }) =>
                 {shift.urgency}
               </span>
             </div>
-            <div className="flex items-center gap-3 text-xs text-slate-600">
+            <div className="flex items-center gap-3 text-xs text-slate-600 mb-1.5">
               <span className="flex items-center gap-1">
                 <Clock className="w-3.5 h-3.5 text-slate-400" />
                 {formatDateLabel(shift.date)} • {shift.startTime} - {shift.endTime}
@@ -104,9 +104,15 @@ export const BidModal: React.FC<BidModalProps> = ({ shift, isOpen, onClose }) =>
                 {shift.hours} HRS
               </span>
             </div>
+            {shift.address && (
+              <div className="flex items-center gap-1 text-xs text-slate-700 font-semibold mt-1">
+                <MapPin className="w-3.5 h-3.5 text-[#1e3a8a] shrink-0" />
+                <span>{shift.address}</span>
+              </div>
+            )}
             {shift.location && (
-              <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-1.5">
-                <MapPin className="w-3 h-3 text-slate-400" />
+              <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
+                <span className="text-[10px] text-slate-400 font-medium">Post Area:</span>
                 {shift.location}
               </div>
             )}

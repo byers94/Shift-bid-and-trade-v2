@@ -5,6 +5,7 @@ export type TrainingStatus = 'trained' | 'needs_ojt';
 export interface Shift {
   id: string;
   siteName: string;
+  address?: string; // Street address for commute calculation
   location?: string;
   date: string; // YYYY-MM-DD
   startTime: string; // HH:mm (24h)
@@ -14,7 +15,6 @@ export interface Shift {
   status: ShiftStatus;
   assignedGuardName?: string;
   assignedGuardId?: string;
-  hourlyRate?: number;
   requiredCertifications?: string[];
   notes?: string;
   createdAt: string;
@@ -30,6 +30,7 @@ export type TradeStatus =
 
 export interface ShiftDetails {
   siteName: string;
+  address?: string;
   date: string;
   startTime: string;
   endTime: string;
@@ -92,3 +93,67 @@ export interface AuditLogEntry {
   status: 'info' | 'success' | 'warning' | 'danger';
   metadata?: Record<string, any>;
 }
+
+export interface AdminUser {
+  id: string;
+  name: string;
+  badgeId: string;
+  role: 'commander' | 'dispatcher' | 'supervisor' | 'lead';
+  pin: string;
+  email?: string;
+  phone?: string;
+  status: 'active' | 'inactive';
+  createdAt?: string;
+  lastLogin?: string;
+}
+
+export type AdminActionType =
+  | 'admin_login'
+  | 'admin_lock'
+  | 'user_created'
+  | 'user_updated'
+  | 'user_deleted'
+  | 'guard_created'
+  | 'guard_updated'
+  | 'guard_deleted'
+  | 'shift_created'
+  | 'shift_filled'
+  | 'shift_reopened'
+  | 'shift_deleted'
+  | 'bulk_imported'
+  | 'trade_approved'
+  | 'trade_denied'
+  | 'swap_approved'
+  | 'swap_denied'
+  | 'template_created'
+  | 'template_updated'
+  | 'template_deleted'
+  | 'system_reset';
+
+export interface AdminAction {
+  id: string;
+  type: AdminActionType;
+  title: string;
+  description: string;
+  adminName: string;
+  adminBadge: string;
+  timestamp: string;
+  badgeVariant: 'blue' | 'emerald' | 'amber' | 'rose' | 'slate' | 'purple';
+  metadata?: Record<string, any>;
+}
+
+export interface ShiftTemplate {
+  id: string;
+  name: string; // e.g. "Mon-Fri 0800-1600 Corporate Day Patrol"
+  siteName: string;
+  address?: string;
+  location?: string;
+  startTime: string; // "08:00"
+  endTime: string; // "16:00"
+  urgency: UrgencyType;
+  daysPattern?: string; // e.g. "Mon - Fri", "Sat - Sun", "Daily Night"
+  notes?: string;
+  requiredCertifications?: string[];
+  createdAt?: string;
+}
+

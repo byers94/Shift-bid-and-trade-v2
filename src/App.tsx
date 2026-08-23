@@ -32,7 +32,7 @@ const STORAGE_ADMIN_AUTH_KEY = 'secureshift_admin_session_v1';
 const STORAGE_ADMIN_USER_KEY = 'secureshift_admin_user_v1';
 
 const AppContent: React.FC = () => {
-  const { activeView, setActiveView, resetToDefaults, showToast } = useShiftOps();
+  const { activeView, setActiveView, resetToDefaults, showToast, logAdminAction } = useShiftOps();
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [pendingTargetView, setPendingTargetView] = useState<'ops' | 'dual' | null>(null);
@@ -62,6 +62,16 @@ const AppContent: React.FC = () => {
       localStorage.setItem(STORAGE_ADMIN_USER_KEY, JSON.stringify(dispatcher));
     } catch {}
 
+    logAdminAction({
+      type: 'admin_login',
+      title: 'Dispatcher Logged In',
+      description: `${dispatcher.name} authenticated into Ops Command Console (Role: ${dispatcher.role.toUpperCase()})`,
+      adminName: dispatcher.name,
+      adminBadge: dispatcher.badgeId,
+      badgeVariant: 'emerald',
+      metadata: { role: dispatcher.role, timestamp: new Date().toISOString() }
+    });
+
     setShowLoginModal(false);
     showToast('Ops Access Authorized', `Welcome, ${dispatcher.name} (${dispatcher.badgeId}).`, 'success');
 
@@ -72,6 +82,15 @@ const AppContent: React.FC = () => {
   };
 
   const handleAdminLock = () => {
+    logAdminAction({
+      type: 'admin_lock',
+      title: 'Console Session Locked',
+      description: `${adminUser.name} locked the dispatcher console session`,
+      adminName: adminUser.name,
+      adminBadge: adminUser.badgeId,
+      badgeVariant: 'slate'
+    });
+
     setIsAdminAuthenticated(false);
     try {
       localStorage.removeItem(STORAGE_ADMIN_AUTH_KEY);

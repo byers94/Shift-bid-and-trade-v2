@@ -13,7 +13,8 @@ import {
   AlertCircle, 
   CheckCircle2, 
   HelpCircle,
-  Sparkles
+  Sparkles,
+  MapPin
 } from 'lucide-react';
 
 export const TradeBoard: React.FC = () => {
@@ -161,6 +162,12 @@ export const TradeBoard: React.FC = () => {
                     <Clock className="w-3 h-3 text-slate-400" />
                     {formatDateLabel(trade.originalShift.date)} • {trade.originalShift.startTime} - {trade.originalShift.endTime}
                   </p>
+                  {trade.originalShift.address && (
+                    <p className="text-[11px] text-slate-600 font-medium flex items-center gap-1 mt-1">
+                      <MapPin className="w-3 h-3 text-[#1e3a8a] shrink-0" />
+                      <span>{trade.originalShift.address}</span>
+                    </p>
+                  )}
                   {trade.reason && (
                     <p className="text-[11px] text-slate-600 mt-1 italic line-clamp-2">
                       "{trade.reason}"

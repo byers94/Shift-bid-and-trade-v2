@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useShiftOps } from '../../context/ShiftOpsContext';
 import { 
   Lock, 
   KeyRound, 
@@ -9,7 +10,8 @@ import {
   ShieldCheck,
   Eye, 
   EyeOff,
-  UserCheck
+  UserCheck,
+  Users
 } from 'lucide-react';
 
 export interface DispatcherIdentity {
@@ -23,7 +25,7 @@ export interface DispatcherIdentity {
 export const DISPATCHER_PRESETS: DispatcherIdentity[] = [
   {
     id: 'disp-1',
-    name: 'Lt. Mark O\'Connor',
+    name: "Lt. Mark O'Connor",
     role: 'Operations Commander',
     badgeId: 'OPS-CMD-01',
     pin: '1099'
@@ -55,7 +57,46 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
   onClose,
   onSuccess
 }) => {
-  const [selectedDispatcher, setSelectedDispatcher] = useState<DispatcherIdentity>(DISPATCHER_PRESETS[0]);
+  const { adminUsers } = useShiftOps();
+
+  // Convert adminUsers to DispatcherIdentity format
+  const activeDispatchers: DispatcherIdentity[] = adminUsers
+    .filter((u) => u.status === 'active')
+    .map((u) => {
+      let roleLabel = 'Dispatcher';
+      if (u.role === 'commander') roleLabel = 'Operations Commander';
+      else if (u.role === 'supervisor') roleLabel = 'Watch Supervisor';
+      else if (u.role === 'lead') roleLabel = 'Shift Lead';
+
+      return {
+        id: u.id,
+        name: u.name,
+        role: roleLabel,
+        badgeId: u.badgeId,
+        pin: u.pin
+      };
+    });
+
+  const [selectedDispatcher, setSelectedDispatcher] = useState<DispatcherIdentity>(
+    activeDispatchers[0] || {
+      id: 'disp-1',
+      name: "Lt. Mark O'Connor",
+      role: 'Operations Commander',
+      badgeId: 'OPS-CMD-01',
+      pin: '1099'
+    }
+  );
+
+  useEffect(() => {
+    if (activeDispatchers.length > 0) {
+      // Ensure current selection is still in the active list
+      const stillExists = activeDispatchers.find((d) => d.id === selectedDispatcher.id);
+      if (!stillExists) {
+        setSelectedDispatcher(activeDispatchers[0]);
+      }
+    }
+  }, [adminUsers]);
+
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
   const [error, setError] = useState('');
@@ -66,12 +107,12 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
     e.preventDefault();
     setError('');
 
-    // Accept preset PIN (1099), fallback admin pins (admin, 1234, 0000, 8844)
+    // Accept selected dispatcher's exact PIN, demo PIN 1099, or fallback master credentials
     if (
-      pin === selectedDispatcher.pin ||
+      pin.trim() === selectedDispatcher.pin.trim() ||
       pin === '1099' ||
-      pin === 'admin' ||
-      pin === 'admin123' ||
+      pin.toLowerCase() === 'admin' ||
+      pin.toLowerCase() === 'admin123' ||
       pin === '1234' ||
       pin === '8844'
     ) {
@@ -79,12 +120,12 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
       setPin('');
       setError('');
     } else {
-      setError('Invalid Ops Authorization PIN or Password. (Hint: Default PIN is 1099)');
+      setError(`Invalid PIN or Password for ${selectedDispatcher.name}. (Default PIN is 1099 or user's assigned PIN)`);
     }
   };
 
   const handleQuickDemoAuth = () => {
-    setPin('1099');
+    setPin(selectedDispatcher.pin || '1099');
     onSuccess(selectedDispatcher);
     setPin('');
     setError('');
@@ -116,7 +157,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="text-blue-200 hover:text-white p-1 rounded-lg hover:bg-blue-800 transition-colors"
+            className="text-blue-200 hover:text-white p-1 rounded-lg hover:bg-blue-800 transition-colors cursor-pointer"
             title="Cancel and return"
           >
             <X className="w-5 h-5" />
@@ -141,11 +182,13 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
 
           {/* Select Dispatcher Identity */}
           <div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-              Select Dispatcher Profile
-            </label>
-            <div className="grid grid-cols-1 gap-1.5">
-              {DISPATCHER_PRESETS.map((disp) => (
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                Select Dispatcher Profile ({activeDispatchers.length} Active)
+              </label>
+            </div>
+            <div className="grid grid-cols-1 gap-1.5 max-h-48 overflow-y-auto pr-1">
+              {activeDispatchers.map((disp) => (
                 <button
                   key={disp.id}
                   type="button"
@@ -185,7 +228,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
                 Ops PIN / Password
               </label>
               <span className="text-[10px] font-mono text-blue-400">
-                Default PIN: <strong>1099</strong>
+                Assigned PIN: <strong>{selectedDispatcher.pin}</strong>
               </span>
             </div>
             <div className="relative">
@@ -203,7 +246,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
               <button
                 type="button"
                 onClick={() => setShowPin(!showPin)}
-                className="absolute right-3 top-2.5 text-slate-500 hover:text-slate-300 p-0.5"
+                className="absolute right-3 top-2.5 text-slate-500 hover:text-slate-300 p-0.5 cursor-pointer"
               >
                 {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -245,14 +288,14 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
               onClick={handleQuickDemoAuth}
               className="w-full bg-blue-950/70 hover:bg-blue-900 border border-blue-800 text-blue-200 font-bold py-2 rounded-xl text-xs uppercase tracking-wider transition-colors cursor-pointer"
             >
-              ⚡ 1-Click Demo Login (PIN: 1099)
+              ⚡ Quick Authenticate as {selectedDispatcher.name.split(' ')[0]}
             </button>
 
             <button
               id="admin-auth-cancel-btn"
               type="button"
               onClick={onClose}
-              className="w-full text-slate-400 hover:text-slate-200 py-1.5 text-xs font-semibold uppercase tracking-wider transition-colors"
+              className="w-full text-slate-400 hover:text-slate-200 py-1.5 text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer"
             >
               Cancel (Stay on Guard View)
             </button>

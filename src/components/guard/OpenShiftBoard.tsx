@@ -172,29 +172,36 @@ export const OpenShiftBoard: React.FC = () => {
                 </h3>
 
                 {/* Shift Details */}
-                <p className="text-xs text-slate-500 mt-1 mb-2.5 flex items-center gap-1.5 font-medium">
+                <p className="text-xs text-slate-500 mt-1 mb-2 flex items-center gap-1.5 font-medium">
                   <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                   <span>
                     {formatDateLabel(shift.date)} • {shift.startTime} - {shift.endTime}
                   </span>
                 </p>
 
-                {shift.location && (
-                  <p className="text-[11px] text-slate-500 flex items-center gap-1 mb-2 truncate">
-                    <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                    {shift.location}
-                  </p>
-                )}
+                {/* Site Address for Commute Planning */}
+                <div className="bg-slate-50 border border-slate-200/80 rounded-lg p-2 mb-3 flex items-start gap-1.5 text-slate-700">
+                  <MapPin className="w-3.5 h-3.5 text-[#1e3a8a] shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold leading-tight text-slate-800">
+                      {shift.address || '100 Main St, Seattle, WA'}
+                    </p>
+                    {shift.location && (
+                      <p className="text-[10px] text-slate-500 leading-tight mt-0.5 truncate">
+                        Post: {shift.location}
+                      </p>
+                    )}
+                  </div>
+                </div>
 
-                {/* Pay & Certs bar */}
-                <div className="flex items-center justify-between text-[11px] text-slate-600 mb-3 pt-2 border-t border-slate-100">
-                  <span className="font-bold text-slate-700 flex items-center gap-0.5">
-                    <DollarSign className="w-3.5 h-3.5 text-emerald-600 -mr-0.5" />
-                    {shift.hourlyRate?.toFixed(2)} / hr
+                {/* Bids and Assignment status bar */}
+                <div className="flex items-center justify-between text-[11px] text-slate-600 mb-3 pt-1 border-t border-slate-100">
+                  <span className="text-[10px] font-mono text-slate-500">
+                    Commute: In-District
                   </span>
 
                   {shift.bidsCount > 0 && !isFilled && (
-                    <span className="text-[10px] font-mono text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
+                    <span className="text-[10px] font-mono text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded font-semibold">
                       {shift.bidsCount} Bid{shift.bidsCount > 1 ? 's' : ''} Active
                     </span>
                   )}

@@ -5,12 +5,18 @@ import {
   AuditLogEntry, 
   BidRecord, 
   GuardProfile, 
-  TrainingStatus 
+  TrainingStatus,
+  AdminAction,
+  AdminUser,
+  ShiftTemplate
 } from '../types/shift';
 import { 
   INITIAL_SHIFTS, 
   INITIAL_TRADES, 
   INITIAL_AUDIT_LOGS, 
+  INITIAL_ADMIN_ACTIONS,
+  INITIAL_ADMIN_USERS,
+  INITIAL_SHIFT_TEMPLATES,
   CURRENT_GUARD, 
   GUARDS_LIST,
   OPS_DISPATCH_PHONE 
@@ -29,9 +35,12 @@ interface ShiftOpsContextType {
   shifts: Shift[];
   trades: Trade[];
   auditLogs: AuditLogEntry[];
+  recentAdminActions: AdminAction[];
+  adminUsers: AdminUser[];
   bids: BidRecord[];
   activeGuard: GuardProfile;
   guardsList: GuardProfile[];
+  shiftTemplates: ShiftTemplate[];
   activeView: 'dual' | 'guard' | 'ops';
   opsPhone: string;
   hideFilledShifts: boolean;
@@ -43,16 +52,45 @@ interface ShiftOpsContextType {
   setHideFilledShifts: (hide: boolean) => void;
   dismissToast: (id: string) => void;
   showToast: (title: string, message: string, type: 'info' | 'success' | 'warning' | 'danger') => void;
+  logAdminAction: (action: Omit<AdminAction, 'id' | 'timestamp'> & { timestamp?: string }) => void;
   
+  // Shift Templates Management
+  addShiftTemplate: (data: Omit<ShiftTemplate, 'id' | 'createdAt'>) => ShiftTemplate;
+  updateShiftTemplate: (id: string, data: Partial<ShiftTemplate>) => void;
+  deleteShiftTemplate: (id: string) => void;
+
+  // User & Personnel Management
+  addAdminUser: (data: {
+    name: string;
+    badgeId: string;
+    role: 'commander' | 'dispatcher' | 'supervisor' | 'lead';
+    pin: string;
+    email?: string;
+    phone?: string;
+    status?: 'active' | 'inactive';
+  }) => AdminUser;
+  updateAdminUser: (id: string, data: Partial<AdminUser>) => void;
+  deleteAdminUser: (id: string) => void;
+  
+  addGuard: (data: {
+    name: string;
+    badgeNumber: string;
+    phone: string;
+    role: 'guard' | 'lead' | 'supervisor';
+    ojtSites: string[];
+  }) => GuardProfile;
+  updateGuard: (id: string, data: Partial<GuardProfile>) => void;
+  deleteGuard: (id: string) => void;
+
   // Shift Operations
   createShift: (data: {
     siteName: string;
+    address?: string;
     location?: string;
     date: string;
     startTime: string;
     endTime: string;
     urgency: 'standard' | 'emergency';
-    hourlyRate?: number;
     notes?: string;
     requiredCertifications?: string[];
   }) => Shift;
@@ -67,6 +105,7 @@ interface ShiftOpsContextType {
   // Trade Operations
   postTradeRequest: (data: {
     siteName: string;
+    address?: string;
     location?: string;
     date: string;
     startTime: string;
@@ -75,6 +114,7 @@ interface ShiftOpsContextType {
   }) => Trade;
   proposeSwap: (tradeId: string, data: {
     siteName: string;
+    address?: string;
     location?: string;
     date: string;
     startTime: string;
@@ -97,6 +137,10 @@ const STORAGE_KEY_SHIFTS = 'secureshift_shifts_v1';
 const STORAGE_KEY_TRADES = 'secureshift_trades_v1';
 const STORAGE_KEY_LOGS = 'secureshift_logs_v1';
 const STORAGE_KEY_BIDS = 'secureshift_bids_v1';
+const STORAGE_KEY_ADMIN_ACTIONS = 'secureshift_admin_actions_v1';
+const STORAGE_KEY_ADMIN_USERS = 'secureshift_admin_users_v1';
+const STORAGE_KEY_GUARDS = 'secureshift_guards_v1';
+const STORAGE_KEY_TEMPLATES = 'secureshift_templates_v1';
 
 export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [shifts, setShifts] = useState<Shift[]>(() => {
@@ -126,6 +170,42 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   });
 
+  const [recentAdminActions, setRecentAdminActions] = useState<AdminAction[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_ADMIN_ACTIONS);
+      return saved ? JSON.parse(saved) : INITIAL_ADMIN_ACTIONS;
+    } catch {
+      return INITIAL_ADMIN_ACTIONS;
+    }
+  });
+
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_ADMIN_USERS);
+      return saved ? JSON.parse(saved) : INITIAL_ADMIN_USERS;
+    } catch {
+      return INITIAL_ADMIN_USERS;
+    }
+  });
+
+  const [guardsList, setGuardsList] = useState<GuardProfile[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_GUARDS);
+      return saved ? JSON.parse(saved) : GUARDS_LIST;
+    } catch {
+      return GUARDS_LIST;
+    }
+  });
+
+  const [shiftTemplates, setShiftTemplates] = useState<ShiftTemplate[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_TEMPLATES);
+      return saved ? JSON.parse(saved) : INITIAL_SHIFT_TEMPLATES;
+    } catch {
+      return INITIAL_SHIFT_TEMPLATES;
+    }
+  });
+
   const [bids, setBids] = useState<BidRecord[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_BIDS);
@@ -135,7 +215,9 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   });
 
-  const [activeGuard, setActiveGuard] = useState<GuardProfile>(CURRENT_GUARD);
+  const [activeGuard, setActiveGuard] = useState<GuardProfile>(() => {
+    return GUARDS_LIST[0] || CURRENT_GUARD;
+  });
   const [activeView, setActiveView] = useState<'dual' | 'guard' | 'ops'>('dual');
   const [hideFilledShifts, setHideFilledShifts] = useState<boolean>(false);
   const [toasts, setToasts] = useState<NotificationToast[]>([]);
@@ -168,6 +250,38 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   useEffect(() => {
     try {
+      localStorage.setItem(STORAGE_KEY_ADMIN_ACTIONS, JSON.stringify(recentAdminActions));
+    } catch (e) {
+      console.warn('Storage save failed', e);
+    }
+  }, [recentAdminActions]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_ADMIN_USERS, JSON.stringify(adminUsers));
+    } catch (e) {
+      console.warn('Storage save failed', e);
+    }
+  }, [adminUsers]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_GUARDS, JSON.stringify(guardsList));
+    } catch (e) {
+      console.warn('Storage save failed', e);
+    }
+  }, [guardsList]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_TEMPLATES, JSON.stringify(shiftTemplates));
+    } catch (e) {
+      console.warn('Storage save failed for templates', e);
+    }
+  }, [shiftTemplates]);
+
+  useEffect(() => {
+    try {
       localStorage.setItem(STORAGE_KEY_BIDS, JSON.stringify(bids));
     } catch (e) {
       console.warn('Storage save failed', e);
@@ -194,6 +308,15 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
+  const logAdminAction = (action: Omit<AdminAction, 'id' | 'timestamp'> & { timestamp?: string }) => {
+    const entry: AdminAction = {
+      ...action,
+      id: 'action-' + Date.now() + '-' + Math.random().toString(36).substring(2, 5),
+      timestamp: action.timestamp || new Date().toISOString()
+    };
+    setRecentAdminActions((prev) => [entry, ...prev]);
+  };
+
   const addAuditLog = (
     action: string,
     category: 'shift' | 'trade' | 'swap' | 'system',
@@ -216,12 +339,12 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // 1. Create Shift
   const createShift = (data: {
     siteName: string;
+    address?: string;
     location?: string;
     date: string;
     startTime: string;
     endTime: string;
     urgency: 'standard' | 'emergency';
-    hourlyRate?: number;
     notes?: string;
     requiredCertifications?: string[];
   }): Shift => {
@@ -229,6 +352,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const newShift: Shift = {
       id: 'shift-' + Date.now().toString().slice(-4),
       siteName: data.siteName.trim(),
+      address: data.address?.trim() || '100 Main St, Seattle, WA 98101',
       location: data.location?.trim() || 'Main Site Entrance',
       date: data.date,
       startTime: data.startTime,
@@ -236,7 +360,6 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       hours: hours || 8,
       urgency: data.urgency,
       status: 'open',
-      hourlyRate: data.hourlyRate || (data.urgency === 'emergency' ? 28 : 24),
       notes: data.notes?.trim() || '',
       requiredCertifications: data.requiredCertifications || [],
       createdAt: new Date().toISOString(),
@@ -247,6 +370,18 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     
     const details = `New ${data.urgency.toUpperCase()} shift posted at ${data.siteName} (${data.date} • ${data.startTime}-${data.endTime}, ${hours}h)`;
     addAuditLog('SHIFT_CREATED', 'shift', details, 'Ops Admin', data.urgency === 'emergency' ? 'danger' : 'info');
+    
+    // Log to Recent Admin Actions mock state
+    logAdminAction({
+      type: 'shift_created',
+      title: data.urgency === 'emergency' ? 'Emergency Shift Created' : 'New Shift Created',
+      description: `Posted ${hours}h shift at ${data.siteName} (${data.address || 'Address on file'})`,
+      adminName: 'Lt. Mark O\'Connor',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: data.urgency === 'emergency' ? 'rose' : 'blue',
+      metadata: { site: data.siteName, address: data.address, hours, urgency: data.urgency }
+    });
+
     showToast('Shift Posted to Board', `${data.siteName} is now open for bidding.`, 'success');
     
     return newShift;
@@ -279,6 +414,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       validShifts.push({
         id: 'shift-bulk-' + Date.now() + '-' + index,
         siteName: item.siteName.trim(),
+        address: item.address || '100 Main St, Seattle, WA 98101',
         location: item.location || 'Assigned Post Area',
         date: item.date,
         startTime: item.startTime,
@@ -286,7 +422,6 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         hours: item.hours || hours || 8,
         urgency: item.urgency === 'emergency' ? 'emergency' : 'standard',
         status: 'open',
-        hourlyRate: Number(item.hourlyRate) || 25,
         requiredCertifications: Array.isArray(item.requiredCertifications) ? item.requiredCertifications : [],
         notes: item.notes || '',
         createdAt: new Date().toISOString(),
@@ -303,6 +438,17 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         'Ops Admin',
         'info'
       );
+      
+      logAdminAction({
+        type: 'bulk_imported',
+        title: 'Bulk Shifts Imported',
+        description: `Successfully loaded ${validShifts.length} shifts via dispatcher JSON parser.`,
+        adminName: 'Lt. Mark O\'Connor',
+        adminBadge: 'OPS-CMD-01',
+        badgeVariant: 'amber',
+        metadata: { count: validShifts.length }
+      });
+
       showToast('Bulk Import Complete', `Added ${validShifts.length} shifts to the bidding board.`, 'success');
     }
 
@@ -316,7 +462,19 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     );
     const shift = shifts.find((s) => s.id === shiftId);
     const siteLabel = shift ? shift.siteName : shiftId;
+    
     addAuditLog('SHIFT_FILLED', 'shift', `Shift #${shiftId} at ${siteLabel} marked FILLED. Guard: ${guardName}`, 'Ops Admin', 'info');
+    
+    logAdminAction({
+      type: 'shift_filled',
+      title: 'Shift Position Assigned',
+      description: `Assigned ${guardName} to ${siteLabel} (${shift?.address || 'Site'})`,
+      adminName: 'Dispatcher Sarah Keller',
+      adminBadge: 'OPS-DISP-04',
+      badgeVariant: 'purple',
+      metadata: { shiftId, site: siteLabel, guard: guardName }
+    });
+
     showToast('Shift Filled', `${siteLabel} marked as filled.`, 'info');
   };
 
@@ -327,14 +485,38 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     );
     const shift = shifts.find((s) => s.id === shiftId);
     const siteLabel = shift ? shift.siteName : shiftId;
+    
     addAuditLog('SHIFT_REOPENED', 'shift', `Shift #${shiftId} at ${siteLabel} reopened for guard bids.`, 'Ops Admin', 'warning');
+    
+    logAdminAction({
+      type: 'shift_reopened',
+      title: 'Shift Reopened for Bids',
+      description: `Reopened assignment for ${siteLabel} to active guard feed`,
+      adminName: 'Lt. Mark O\'Connor',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'amber',
+      metadata: { shiftId, site: siteLabel }
+    });
+
     showToast('Shift Reopened', `${siteLabel} is now accepting bids again.`, 'warning');
   };
 
   // 5. Delete Shift
   const deleteShift = (shiftId: string) => {
+    const shift = shifts.find((s) => s.id === shiftId);
+    const siteLabel = shift ? shift.siteName : shiftId;
     setShifts((prev) => prev.filter((s) => s.id !== shiftId));
-    addAuditLog('SHIFT_DELETED', 'shift', `Shift #${shiftId} removed from system.`, 'Ops Admin', 'danger');
+    addAuditLog('SHIFT_DELETED', 'shift', `Shift #${shiftId} (${siteLabel}) removed from system.`, 'Ops Admin', 'danger');
+    
+    logAdminAction({
+      type: 'shift_deleted',
+      title: 'Shift Cancelled & Removed',
+      description: `Deleted listing for ${siteLabel} from active schedule`,
+      adminName: 'Lt. Mark O\'Connor',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'rose',
+      metadata: { shiftId, site: siteLabel }
+    });
   };
 
   // 6. Submit Bid (Guard)
@@ -348,7 +530,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       ? 'I am fully TRAINED & qualified on this site.' 
       : 'I NEED OJT / Site Orientation.';
 
-    const smsBody = `[SECURESHIFT BID]\nGuard: ${activeGuard.name} (${activeGuard.badgeNumber})\nPhone: ${activeGuard.phone}\nShift: ${shift.siteName}\nDate: ${shift.date} (${shift.startTime}-${shift.endTime}, ${shift.hours}h)\nStatus: ${trainingText}\nPlease confirm assignment.`;
+    const smsBody = `[SECURESHIFT BID]\nGuard: ${activeGuard.name} (${activeGuard.badgeNumber})\nPhone: ${activeGuard.phone}\nShift: ${shift.siteName}\nAddress: ${shift.address || 'On File'}\nDate: ${shift.date} (${shift.startTime}-${shift.endTime}, ${shift.hours}h)\nStatus: ${trainingText}\nPlease confirm assignment.`;
 
     const smsUrl = generateSmsLink(opsPhone, smsBody);
 
@@ -392,6 +574,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // 7. Post Trade Request (Guard)
   const postTradeRequest = (data: {
     siteName: string;
+    address?: string;
     location?: string;
     date: string;
     startTime: string;
@@ -405,6 +588,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       status: 'pending_approval',
       originalShift: {
         siteName: data.siteName.trim(),
+        address: data.address?.trim() || '100 Main St, Seattle, WA 98101',
         location: data.location?.trim() || 'Main Site Guard Post',
         date: data.date,
         startTime: data.startTime,
@@ -434,6 +618,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // 8. Propose Swap (Guard)
   const proposeSwap = (tradeId: string, data: {
     siteName: string;
+    address?: string;
     location?: string;
     date: string;
     startTime: string;
@@ -456,6 +641,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               offeredByGuard: activeGuard,
               offeredShift: {
                 siteName: data.siteName.trim(),
+                address: data.address?.trim() || '100 Main St, Seattle, WA 98101',
                 location: data.location?.trim() || 'Designated Post',
                 date: data.date,
                 startTime: data.startTime,
@@ -509,8 +695,22 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     );
 
     const trade = trades.find((t) => t.id === tradeId);
-    const details = `Trade listing #${tradeId} (${trade?.originalShift.siteName}) APPROVED by Ops. Now live on Trade Board.`;
+    const guardName = trade?.offeringGuard.name || 'Guard';
+    const siteName = trade?.originalShift.siteName || 'Shift';
+    const details = `Trade listing #${tradeId} (${siteName}) APPROVED by Ops. Now live on Trade Board.`;
+    
     addAuditLog('POST_APPROVED', 'trade', details, 'Ops Admin', 'success');
+    
+    logAdminAction({
+      type: 'trade_approved',
+      title: 'Trade Giveaway Approved',
+      description: `Authorized shift giveaway for ${guardName} at ${siteName}`,
+      adminName: 'Dispatcher Sarah Keller',
+      adminBadge: 'OPS-DISP-04',
+      badgeVariant: 'blue',
+      metadata: { tradeId, guard: guardName, site: siteName }
+    });
+
     showToast('Trade Listing Approved', 'The shift is now visible on the Guard Trade Board.', 'success');
   };
 
@@ -532,8 +732,22 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     );
 
     const trade = trades.find((t) => t.id === tradeId);
-    const details = `Trade listing #${tradeId} (${trade?.originalShift.siteName}) DENIED. Reason: ${reason}`;
+    const guardName = trade?.offeringGuard.name || 'Guard';
+    const siteName = trade?.originalShift.siteName || 'Shift';
+    const details = `Trade listing #${tradeId} (${siteName}) DENIED. Reason: ${reason}`;
+    
     addAuditLog('POST_DENIED', 'trade', details, 'Ops Admin', 'danger');
+    
+    logAdminAction({
+      type: 'trade_denied',
+      title: 'Trade Request Denied',
+      description: `Denied giveaway for ${guardName} at ${siteName}. Reason: ${reason}`,
+      adminName: 'Lt. Mark O\'Connor',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'rose',
+      metadata: { tradeId, guard: guardName, reason }
+    });
+
     showToast('Trade Request Denied', `Post rejected: ${reason}`, 'danger');
   };
 
@@ -560,6 +774,17 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const details = `Swap #${tradeId} APPROVED (${guardA} <> ${guardB}). Schedules updated.`;
 
     addAuditLog('SWAP_APPROVED', 'swap', details, 'Ops Admin', 'success');
+    
+    logAdminAction({
+      type: 'swap_approved',
+      title: '2-Way Swap Authorized',
+      description: `Approved shift exchange between ${guardA} and ${guardB}`,
+      adminName: 'Lt. Mark O\'Connor',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'emerald',
+      metadata: { tradeId, guardA, guardB }
+    });
+
     showToast('Swap Approved', `Shift trade between ${guardA} and ${guardB} finalized.`, 'success');
   };
 
@@ -585,7 +810,319 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const details = `Swap #${tradeId} DENIED for ${guardB}. Reason: ${reason}`;
 
     addAuditLog('SWAP_DENIED', 'swap', details, 'Ops Admin', 'danger');
+    
+    logAdminAction({
+      type: 'swap_denied',
+      title: 'Swap Proposal Denied',
+      description: `Rejected swap proposal by ${guardB}. Reason: ${reason}`,
+      adminName: 'Lt. Mark O\'Connor',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'rose',
+      metadata: { tradeId, guard: guardB, reason }
+    });
+
     showToast('Swap Proposal Denied', `Swap rejected: ${reason}`, 'danger');
+  };
+
+  // User & Personnel Management Functions
+  const addAdminUser = (data: {
+    name: string;
+    badgeId: string;
+    role: 'commander' | 'dispatcher' | 'supervisor' | 'lead';
+    pin: string;
+    email?: string;
+    phone?: string;
+    status?: 'active' | 'inactive';
+  }): AdminUser => {
+    const newAdmin: AdminUser = {
+      id: 'disp-' + Date.now().toString().slice(-4),
+      name: data.name.trim(),
+      badgeId: data.badgeId.trim().toUpperCase(),
+      role: data.role,
+      pin: data.pin.trim(),
+      email: data.email?.trim() || `${data.name.toLowerCase().replace(/\s+/g, '.')}@secureshift.ops`,
+      phone: data.phone?.trim() || '+1 (555) 019-9' + Math.floor(100 + Math.random() * 900),
+      status: data.status || 'active',
+      createdAt: new Date().toISOString(),
+      lastLogin: undefined
+    };
+
+    setAdminUsers((prev) => [newAdmin, ...prev]);
+
+    addAuditLog(
+      'ADMIN_USER_CREATED',
+      'system',
+      `Admin personnel added: ${newAdmin.name} (${newAdmin.badgeId}, Role: ${newAdmin.role.toUpperCase()})`,
+      'Ops Admin (System)',
+      'success'
+    );
+
+    logAdminAction({
+      type: 'user_created',
+      title: 'New Dispatcher Created',
+      description: `Added ${newAdmin.name} (${newAdmin.badgeId}, Role: ${newAdmin.role.toUpperCase()}) to authorized ops personnel.`,
+      adminName: 'Lt. Mark O\'Connor',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'blue',
+      metadata: { userId: newAdmin.id, badgeId: newAdmin.badgeId, role: newAdmin.role }
+    });
+
+    showToast('Admin User Created', `${newAdmin.name} (${newAdmin.badgeId}) added with PIN ${newAdmin.pin}`, 'success');
+    return newAdmin;
+  };
+
+  const updateAdminUser = (id: string, data: Partial<AdminUser>) => {
+    setAdminUsers((prev) =>
+      prev.map((user) => {
+        if (user.id === id) {
+          const updated = { ...user, ...data };
+          return updated;
+        }
+        return user;
+      })
+    );
+
+    const user = adminUsers.find((u) => u.id === id);
+    const userName = user?.name || 'Dispatcher';
+
+    addAuditLog(
+      'ADMIN_USER_UPDATED',
+      'system',
+      `Admin profile updated for ${userName} (${id})`,
+      'Ops Admin (System)',
+      'info'
+    );
+
+    logAdminAction({
+      type: 'user_updated',
+      title: 'Dispatcher Profile Updated',
+      description: `Updated credentials and permissions for ${userName}.`,
+      adminName: 'Lt. Mark O\'Connor',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'purple',
+      metadata: { userId: id, changes: Object.keys(data) }
+    });
+
+    showToast('Admin Profile Updated', `${userName}'s credentials updated successfully.`, 'info');
+  };
+
+  const deleteAdminUser = (id: string) => {
+    const user = adminUsers.find((u) => u.id === id);
+    const userName = user?.name || 'Dispatcher';
+    const userBadge = user?.badgeId || 'OPS';
+
+    setAdminUsers((prev) => prev.filter((u) => u.id !== id));
+
+    addAuditLog(
+      'ADMIN_USER_REVOKED',
+      'system',
+      `Admin access REVOKED for ${userName} (${userBadge})`,
+      'Ops Admin (System)',
+      'warning'
+    );
+
+    logAdminAction({
+      type: 'user_deleted',
+      title: 'Dispatcher Access Revoked',
+      description: `Revoked access credentials for ${userName} (${userBadge}).`,
+      adminName: 'Lt. Mark O\'Connor',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'rose',
+      metadata: { userId: id, badgeId: userBadge }
+    });
+
+    showToast('Access Revoked', `${userName} has been removed from authorized dispatchers.`, 'warning');
+  };
+
+  const addGuard = (data: {
+    name: string;
+    badgeNumber: string;
+    phone: string;
+    role: 'guard' | 'lead' | 'supervisor';
+    ojtSites: string[];
+  }): GuardProfile => {
+    const newGuard: GuardProfile = {
+      id: 'guard-' + Date.now().toString().slice(-4),
+      name: data.name.trim(),
+      badgeNumber: data.badgeNumber.trim().toUpperCase(),
+      phone: data.phone.trim(),
+      role: data.role,
+      ojtSites: data.ojtSites || []
+    };
+
+    setGuardsList((prev) => [...prev, newGuard]);
+
+    addAuditLog(
+      'GUARD_REGISTERED',
+      'system',
+      `Security personnel registered: ${newGuard.name} (${newGuard.badgeNumber}) with ${newGuard.ojtSites.length} site qualifications`,
+      'Ops Admin (Personnel)',
+      'info'
+    );
+
+    logAdminAction({
+      type: 'guard_created',
+      title: 'Guard Roster Updated',
+      description: `Added officer ${newGuard.name} (${newGuard.badgeNumber}) to guard directory.`,
+      adminName: 'Lt. Mark O\'Connor',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'blue',
+      metadata: { guardId: newGuard.id, badgeNumber: newGuard.badgeNumber }
+    });
+
+    showToast('Guard Added', `${newGuard.name} registered to guard roster.`, 'success');
+    return newGuard;
+  };
+
+  const updateGuard = (id: string, data: Partial<GuardProfile>) => {
+    setGuardsList((prev) =>
+      prev.map((g) => {
+        if (g.id === id) {
+          const updated = { ...g, ...data };
+          if (activeGuard.id === id) {
+            setActiveGuard(updated);
+          }
+          return updated;
+        }
+        return g;
+      })
+    );
+
+    const guard = guardsList.find((g) => g.id === id);
+    const guardName = guard?.name || 'Guard';
+
+    addAuditLog(
+      'GUARD_UPDATED',
+      'system',
+      `Guard credentials and site training updated for ${guardName}`,
+      'Ops Admin (Personnel)',
+      'info'
+    );
+
+    logAdminAction({
+      type: 'guard_updated',
+      title: 'Guard Qualifications Modified',
+      description: `Updated profile & site training qualifications for ${guardName}.`,
+      adminName: 'Lt. Mark O\'Connor',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'purple',
+      metadata: { guardId: id }
+    });
+
+    showToast('Guard Updated', `Profile & site qualifications for ${guardName} updated.`, 'info');
+  };
+
+  const deleteGuard = (id: string) => {
+    const guard = guardsList.find((g) => g.id === id);
+    const guardName = guard?.name || 'Guard';
+
+    setGuardsList((prev) => prev.filter((g) => g.id !== id));
+
+    addAuditLog(
+      'GUARD_REMOVED',
+      'system',
+      `Guard ${guardName} (${id}) removed from active duty roster`,
+      'Ops Admin (Personnel)',
+      'warning'
+    );
+
+    logAdminAction({
+      type: 'guard_deleted',
+      title: 'Guard Removed from Roster',
+      description: `De-registered ${guardName} from active personnel list.`,
+      adminName: 'Lt. Mark O\'Connor',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'rose',
+      metadata: { guardId: id }
+    });
+
+    showToast('Guard Removed', `${guardName} removed from roster.`, 'warning');
+  };
+
+  // Shift Templates Management
+  const addShiftTemplate = (data: Omit<ShiftTemplate, 'id' | 'createdAt'>): ShiftTemplate => {
+    const newTemplate: ShiftTemplate = {
+      ...data,
+      id: `tmpl-${Date.now()}`,
+      createdAt: new Date().toISOString()
+    };
+
+    setShiftTemplates((prev) => [newTemplate, ...prev]);
+
+    addAuditLog(
+      'SHIFT_TEMPLATE_CREATED',
+      'shift',
+      `Created shift template "${newTemplate.name}" (${newTemplate.siteName}, ${newTemplate.startTime}-${newTemplate.endTime})`,
+      'Ops Admin (Dispatcher)',
+      'success'
+    );
+
+    logAdminAction({
+      type: 'template_created',
+      title: 'Shift Template Created',
+      description: `Saved recurring pattern "${newTemplate.name}" for ${newTemplate.siteName}.`,
+      adminName: "Lt. Mark O'Connor",
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'emerald',
+      metadata: { templateId: newTemplate.id }
+    });
+
+    showToast('Template Saved', `Template "${newTemplate.name}" is now ready for quick auto-fill.`, 'success');
+    return newTemplate;
+  };
+
+  const updateShiftTemplate = (id: string, data: Partial<ShiftTemplate>) => {
+    setShiftTemplates((prev) =>
+      prev.map((tmpl) => (tmpl.id === id ? { ...tmpl, ...data } : tmpl))
+    );
+
+    const tmplName = data.name || 'Shift Template';
+    addAuditLog(
+      'SHIFT_TEMPLATE_UPDATED',
+      'shift',
+      `Updated shift template "${tmplName}" (${id})`,
+      'Ops Admin (Dispatcher)',
+      'info'
+    );
+
+    logAdminAction({
+      type: 'template_updated',
+      title: 'Shift Template Updated',
+      description: `Modified parameters for template "${tmplName}".`,
+      adminName: "Lt. Mark O'Connor",
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'purple',
+      metadata: { templateId: id }
+    });
+
+    showToast('Template Updated', `Shift template "${tmplName}" has been updated.`, 'info');
+  };
+
+  const deleteShiftTemplate = (id: string) => {
+    const tmpl = shiftTemplates.find((t) => t.id === id);
+    const tmplName = tmpl?.name || 'Template';
+
+    setShiftTemplates((prev) => prev.filter((t) => t.id !== id));
+
+    addAuditLog(
+      'SHIFT_TEMPLATE_DELETED',
+      'shift',
+      `Deleted shift template "${tmplName}" (${id})`,
+      'Ops Admin (Dispatcher)',
+      'warning'
+    );
+
+    logAdminAction({
+      type: 'template_deleted',
+      title: 'Shift Template Deleted',
+      description: `Removed recurring pattern "${tmplName}".`,
+      adminName: "Lt. Mark O'Connor",
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'rose',
+      metadata: { templateId: id }
+    });
+
+    showToast('Template Deleted', `Template "${tmplName}" removed.`, 'warning');
   };
 
   // Reset to Defaults
@@ -593,12 +1130,21 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setShifts(INITIAL_SHIFTS);
     setTrades(INITIAL_TRADES);
     setAuditLogs(INITIAL_AUDIT_LOGS);
+    setRecentAdminActions(INITIAL_ADMIN_ACTIONS);
+    setAdminUsers(INITIAL_ADMIN_USERS);
+    setGuardsList(GUARDS_LIST);
+    setShiftTemplates(INITIAL_SHIFT_TEMPLATES);
+    setActiveGuard(GUARDS_LIST[0] || CURRENT_GUARD);
     setBids([]);
     localStorage.removeItem(STORAGE_KEY_SHIFTS);
     localStorage.removeItem(STORAGE_KEY_TRADES);
     localStorage.removeItem(STORAGE_KEY_LOGS);
+    localStorage.removeItem(STORAGE_KEY_ADMIN_ACTIONS);
+    localStorage.removeItem(STORAGE_KEY_ADMIN_USERS);
+    localStorage.removeItem(STORAGE_KEY_GUARDS);
+    localStorage.removeItem(STORAGE_KEY_TEMPLATES);
     localStorage.removeItem(STORAGE_KEY_BIDS);
-    showToast('System Reset', 'Demo shift and trade data restored to initial state.', 'info');
+    showToast('System Reset', 'Demo shift, trade, and user data restored to initial state.', 'info');
   };
 
   return (
@@ -607,9 +1153,12 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         shifts,
         trades,
         auditLogs,
+        recentAdminActions,
+        adminUsers,
         bids,
         activeGuard,
-        guardsList: GUARDS_LIST,
+        guardsList,
+        shiftTemplates,
         activeView,
         opsPhone,
         hideFilledShifts,
@@ -619,6 +1168,16 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setHideFilledShifts,
         dismissToast,
         showToast,
+        logAdminAction,
+        addShiftTemplate,
+        updateShiftTemplate,
+        deleteShiftTemplate,
+        addAdminUser,
+        updateAdminUser,
+        deleteAdminUser,
+        addGuard,
+        updateGuard,
+        deleteGuard,
         createShift,
         bulkImportShifts,
         markShiftFilled,
@@ -646,3 +1205,4 @@ export const useShiftOps = (): ShiftOpsContextType => {
   }
   return context;
 };
+

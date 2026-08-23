@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
 import { ShiftManager } from './ShiftManager';
 import { TradeApprovals } from './TradeApprovals';
 import { LiveAuditTerminal } from './LiveAuditTerminal';
+import { RecentAdminActionsPanel } from './RecentAdminActionsPanel';
+import { UserManagementModal } from './UserManagementModal';
 import { 
   ShieldCheck, 
   Activity, 
@@ -12,7 +14,11 @@ import {
   Bell,
   Lock,
   LogOut,
-  UserCheck
+  UserCheck,
+  History,
+  Users,
+  PanelRightClose,
+  PanelRightOpen
 } from 'lucide-react';
 
 interface OpsAdminViewProps {
@@ -26,7 +32,10 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   adminName = "Lt. Mark O'Connor", 
   adminBadge = "OPS-CMD-01" 
 }) => {
-  const { shifts, trades } = useShiftOps();
+  const { shifts, trades, recentAdminActions, adminUsers, guardsList } = useShiftOps();
+  const [showSidePanel, setShowSidePanel] = useState(true);
+  const [isUserManagementOpen, setIsUserManagementOpen] = useState(false);
+  const [userManagementTab, setUserManagementTab] = useState<'admins' | 'guards'>('admins');
 
   const activeShiftsCount = shifts.filter((s) => s.status === 'open').length;
   const pendingSwapsCount = trades.filter((t) => t.status === 'pending_swap').length;
@@ -55,7 +64,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         </div>
 
         {/* Real-time Metric Indicators & Admin Status */}
-        <div className="flex flex-wrap items-center gap-3 lg:gap-5">
+        <div className="flex flex-wrap items-center gap-3 lg:gap-4">
           <div className="text-right">
             <p className="text-[9px] text-blue-200 uppercase font-semibold">Active Shifts</p>
             <p className="text-base lg:text-lg font-black font-mono">
@@ -96,6 +105,41 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
             </>
           )}
 
+          {/* User & Access Management Button */}
+          <button
+            id="open-user-management-btn"
+            onClick={() => {
+              setUserManagementTab('admins');
+              setIsUserManagementOpen(true);
+            }}
+            className="px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 bg-blue-900 border border-blue-500 hover:bg-blue-800 text-white shadow-xs cursor-pointer"
+            title="Manage Dispatchers, Admin PINs, and Guard Site Certifications"
+          >
+            <Users className="w-3.5 h-3.5 text-blue-300" />
+            <span className="hidden sm:inline">Personnel & Access</span>
+            <span className="bg-emerald-400 text-slate-950 text-[10px] font-mono font-black px-1.5 py-0.2 rounded-full">
+              {adminUsers.length + guardsList.length}
+            </span>
+          </button>
+
+          {/* Toggle Recent Actions Panel Button */}
+          <button
+            id="toggle-recent-actions-panel-btn"
+            onClick={() => setShowSidePanel(!showSidePanel)}
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
+              showSidePanel 
+                ? 'bg-blue-900 border-blue-500 text-white shadow-inner' 
+                : 'bg-blue-950/60 border-blue-700/60 text-blue-200 hover:text-white'
+            }`}
+            title={showSidePanel ? "Hide Recent Admin Actions side panel" : "Show Recent Admin Actions side panel"}
+          >
+            <History className="w-3.5 h-3.5 text-blue-300" />
+            <span className="hidden sm:inline">Actions Feed</span>
+            <span className="bg-[#1e3a8a] text-white text-[10px] font-mono px-1.5 py-0.2 rounded-full">
+              {recentAdminActions.length}
+            </span>
+          </button>
+
           {/* Authenticated Dispatcher Badge & Lock Button */}
           <div className="flex items-center gap-2 bg-blue-950/80 border border-blue-700/80 px-2.5 py-1 rounded-xl">
             <div className="text-right">
@@ -122,19 +166,37 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         </div>
       </header>
 
-      {/* Main 2-Column Split Dashboard with Fluid Scrolling */}
-      <div className="flex-1 p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-2 gap-5 lg:gap-6 min-h-0">
+      {/* Main Multi-Column Dashboard with Fluid Scrolling */}
+      <div className="flex-1 p-4 lg:p-6 grid grid-cols-1 xl:grid-cols-12 gap-5 lg:gap-6 min-h-0">
         {/* Left Column: Shift Creation & Active Shifts Feed */}
-        <section className="flex flex-col gap-4">
+        <section className={`flex flex-col gap-4 min-h-0 ${showSidePanel ? 'xl:col-span-4' : 'xl:col-span-6'}`}>
           <ShiftManager />
         </section>
 
-        {/* Right Column: Pending Swaps/Trades & Live Terminal */}
-        <section className="flex flex-col gap-4">
+        {/* Center Column: Pending Swaps/Trades & Live Terminal */}
+        <section className={`flex flex-col gap-4 min-h-0 ${showSidePanel ? 'xl:col-span-5' : 'xl:col-span-6'}`}>
           <TradeApprovals />
           <LiveAuditTerminal />
         </section>
+
+        {/* Right Column: Recent Admin Actions Side-Panel */}
+        {showSidePanel && (
+          <section className="flex flex-col gap-4 min-h-0 xl:col-span-3">
+            <RecentAdminActionsPanel 
+              isCollapsed={false}
+              onToggleCollapse={() => setShowSidePanel(false)}
+            />
+          </section>
+        )}
       </div>
+
+      {/* User & Access Management Modal */}
+      <UserManagementModal
+        isOpen={isUserManagementOpen}
+        onClose={() => setIsUserManagementOpen(false)}
+        initialTab={userManagementTab}
+      />
     </main>
   );
 };
+
