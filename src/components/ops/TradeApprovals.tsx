@@ -88,7 +88,7 @@ export const TradeApprovals: React.FC = () => {
   };
 
   return (
-    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex-1 flex flex-col overflow-hidden">
+    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col">
       {/* Sub-header Navigation Tabs */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3 mb-3 shrink-0">
         <div>

@@ -102,7 +102,7 @@ export const ShiftManager: React.FC = () => {
   });
 
   return (
-    <div className="flex flex-col gap-4 h-full overflow-hidden">
+    <div className="flex flex-col gap-4">
       {/* 1. Shift Creation Panel */}
       <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs shrink-0">
         <div className="flex justify-between items-center mb-3">
