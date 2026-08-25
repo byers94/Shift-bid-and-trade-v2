@@ -8,7 +8,11 @@ import {
   TrainingStatus,
   AdminAction,
   AdminUser,
-  ShiftTemplate
+  ShiftTemplate,
+  EmergencyBroadcast,
+  AlertSeverity,
+  AlertType,
+  BroadcastAcknowledgment
 } from '../types/shift';
 import { 
   INITIAL_SHIFTS, 
@@ -17,11 +21,13 @@ import {
   INITIAL_ADMIN_ACTIONS,
   INITIAL_ADMIN_USERS,
   INITIAL_SHIFT_TEMPLATES,
+  INITIAL_BIDS,
   CURRENT_GUARD, 
   GUARDS_LIST,
   OPS_DISPATCH_PHONE 
 } from '../data/mockData';
 import { calculateHours, generateSmsLink } from '../utils/time';
+import { playEmergencyAlertSound } from '../utils/audioAlert';
 
 interface NotificationToast {
   id: string;
@@ -45,14 +51,32 @@ interface ShiftOpsContextType {
   opsPhone: string;
   hideFilledShifts: boolean;
   toasts: NotificationToast[];
+  activeBroadcast: EmergencyBroadcast | null;
+  broadcastHistory: EmergencyBroadcast[];
+  theme: 'light' | 'dark';
   
   // Actions
   setActiveView: (view: 'dual' | 'guard' | 'ops') => void;
   setActiveGuard: (guard: GuardProfile) => void;
+  setTheme: (theme: 'light' | 'dark') => void;
+  toggleTheme: () => void;
   setHideFilledShifts: (hide: boolean) => void;
   dismissToast: (id: string) => void;
   showToast: (title: string, message: string, type: 'info' | 'success' | 'warning' | 'danger') => void;
   logAdminAction: (action: Omit<AdminAction, 'id' | 'timestamp'> & { timestamp?: string }) => void;
+  
+  // Emergency Broadcast Operations
+  sendEmergencyBroadcast: (data: {
+    severity: AlertSeverity;
+    alertType: AlertType;
+    title: string;
+    message: string;
+    targetSites?: string[];
+    requireAcknowledgment?: boolean;
+    initiatedBy?: string;
+  }) => EmergencyBroadcast;
+  acknowledgeBroadcast: (guardId: string, guardName: string, badgeNumber: string, locationNote?: string) => void;
+  cancelOrResolveBroadcast: (broadcastId?: string, resolutionNote?: string, resolvedBy?: string) => void;
   
   // Shift Templates Management
   addShiftTemplate: (data: Omit<ShiftTemplate, 'id' | 'createdAt'>) => ShiftTemplate;
@@ -78,6 +102,11 @@ interface ShiftOpsContextType {
     phone: string;
     role: 'guard' | 'lead' | 'supervisor';
     ojtSites: string[];
+    email?: string;
+    trainingLevel?: 'trained' | 'needs_ojt' | 'lead_certified' | 'in_training';
+    certifications?: string[];
+    notes?: string;
+    hireDate?: string;
   }) => GuardProfile;
   updateGuard: (id: string, data: Partial<GuardProfile>) => void;
   deleteGuard: (id: string) => void;
@@ -101,9 +130,11 @@ interface ShiftOpsContextType {
   
   // Guard Bid Operations
   submitBid: (shiftId: string, trainingStatus: TrainingStatus) => { smsUrl: string; smsBody: string };
+  awardShiftBid: (shiftId: string, bidId: string, guardName: string, guardPhone?: string) => void;
   
   // Trade Operations
   postTradeRequest: (data: {
+    type?: 'giveaway' | 'swap';
     siteName: string;
     address?: string;
     location?: string;
@@ -112,6 +143,16 @@ interface ShiftOpsContextType {
     endTime: string;
     reason: string;
   }) => Trade;
+  updateTradePost: (
+    tradeId: string,
+    updates: {
+      reason?: string;
+      type?: 'giveaway' | 'swap';
+      siteName?: string;
+      location?: string;
+      address?: string;
+    }
+  ) => void;
   proposeSwap: (tradeId: string, data: {
     siteName: string;
     address?: string;
@@ -122,7 +163,12 @@ interface ShiftOpsContextType {
     datesTimesNotes: string;
     ojtStatus: TrainingStatus;
   }) => void;
-  approveTradePost: (tradeId: string, note?: string) => void;
+  approveTradePost: (
+    tradeId: string,
+    note?: string,
+    updatedReason?: string,
+    updatedType?: 'giveaway' | 'swap'
+  ) => void;
   denyTradePost: (tradeId: string, reason: string) => void;
   approveSwap: (tradeId: string, note?: string) => void;
   denySwap: (tradeId: string, reason: string) => void;
@@ -141,6 +187,9 @@ const STORAGE_KEY_ADMIN_ACTIONS = 'secureshift_admin_actions_v1';
 const STORAGE_KEY_ADMIN_USERS = 'secureshift_admin_users_v1';
 const STORAGE_KEY_GUARDS = 'secureshift_guards_v1';
 const STORAGE_KEY_TEMPLATES = 'secureshift_templates_v1';
+const STORAGE_KEY_BROADCAST = 'secureshift_emergency_broadcast_v1';
+const STORAGE_KEY_BROADCAST_HISTORY = 'secureshift_broadcast_history_v1';
+const STORAGE_KEY_THEME = 'secureshift_theme_mode_v1';
 
 export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [shifts, setShifts] = useState<Shift[]>(() => {
@@ -209,6 +258,24 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [bids, setBids] = useState<BidRecord[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_BIDS);
+      return saved ? JSON.parse(saved) : INITIAL_BIDS;
+    } catch {
+      return INITIAL_BIDS;
+    }
+  });
+
+  const [activeBroadcast, setActiveBroadcast] = useState<EmergencyBroadcast | null>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_BROADCAST);
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [broadcastHistory, setBroadcastHistory] = useState<EmergencyBroadcast[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_BROADCAST_HISTORY);
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -223,7 +290,73 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [toasts, setToasts] = useState<NotificationToast[]>([]);
   const opsPhone = OPS_DISPATCH_PHONE;
 
+  // Light / Dark Theme State with System / Storage fallback
+  const [theme, setThemeState] = useState<'light' | 'dark'>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_THEME);
+      if (saved === 'dark' || saved === 'light') return saved;
+      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        return 'dark';
+      }
+    } catch {}
+    return 'light';
+  });
+
+  const setTheme = (newTheme: 'light' | 'dark') => {
+    setThemeState(newTheme);
+    try {
+      localStorage.setItem(STORAGE_KEY_THEME, newTheme);
+    } catch (e) {
+      console.warn('Theme save failed', e);
+    }
+  };
+
+  const toggleTheme = () => {
+    setThemeState((prev) => {
+      const nextTheme = prev === 'light' ? 'dark' : 'light';
+      try {
+        localStorage.setItem(STORAGE_KEY_THEME, nextTheme);
+      } catch (e) {
+        console.warn('Theme save failed', e);
+      }
+      return nextTheme;
+    });
+  };
+
+  // Synchronize 'dark' class on documentElement for universal styling
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+      root.setAttribute('data-theme', 'dark');
+      document.body.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+      root.setAttribute('data-theme', 'light');
+      document.body.classList.remove('dark');
+    }
+  }, [theme]);
+
   // Persist state to localStorage
+  useEffect(() => {
+    try {
+      if (activeBroadcast) {
+        localStorage.setItem(STORAGE_KEY_BROADCAST, JSON.stringify(activeBroadcast));
+      } else {
+        localStorage.removeItem(STORAGE_KEY_BROADCAST);
+      }
+    } catch (e) {
+      console.warn('Storage save failed for activeBroadcast', e);
+    }
+  }, [activeBroadcast]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_BROADCAST_HISTORY, JSON.stringify(broadcastHistory));
+    } catch (e) {
+      console.warn('Storage save failed for broadcastHistory', e);
+    }
+  }, [broadcastHistory]);
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY_SHIFTS, JSON.stringify(shifts));
@@ -319,7 +452,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const addAuditLog = (
     action: string,
-    category: 'shift' | 'trade' | 'swap' | 'system',
+    category: 'shift' | 'trade' | 'swap' | 'system' | 'broadcast',
     details: string,
     actor: string,
     status: 'info' | 'success' | 'warning' | 'danger'
@@ -571,8 +704,47 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return { smsUrl, smsBody };
   };
 
-  // 7. Post Trade Request (Guard)
+  // 7. Award Shift to Bidder (Ops Admin)
+  const awardShiftBid = (shiftId: string, bidId: string, guardName: string, guardPhone?: string) => {
+    const shift = shifts.find((s) => s.id === shiftId);
+    const siteLabel = shift ? shift.siteName : shiftId;
+
+    // Find guard profile id if available
+    const matchedGuard = guardsList.find((g) => g.name.toLowerCase() === guardName.toLowerCase());
+    const guardId = matchedGuard ? matchedGuard.id : undefined;
+
+    setShifts((prev) =>
+      prev.map((s) => (s.id === shiftId ? { ...s, status: 'filled', assignedGuardName: guardName, assignedGuardId: guardId } : s))
+    );
+
+    addAuditLog(
+      'SHIFT_AWARDED',
+      'shift',
+      `Shift #${shiftId} at ${siteLabel} AWARDED to bidder: ${guardName}. Position marked FILLED.`,
+      'Ops Admin (Dispatcher)',
+      'success'
+    );
+
+    logAdminAction({
+      type: 'shift_filled',
+      title: 'Shift Awarded to Bidder',
+      description: `Awarded ${siteLabel} to bidder ${guardName}.`,
+      adminName: 'Lt. Mark O\'Connor',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'emerald',
+      metadata: { shiftId, bidId, guard: guardName, site: siteLabel }
+    });
+
+    showToast(
+      'Shift Awarded & Filled',
+      `Position at ${siteLabel} successfully awarded to ${guardName}.`,
+      'success'
+    );
+  };
+
+  // 8. Post Trade Request (Guard)
   const postTradeRequest = (data: {
+    type?: 'giveaway' | 'swap';
     siteName: string;
     address?: string;
     location?: string;
@@ -582,9 +754,10 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     reason: string;
   }): Trade => {
     const hours = calculateHours(data.startTime, data.endTime);
+    const tradeType = data.type || 'giveaway';
     const newTrade: Trade = {
       id: 'trade-' + Date.now().toString().slice(-4),
-      type: 'giveaway',
+      type: tradeType,
       status: 'pending_approval',
       originalShift: {
         siteName: data.siteName.trim(),
@@ -602,17 +775,66 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     setTrades((prev) => [newTrade, ...prev]);
 
+    const typeLabel = tradeType === 'swap' ? 'shift swap (exchange)' : 'shift giveaway (drop)';
     addAuditLog(
       'POST_REQUEST_SUBMITTED',
       'trade',
-      `${activeGuard.name} requested to list shift ${data.siteName} (${data.date}) for trade/giveaway. Awaiting Ops approval.`,
+      `${activeGuard.name} requested to list shift ${data.siteName} (${data.date}) for ${typeLabel}. Awaiting Ops approval.`,
       activeGuard.name,
       'warning'
     );
 
-    showToast('Trade Request Submitted', 'Submitted to Ops Dispatch for review.', 'info');
+    showToast(
+      'Trade Request Submitted',
+      `Submitted ${tradeType === 'swap' ? 'swap request' : 'giveaway drop'} to Ops Dispatch for review.`,
+      'info'
+    );
 
     return newTrade;
+  };
+
+  // 7b. Update Trade Post Details / Notes (Ops or Guard)
+  const updateTradePost = (
+    tradeId: string,
+    updates: {
+      reason?: string;
+      type?: 'giveaway' | 'swap';
+      siteName?: string;
+      location?: string;
+      address?: string;
+    }
+  ) => {
+    setTrades((prev) =>
+      prev.map((t) => {
+        if (t.id === tradeId) {
+          const updated: Trade = {
+            ...t,
+            type: updates.type !== undefined ? updates.type : t.type,
+            reason: updates.reason !== undefined ? updates.reason.trim() : t.reason,
+            originalShift: {
+              ...t.originalShift,
+              siteName: updates.siteName !== undefined ? updates.siteName.trim() : t.originalShift.siteName,
+              location: updates.location !== undefined ? updates.location.trim() : t.originalShift.location,
+              address: updates.address !== undefined ? updates.address.trim() : t.originalShift.address
+            }
+          };
+          return updated;
+        }
+        return t;
+      })
+    );
+
+    const targetTrade = trades.find((t) => t.id === tradeId);
+    const site = updates.siteName || targetTrade?.originalShift.siteName || 'Shift';
+    addAuditLog(
+      'TRADE_MODIFIED',
+      'trade',
+      `Ops dispatcher modified request information & notes for trade listing #${tradeId} (${site}).`,
+      'Ops Admin',
+      'info'
+    );
+
+    showToast('Trade Details Updated', 'Saved dispatcher revisions to shift notes/parameters.', 'success');
   };
 
   // 8. Propose Swap (Guard)
@@ -680,12 +902,19 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   // 9. Approve Trade Post (Ops)
-  const approveTradePost = (tradeId: string, note?: string) => {
+  const approveTradePost = (
+    tradeId: string,
+    note?: string,
+    updatedReason?: string,
+    updatedType?: 'giveaway' | 'swap'
+  ) => {
     setTrades((prev) =>
       prev.map((t) => {
         if (t.id === tradeId) {
           return {
             ...t,
+            type: updatedType !== undefined ? updatedType : t.type,
+            reason: updatedReason !== undefined ? updatedReason.trim() : t.reason,
             status: 'active',
             resolutionNote: note || 'Approved by Ops Admin for open board trade'
           };
@@ -697,18 +926,19 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const trade = trades.find((t) => t.id === tradeId);
     const guardName = trade?.offeringGuard.name || 'Guard';
     const siteName = trade?.originalShift.siteName || 'Shift';
-    const details = `Trade listing #${tradeId} (${siteName}) APPROVED by Ops. Now live on Trade Board.`;
+    const finalType = updatedType || trade?.type || 'giveaway';
+    const details = `Trade listing #${tradeId} (${siteName}, ${finalType.toUpperCase()}) APPROVED by Ops. Now live on Trade Board.`;
     
     addAuditLog('POST_APPROVED', 'trade', details, 'Ops Admin', 'success');
     
     logAdminAction({
       type: 'trade_approved',
-      title: 'Trade Giveaway Approved',
-      description: `Authorized shift giveaway for ${guardName} at ${siteName}`,
+      title: finalType === 'swap' ? 'Trade Swap Approved' : 'Shift Giveaway Approved',
+      description: `Authorized ${finalType === 'swap' ? 'swap listing' : 'shift giveaway'} for ${guardName} at ${siteName}`,
       adminName: 'Dispatcher Sarah Keller',
       adminBadge: 'OPS-DISP-04',
       badgeVariant: 'blue',
-      metadata: { tradeId, guard: guardName, site: siteName }
+      metadata: { tradeId, guard: guardName, site: siteName, tradeType: finalType }
     });
 
     showToast('Trade Listing Approved', 'The shift is now visible on the Guard Trade Board.', 'success');
@@ -940,6 +1170,11 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     phone: string;
     role: 'guard' | 'lead' | 'supervisor';
     ojtSites: string[];
+    email?: string;
+    trainingLevel?: 'trained' | 'needs_ojt' | 'lead_certified' | 'in_training';
+    certifications?: string[];
+    notes?: string;
+    hireDate?: string;
   }): GuardProfile => {
     const newGuard: GuardProfile = {
       id: 'guard-' + Date.now().toString().slice(-4),
@@ -947,7 +1182,12 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       badgeNumber: data.badgeNumber.trim().toUpperCase(),
       phone: data.phone.trim(),
       role: data.role,
-      ojtSites: data.ojtSites || []
+      ojtSites: data.ojtSites || [],
+      email: data.email?.trim() || undefined,
+      trainingLevel: data.trainingLevel || (data.ojtSites && data.ojtSites.length > 1 ? 'trained' : 'needs_ojt'),
+      certifications: data.certifications || [],
+      notes: data.notes?.trim() || undefined,
+      hireDate: data.hireDate || new Date().toISOString().split('T')[0]
     };
 
     setGuardsList((prev) => [...prev, newGuard]);
@@ -1125,6 +1365,158 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     showToast('Template Deleted', `Template "${tmplName}" removed.`, 'warning');
   };
 
+  // Emergency Broadcast Handlers
+  const sendEmergencyBroadcast = (data: {
+    severity: AlertSeverity;
+    alertType: AlertType;
+    title: string;
+    message: string;
+    targetSites?: string[];
+    requireAcknowledgment?: boolean;
+    initiatedBy?: string;
+  }): EmergencyBroadcast => {
+    const newBroadcast: EmergencyBroadcast = {
+      id: 'broadcast-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+      active: true,
+      severity: data.severity,
+      alertType: data.alertType,
+      title: data.title.trim(),
+      message: data.message.trim(),
+      targetSites: (data.targetSites && data.targetSites.length > 0) ? data.targetSites : ['ALL SITES'],
+      requireAcknowledgment: data.requireAcknowledgment !== false,
+      acknowledgedBy: [],
+      initiatedBy: data.initiatedBy || "Lt. Mark O'Connor (OPS-CMD-01)",
+      createdAt: new Date().toISOString()
+    };
+
+    setActiveBroadcast(newBroadcast);
+    setBroadcastHistory((prev) => [newBroadcast, ...prev.slice(0, 19)]);
+
+    // Trigger audio siren tone
+    try {
+      playEmergencyAlertSound(data.severity);
+    } catch {}
+
+    const sitesLabel = newBroadcast.targetSites.join(', ');
+    const logDetails = `[${data.severity.toUpperCase()} ALERT] ${newBroadcast.title} issued by ${newBroadcast.initiatedBy} to [${sitesLabel}]: "${newBroadcast.message}"`;
+    addAuditLog('EMERGENCY_BROADCAST_SENT', 'broadcast', logDetails, newBroadcast.initiatedBy, data.severity === 'critical' ? 'danger' : 'warning');
+
+    logAdminAction({
+      type: 'emergency_broadcast_sent',
+      title: `Emergency Broadcast: ${newBroadcast.title}`,
+      description: `Dispatched ${data.severity.toUpperCase()} alert to ${sitesLabel}. Required ACK: ${newBroadcast.requireAcknowledgment ? 'YES' : 'NO'}.`,
+      adminName: data.initiatedBy ? data.initiatedBy.split(' (')[0] : "Lt. Mark O'Connor",
+      adminBadge: data.initiatedBy ? (data.initiatedBy.match(/\((.*?)\)/)?.[1] || 'OPS-CMD-01') : 'OPS-CMD-01',
+      badgeVariant: data.severity === 'critical' ? 'rose' : data.severity === 'warning' ? 'amber' : 'blue',
+      metadata: { broadcastId: newBroadcast.id, severity: data.severity, alertType: data.alertType, targetSites: newBroadcast.targetSites }
+    });
+
+    showToast(
+      '🚨 EMERGENCY BROADCAST ACTIVE',
+      `Alert pushed to connected Guard terminals. (${sitesLabel})`,
+      'danger'
+    );
+
+    return newBroadcast;
+  };
+
+  const acknowledgeBroadcast = (
+    guardId: string,
+    guardName: string,
+    badgeNumber: string,
+    locationNote?: string
+  ) => {
+    if (!activeBroadcast || !activeBroadcast.active) return;
+
+    // Avoid duplicate acknowledgment
+    if (activeBroadcast.acknowledgedBy.some((a) => a.guardId === guardId)) {
+      return;
+    }
+
+    const newAck: BroadcastAcknowledgment = {
+      guardId,
+      guardName,
+      badgeNumber,
+      timestamp: new Date().toISOString(),
+      locationNote: locationNote?.trim()
+    };
+
+    const updatedBroadcast: EmergencyBroadcast = {
+      ...activeBroadcast,
+      acknowledgedBy: [newAck, ...activeBroadcast.acknowledgedBy]
+    };
+
+    setActiveBroadcast(updatedBroadcast);
+    setBroadcastHistory((prev) =>
+      prev.map((b) => (b.id === updatedBroadcast.id ? updatedBroadcast : b))
+    );
+
+    const noteText = locationNote ? ` [Note: "${locationNote}"]` : '';
+    addAuditLog(
+      'BROADCAST_ACKNOWLEDGED',
+      'broadcast',
+      `Officer ${guardName} (${badgeNumber}) confirmed receipt of Alert "${activeBroadcast.title}"${noteText}`,
+      `${guardName} (${badgeNumber})`,
+      'success'
+    );
+
+    showToast(
+      'Receipt Confirmed',
+      `Officer ${guardName} acknowledged emergency instructions.`,
+      'success'
+    );
+  };
+
+  const cancelOrResolveBroadcast = (
+    broadcastId?: string,
+    resolutionNote?: string,
+    resolvedBy?: string
+  ) => {
+    if (!activeBroadcast) return;
+    const targetId = broadcastId || activeBroadcast.id;
+    if (activeBroadcast.id !== targetId) return;
+
+    const resolver = resolvedBy || "Lt. Mark O'Connor (OPS-CMD-01)";
+    const note = resolutionNote || "Threat neutralized / all-clear condition confirmed by Ops Dispatch.";
+
+    const resolvedRecord: EmergencyBroadcast = {
+      ...activeBroadcast,
+      active: false,
+      resolvedAt: new Date().toISOString(),
+      resolvedBy: resolver,
+      resolutionNote: note
+    };
+
+    setActiveBroadcast(null);
+    setBroadcastHistory((prev) =>
+      prev.map((b) => (b.id === targetId ? resolvedRecord : b))
+    );
+
+    addAuditLog(
+      'EMERGENCY_BROADCAST_RESOLVED',
+      'broadcast',
+      `ALL-CLEAR / STAND DOWN: Alert "${activeBroadcast.title}" resolved by ${resolver}. Note: "${note}"`,
+      resolver,
+      'info'
+    );
+
+    logAdminAction({
+      type: 'emergency_broadcast_resolved',
+      title: 'Emergency Broadcast Stood Down',
+      description: `All-clear issued for "${activeBroadcast.title}". (${activeBroadcast.acknowledgedBy.length} guard ACKs logged).`,
+      adminName: resolver.split(' (')[0],
+      adminBadge: resolver.match(/\((.*?)\)/)?.[1] || 'OPS-CMD-01',
+      badgeVariant: 'emerald',
+      metadata: { broadcastId: targetId, acksCount: activeBroadcast.acknowledgedBy.length, note }
+    });
+
+    showToast(
+      'ALL CLEAR ISSUED',
+      'Emergency broadcast stood down. Guard views updated to normal operations.',
+      'info'
+    );
+  };
+
   // Reset to Defaults
   const resetToDefaults = () => {
     setShifts(INITIAL_SHIFTS);
@@ -1135,7 +1527,9 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setGuardsList(GUARDS_LIST);
     setShiftTemplates(INITIAL_SHIFT_TEMPLATES);
     setActiveGuard(GUARDS_LIST[0] || CURRENT_GUARD);
-    setBids([]);
+    setBids(INITIAL_BIDS);
+    setActiveBroadcast(null);
+    setBroadcastHistory([]);
     localStorage.removeItem(STORAGE_KEY_SHIFTS);
     localStorage.removeItem(STORAGE_KEY_TRADES);
     localStorage.removeItem(STORAGE_KEY_LOGS);
@@ -1144,7 +1538,9 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     localStorage.removeItem(STORAGE_KEY_GUARDS);
     localStorage.removeItem(STORAGE_KEY_TEMPLATES);
     localStorage.removeItem(STORAGE_KEY_BIDS);
-    showToast('System Reset', 'Demo shift, trade, and user data restored to initial state.', 'info');
+    localStorage.removeItem(STORAGE_KEY_BROADCAST);
+    localStorage.removeItem(STORAGE_KEY_BROADCAST_HISTORY);
+    showToast('System Reset', 'Demo shift, trade, user, and alert data restored to initial state.', 'info');
   };
 
   return (
@@ -1163,12 +1559,20 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         opsPhone,
         hideFilledShifts,
         toasts,
+        activeBroadcast,
+        broadcastHistory,
+        theme,
         setActiveView,
         setActiveGuard,
+        setTheme,
+        toggleTheme,
         setHideFilledShifts,
         dismissToast,
         showToast,
         logAdminAction,
+        sendEmergencyBroadcast,
+        acknowledgeBroadcast,
+        cancelOrResolveBroadcast,
         addShiftTemplate,
         updateShiftTemplate,
         deleteShiftTemplate,
@@ -1184,7 +1588,9 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         reopenShift,
         deleteShift,
         submitBid,
+        awardShiftBid,
         postTradeRequest,
+        updateTradePost,
         proposeSwap,
         approveTradePost,
         denyTradePost,

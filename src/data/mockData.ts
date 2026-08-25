@@ -1,4 +1,4 @@
-import { Shift, Trade, AuditLogEntry, GuardProfile, AdminAction, AdminUser, ShiftTemplate } from '../types/shift';
+import { Shift, Trade, AuditLogEntry, GuardProfile, AdminAction, AdminUser, ShiftTemplate, BidRecord } from '../types/shift';
 
 export const OPS_DISPATCH_PHONE = '+1 (800) 555-0199';
 
@@ -47,6 +47,11 @@ export const CURRENT_GUARD: GuardProfile = {
   phone: '+1 (555) 234-5678',
   badgeNumber: 'SEC-8842',
   role: 'guard',
+  trainingLevel: 'trained',
+  email: 'alex.mercer@secureshift.net',
+  certifications: ['TWIC Card', 'Armed Endorsement', 'CPR/AED', 'Level 2 Baton'],
+  hireDate: '2024-03-15',
+  notes: 'Senior patrol guard, reliable on maritime and commercial facilities.',
   ojtSites: ['Port Authority - Pier 7', 'Corporate HQ', 'Retail Plaza', 'West Medical Center'],
 };
 
@@ -58,6 +63,11 @@ export const GUARDS_LIST: GuardProfile[] = [
     phone: '+1 (555) 345-6789',
     badgeNumber: 'SEC-7721',
     role: 'guard',
+    trainingLevel: 'trained',
+    email: 'sarah.jenkins@secureshift.net',
+    certifications: ['CCTV Monitoring', 'CPR/AED', 'Hospitality Security'],
+    hireDate: '2024-06-10',
+    notes: 'Specialist in front-desk concierge and corporate patrol.',
     ojtSites: ['Hotel Lobby', 'Corporate HQ', 'Downtown Financial Center'],
   },
   {
@@ -66,6 +76,11 @@ export const GUARDS_LIST: GuardProfile[] = [
     phone: '+1 (555) 456-7890',
     badgeNumber: 'SEC-9104',
     role: 'guard',
+    trainingLevel: 'needs_ojt',
+    email: 'mike.chen@secureshift.net',
+    certifications: ['Guard Card', 'First Aid'],
+    hireDate: '2026-01-08',
+    notes: 'Recently onboarded; pending OJT clearance on Port Authority and Tech Campus.',
     ojtSites: ['Industrial Warehouse', 'Retail Plaza'], // Note: Not trained on Port Authority!
   },
   {
@@ -74,7 +89,12 @@ export const GUARDS_LIST: GuardProfile[] = [
     phone: '+1 (555) 567-8901',
     badgeNumber: 'SEC-6340',
     role: 'lead',
-    ojtSites: ['City Airport Gate 4', 'West Medical Center', 'Corporate HQ'],
+    trainingLevel: 'lead_certified',
+    email: 'marcus.wright@secureshift.net',
+    certifications: ['SIDA Badge', 'TSA Screener', 'Armed Endorsement', 'Incident Command'],
+    hireDate: '2023-08-20',
+    notes: 'Field Lead with TSA screener and aviation security credentials.',
+    ojtSites: ['City Airport Gate 4', 'West Medical Center', 'Corporate HQ', 'Port Authority - Pier 7'],
   },
   {
     id: 'guard-104',
@@ -82,7 +102,12 @@ export const GUARDS_LIST: GuardProfile[] = [
     phone: '+1 (555) 678-9012',
     badgeNumber: 'SEC-4199',
     role: 'guard',
-    ojtSites: ['Tech Campus North', 'City Airport Gate 4'],
+    trainingLevel: 'trained',
+    email: 'elena.rostova@secureshift.net',
+    certifications: ['Secret Clearance', 'Biometric Systems', 'Access Control Specialist'],
+    hireDate: '2024-11-04',
+    notes: 'High-security facility clearance with biometric server room access.',
+    ojtSites: ['Tech Campus North', 'City Airport Gate 4', 'Corporate HQ'],
   },
   {
     id: 'guard-105',
@@ -90,7 +115,47 @@ export const GUARDS_LIST: GuardProfile[] = [
     phone: '+1 (555) 789-0123',
     badgeNumber: 'SEC-5510',
     role: 'guard',
-    ojtSites: ['Port Authority - Pier 7', 'Industrial Warehouse'],
+    trainingLevel: 'trained',
+    email: 'david.silva@secureshift.net',
+    certifications: ['TWIC Card', 'Heavy Equipment Perimeter', 'Night Ops Specialist'],
+    hireDate: '2025-02-17',
+    notes: 'Experienced in port logistics and night industrial coverage.',
+    ojtSites: ['Port Authority - Pier 7', 'Industrial Warehouse', 'Retail Plaza'],
+  },
+  {
+    id: 'guard-106',
+    name: 'Jamar Vance',
+    phone: '+1 (555) 890-1234',
+    badgeNumber: 'SEC-3820',
+    role: 'guard',
+    trainingLevel: 'needs_ojt',
+    email: 'jamar.vance@secureshift.net',
+    certifications: ['Guard Card', 'Crowd Control'],
+    hireDate: '2026-06-01',
+    notes: 'New guard. Needs supervisor orientation before medical or airport postings.',
+    ojtSites: ['Retail Plaza'],
+  },
+  {
+    id: 'guard-107',
+    name: 'Chloe Bennett',
+    phone: '+1 (555) 901-2345',
+    badgeNumber: 'SEC-1102',
+    role: 'supervisor',
+    trainingLevel: 'lead_certified',
+    email: 'chloe.bennett@secureshift.net',
+    certifications: ['Master Instructor', 'Armed Master', 'Crisis Negotiation', 'AED/CPR'],
+    hireDate: '2022-04-12',
+    notes: 'Shift Supervisor. Certified to conduct OJT sign-offs on all regional sites.',
+    ojtSites: [
+      'Port Authority - Pier 7',
+      'Corporate HQ',
+      'West Medical Center',
+      'City Airport Gate 4',
+      'Retail Plaza',
+      'Tech Campus North',
+      'Hotel Lobby',
+      'Industrial Warehouse'
+    ],
   }
 ];
 
@@ -568,6 +633,100 @@ export const INITIAL_SHIFT_TEMPLATES: ShiftTemplate[] = [
     daysPattern: 'Mon - Sat',
     notes: 'High visibility customer-facing foot patrol and lost child assistance.',
     requiredCertifications: ['Customer Service', 'Loss Prevention']
+  }
+];
+
+export const INITIAL_BIDS: BidRecord[] = [
+  {
+    id: 'bid-101-1',
+    shiftId: 'shift-101',
+    siteName: 'Port Authority - Pier 7',
+    shiftDate: '2026-08-22',
+    shiftTime: '19:00 - 07:00',
+    hours: 12,
+    guardName: 'Alex Mercer',
+    guardPhone: '+1 (555) 234-5678',
+    trainingStatus: 'trained',
+    smsBody: '[SECURESHIFT BID]\nGuard: Alex Mercer (SEC-8842)\nPhone: +1 (555) 234-5678\nShift: Port Authority - Pier 7\nDate: 2026-08-22 (19:00-07:00, 12h)\nStatus: I am fully TRAINED & qualified on this site.\nPlease confirm assignment.',
+    timestamp: '2026-08-21T09:45:00Z'
+  },
+  {
+    id: 'bid-101-2',
+    shiftId: 'shift-101',
+    siteName: 'Port Authority - Pier 7',
+    shiftDate: '2026-08-22',
+    shiftTime: '19:00 - 07:00',
+    hours: 12,
+    guardName: 'David Silva',
+    guardPhone: '+1 (555) 789-0123',
+    trainingStatus: 'trained',
+    smsBody: '[SECURESHIFT BID]\nGuard: David Silva (SEC-5510)\nPhone: +1 (555) 789-0123\nShift: Port Authority - Pier 7\nDate: 2026-08-22 (19:00-07:00, 12h)\nStatus: I am fully TRAINED & qualified on this site.\nPlease confirm assignment.',
+    timestamp: '2026-08-21T10:30:00Z'
+  },
+  {
+    id: 'bid-102-1',
+    shiftId: 'shift-102',
+    siteName: 'Corporate HQ - Night Patrol',
+    shiftDate: '2026-08-23',
+    shiftTime: '22:00 - 06:00',
+    hours: 8,
+    guardName: 'Sarah Jenkins',
+    guardPhone: '+1 (555) 345-6789',
+    trainingStatus: 'trained',
+    smsBody: '[SECURESHIFT BID]\nGuard: Sarah Jenkins (SEC-7721)\nPhone: +1 (555) 345-6789\nShift: Corporate HQ - Night Patrol\nDate: 2026-08-23 (22:00-06:00, 8h)\nStatus: I am fully TRAINED & qualified on this site.\nPlease confirm assignment.',
+    timestamp: '2026-08-21T11:15:00Z'
+  },
+  {
+    id: 'bid-106-1',
+    shiftId: 'shift-106',
+    siteName: 'Tech Campus North - Data Center',
+    shiftDate: '2026-08-25',
+    shiftTime: '00:00 - 08:00',
+    hours: 8,
+    guardName: 'Elena Rostova',
+    guardPhone: '+1 (555) 678-9012',
+    trainingStatus: 'trained',
+    smsBody: '[SECURESHIFT BID]\nGuard: Elena Rostova (SEC-4199)\nPhone: +1 (555) 678-9012\nShift: Tech Campus North - Data Center\nDate: 2026-08-25 (00:00-08:00, 8h)\nStatus: I am fully TRAINED & qualified on this site.\nPlease confirm assignment.',
+    timestamp: '2026-08-21T12:00:00Z'
+  },
+  {
+    id: 'bid-104-1',
+    shiftId: 'shift-104',
+    siteName: 'City Airport Gate 4',
+    shiftDate: '2026-08-21',
+    shiftTime: '12:00 - 20:00',
+    hours: 8,
+    guardName: 'Marcus Wright',
+    guardPhone: '+1 (555) 567-8901',
+    trainingStatus: 'trained',
+    smsBody: '[SECURESHIFT BID]\nGuard: Marcus Wright (SEC-6340)\nPhone: +1 (555) 567-8901\nShift: City Airport Gate 4\nDate: 2026-08-21 (12:00-20:00, 8h)\nStatus: I am fully TRAINED & qualified on this site.\nPlease confirm assignment.',
+    timestamp: '2026-08-20T17:00:00Z'
+  },
+  {
+    id: 'bid-104-2',
+    shiftId: 'shift-104',
+    siteName: 'City Airport Gate 4',
+    shiftDate: '2026-08-21',
+    shiftTime: '12:00 - 20:00',
+    hours: 8,
+    guardName: 'Mike Chen',
+    guardPhone: '+1 (555) 456-7890',
+    trainingStatus: 'needs_ojt',
+    smsBody: '[SECURESHIFT BID]\nGuard: Mike Chen (SEC-9104)\nPhone: +1 (555) 456-7890\nShift: City Airport Gate 4\nDate: 2026-08-21 (12:00-20:00, 8h)\nStatus: I NEED OJT / Site Orientation.\nPlease confirm assignment.',
+    timestamp: '2026-08-20T18:10:00Z'
+  },
+  {
+    id: 'bid-104-3',
+    shiftId: 'shift-104',
+    siteName: 'City Airport Gate 4',
+    shiftDate: '2026-08-21',
+    shiftTime: '12:00 - 20:00',
+    hours: 8,
+    guardName: 'Elena Rostova',
+    guardPhone: '+1 (555) 678-9012',
+    trainingStatus: 'trained',
+    smsBody: '[SECURESHIFT BID]\nGuard: Elena Rostova (SEC-4199)\nPhone: +1 (555) 678-9012\nShift: City Airport Gate 4\nDate: 2026-08-21 (12:00-20:00, 8h)\nStatus: I am fully TRAINED & qualified on this site.\nPlease confirm assignment.',
+    timestamp: '2026-08-20T19:00:00Z'
   }
 ];
 

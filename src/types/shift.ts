@@ -45,6 +45,11 @@ export interface GuardProfile {
   badgeNumber: string;
   role: 'guard' | 'lead' | 'supervisor';
   ojtSites: string[]; // sites guard is fully qualified/trained on
+  email?: string;
+  trainingLevel?: 'trained' | 'needs_ojt' | 'lead_certified' | 'in_training';
+  certifications?: string[];
+  notes?: string;
+  hireDate?: string;
 }
 
 export interface SwapProposal {
@@ -86,7 +91,7 @@ export interface BidRecord {
 export interface AuditLogEntry {
   id: string;
   action: string;
-  category: 'shift' | 'trade' | 'swap' | 'system';
+  category: 'shift' | 'trade' | 'swap' | 'system' | 'broadcast';
   details: string;
   timestamp: string;
   actor: string;
@@ -128,6 +133,8 @@ export type AdminActionType =
   | 'template_created'
   | 'template_updated'
   | 'template_deleted'
+  | 'emergency_broadcast_sent'
+  | 'emergency_broadcast_resolved'
   | 'system_reset';
 
 export interface AdminAction {
@@ -140,6 +147,42 @@ export interface AdminAction {
   timestamp: string;
   badgeVariant: 'blue' | 'emerald' | 'amber' | 'rose' | 'slate' | 'purple';
   metadata?: Record<string, any>;
+}
+
+export type AlertSeverity = 'critical' | 'warning' | 'info';
+
+export type AlertType =
+  | 'lockdown'
+  | 'active_threat'
+  | 'fire_evac'
+  | 'severe_weather'
+  | 'perimeter_breach'
+  | 'medical'
+  | 'general_alert';
+
+export interface BroadcastAcknowledgment {
+  guardId: string;
+  guardName: string;
+  badgeNumber: string;
+  timestamp: string;
+  locationNote?: string;
+}
+
+export interface EmergencyBroadcast {
+  id: string;
+  active: boolean;
+  severity: AlertSeverity;
+  alertType: AlertType;
+  title: string;
+  message: string;
+  targetSites: string[]; // ['ALL SITES'] or specific site names
+  requireAcknowledgment: boolean;
+  acknowledgedBy: BroadcastAcknowledgment[];
+  initiatedBy: string; // e.g. "Lt. Mark O'Connor (OPS-CMD-01)"
+  createdAt: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+  resolutionNote?: string;
 }
 
 export interface ShiftTemplate {

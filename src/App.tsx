@@ -25,14 +25,96 @@ import {
   KeyRound,
   ShieldAlert,
   ShieldCheck,
-  UserCheck
+  UserCheck,
+  Sun,
+  Moon
 } from 'lucide-react';
 
 const STORAGE_ADMIN_AUTH_KEY = 'secureshift_admin_session_v1';
 const STORAGE_ADMIN_USER_KEY = 'secureshift_admin_user_v1';
 
+interface AdminAuthGateProps {
+  isAdminAuthenticated: boolean;
+  onOpenLoginModal: () => void;
+  onReturnToGuard: () => void;
+  onLock: () => void;
+  adminName: string;
+  adminBadge: string;
+}
+
+const AdminAuthGate: React.FC<AdminAuthGateProps> = ({
+  isAdminAuthenticated,
+  onOpenLoginModal,
+  onReturnToGuard,
+  onLock,
+  adminName,
+  adminBadge
+}) => {
+  if (!isAdminAuthenticated) {
+    return (
+      <div 
+        id="admin-locked-gate-panel"
+        className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-900 text-white min-h-full overflow-y-auto"
+      >
+        <div className="w-full max-w-md bg-slate-950 border border-blue-900/60 rounded-2xl p-6 sm:p-8 shadow-2xl text-center flex flex-col items-center">
+          <div className="p-3.5 bg-blue-950 border border-blue-800 rounded-2xl mb-4 text-blue-400">
+            <Lock className="w-8 h-8" />
+          </div>
+
+          <h2 className="text-base font-black uppercase tracking-wider text-white mb-1">
+            Ops Admin Console Locked
+          </h2>
+          <p className="text-xs text-blue-200 font-mono mb-4">
+            Restricted to Authorized Dispatch & Supervisor Staff
+          </p>
+
+          <div className="bg-amber-950/60 border border-amber-900/80 rounded-xl p-3 text-left mb-6 text-xs text-amber-200 flex items-start gap-2.5">
+            <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <p className="text-[11px] leading-tight">
+              Security guards are prohibited from accessing Ops dispatch controls. Guards should use the <strong>Guard App</strong>.
+            </p>
+          </div>
+
+          <button
+            id="admin-gate-login-btn"
+            onClick={onOpenLoginModal}
+            className="w-full bg-[#1e3a8a] hover:bg-blue-800 active:bg-blue-950 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer"
+          >
+            <KeyRound className="w-4 h-4" />
+            Enter Ops Authorization PIN
+          </button>
+
+          <button
+            id="admin-gate-return-guard-btn"
+            onClick={onReturnToGuard}
+            className="mt-3 text-xs text-slate-400 hover:text-slate-200 transition-colors uppercase font-bold"
+          >
+            Return to Guard App
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <OpsAdminView 
+      onLock={onLock}
+      adminName={adminName}
+      adminBadge={adminBadge}
+    />
+  );
+};
+
 const AppContent: React.FC = () => {
-  const { activeView, setActiveView, resetToDefaults, showToast, logAdminAction } = useShiftOps();
+  const { 
+    activeView, 
+    setActiveView, 
+    resetToDefaults, 
+    showToast, 
+    logAdminAction, 
+    theme, 
+    toggleTheme 
+  } = useShiftOps();
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [pendingTargetView, setPendingTargetView] = useState<'ops' | 'dual' | null>(null);
@@ -116,71 +198,10 @@ const AppContent: React.FC = () => {
     }
   };
 
-  /**
-   * AdminAuthProtectedOps:
-   * Wraps OpsAdminView. If not authenticated, renders a high-security lock screen
-   * that prompts for PIN/Password login.
-   */
-  const AdminAuthProtectedOps: React.FC = () => {
-    if (!isAdminAuthenticated) {
-      return (
-        <div 
-          id="admin-locked-gate-panel"
-          className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-900 text-white min-h-full overflow-y-auto"
-        >
-          <div className="w-full max-w-md bg-slate-950 border border-blue-900/60 rounded-2xl p-6 sm:p-8 shadow-2xl text-center flex flex-col items-center">
-            <div className="p-3.5 bg-blue-950 border border-blue-800 rounded-2xl mb-4 text-blue-400">
-              <Lock className="w-8 h-8" />
-            </div>
-
-            <h2 className="text-base font-black uppercase tracking-wider text-white mb-1">
-              Ops Admin Console Locked
-            </h2>
-            <p className="text-xs text-blue-200 font-mono mb-4">
-              Restricted to Authorized Dispatch & Supervisor Staff
-            </p>
-
-            <div className="bg-amber-950/60 border border-amber-900/80 rounded-xl p-3 text-left mb-6 text-xs text-amber-200 flex items-start gap-2.5">
-              <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-              <p className="text-[11px] leading-tight">
-                Security guards are prohibited from accessing Ops dispatch controls. Guards should use the <strong>Guard App</strong>.
-              </p>
-            </div>
-
-            <button
-              id="admin-gate-login-btn"
-              onClick={() => setShowLoginModal(true)}
-              className="w-full bg-[#1e3a8a] hover:bg-blue-800 active:bg-blue-950 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer"
-            >
-              <KeyRound className="w-4 h-4" />
-              Enter Ops Authorization PIN
-            </button>
-
-            <button
-              id="admin-gate-return-guard-btn"
-              onClick={() => setActiveView('guard')}
-              className="mt-3 text-xs text-slate-400 hover:text-slate-200 transition-colors uppercase font-bold"
-            >
-              Return to Guard App
-            </button>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <OpsAdminView 
-        onLock={handleAdminLock}
-        adminName={adminUser.name}
-        adminBadge={adminUser.badgeId}
-      />
-    );
-  };
-
   return (
-    <div className="flex flex-col h-full w-full bg-slate-100 font-sans text-slate-900 overflow-hidden">
+    <div className="flex flex-col h-full w-full bg-slate-100 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 overflow-hidden transition-colors duration-200">
       {/* Top Application Bar with View Mode Switcher */}
-      <header className="bg-[#14234b] text-white px-4 py-2.5 flex flex-wrap justify-between items-center border-b border-blue-900/80 z-30 shrink-0 gap-2">
+      <header className="bg-[#14234b] dark:bg-slate-950 text-white px-4 py-2.5 flex flex-wrap justify-between items-center border-b border-blue-900/80 dark:border-slate-800 z-30 shrink-0 gap-2 shadow-sm">
         <div className="flex items-center gap-2.5">
           <div className="p-1.5 bg-blue-600 rounded-lg shadow-xs">
             <Shield className="w-4 h-4 text-white" />
@@ -189,14 +210,14 @@ const AppContent: React.FC = () => {
             <span className="font-extrabold text-sm tracking-wider uppercase">
               SecureShift
             </span>
-            <span className="text-[10px] text-blue-300 ml-2 hidden sm:inline-block font-mono">
+            <span className="text-[10px] text-blue-300 dark:text-blue-400 ml-2 hidden sm:inline-block font-mono">
               SECURITY OPERATIONS PLATFORM
             </span>
           </div>
         </div>
 
         {/* Mode Switcher Controls */}
-        <div className="flex items-center gap-1.5 bg-slate-900/70 p-1 rounded-lg border border-blue-800/40">
+        <div className="flex items-center gap-1.5 bg-slate-900/70 dark:bg-slate-900 p-1 rounded-lg border border-blue-800/40 dark:border-slate-800">
           {/* Guard App (Always open without login) */}
           <button
             id="view-mode-guard-btn"
@@ -249,8 +270,33 @@ const AppContent: React.FC = () => {
           </button>
         </div>
 
-        {/* Action icons & Lock Button */}
+        {/* Action icons, Theme Switcher & Lock Button */}
         <div className="flex items-center gap-2">
+          {/* Light / Dark Mode Toggle Button */}
+          <button
+            id="app-theme-toggle-btn"
+            onClick={toggleTheme}
+            className={`text-xs flex items-center gap-1.5 px-2.5 py-1 rounded-md border transition-all cursor-pointer ${
+              theme === 'dark'
+                ? 'bg-slate-800 hover:bg-slate-700 text-amber-300 border-slate-700 shadow-2xs'
+                : 'bg-blue-900/60 hover:bg-blue-900 text-blue-100 border-blue-700/60 shadow-2xs'
+            }`}
+            title={theme === 'dark' ? 'Switch to Light Theme (Day Shift)' : 'Switch to Dark Theme (Night Shift)'}
+            aria-label="Toggle Theme Mode"
+          >
+            {theme === 'dark' ? (
+              <>
+                <Moon className="w-3.5 h-3.5 text-amber-300" />
+                <span className="font-bold text-[11px] hidden sm:inline">Night Mode</span>
+              </>
+            ) : (
+              <>
+                <Sun className="w-3.5 h-3.5 text-amber-300" />
+                <span className="font-bold text-[11px] hidden sm:inline">Day Mode</span>
+              </>
+            )}
+          </button>
+
           {isAdminAuthenticated ? (
             <button
               id="top-admin-lock-btn"
@@ -286,7 +332,7 @@ const AppContent: React.FC = () => {
             id="app-reset-defaults-btn"
             onClick={resetToDefaults}
             title="Reset to fresh demo shifts & trades"
-            className="p-1 text-blue-300 hover:text-white hover:bg-blue-900 rounded cursor-pointer"
+            className="p-1 text-blue-300 hover:text-white hover:bg-blue-900 dark:hover:bg-slate-800 rounded cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
@@ -301,14 +347,21 @@ const AppContent: React.FC = () => {
             {/* Guard Sidebar Frame (Never requires login) */}
             <GuardView isSidebarMode={true} />
             {/* Protected Ops Dashboard (Wraps OpsAdminView with auth gate) */}
-            <AdminAuthProtectedOps />
+            <AdminAuthGate
+              isAdminAuthenticated={isAdminAuthenticated}
+              onOpenLoginModal={() => setShowLoginModal(true)}
+              onReturnToGuard={() => setActiveView('guard')}
+              onLock={handleAdminLock}
+              adminName={adminUser.name}
+              adminBadge={adminUser.badgeId}
+            />
           </div>
         )}
 
         {/* FULL GUARD VIEW (Always accessible without login) */}
         {activeView === 'guard' && (
-          <div className="flex-1 bg-slate-200/80 p-2 sm:p-6 overflow-y-auto flex items-center justify-center">
-            <div className="w-full max-w-md h-[95%] max-h-[850px] shadow-2xl rounded-2xl overflow-hidden border-4 border-slate-700 bg-white flex flex-col">
+          <div className="flex-1 bg-slate-200/80 dark:bg-slate-900 p-2 sm:p-6 overflow-y-auto flex items-center justify-center transition-colors">
+            <div className="w-full max-w-md h-[95%] max-h-[850px] shadow-2xl rounded-2xl overflow-hidden border-4 border-slate-700 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col">
               <GuardView isSidebarMode={false} />
             </div>
           </div>
@@ -317,7 +370,14 @@ const AppContent: React.FC = () => {
         {/* FULL OPS ADMIN VIEW (Protected by auth wrapper) */}
         {activeView === 'ops' && (
           <div className="flex-1 flex flex-col h-full overflow-hidden">
-            <AdminAuthProtectedOps />
+            <AdminAuthGate
+              isAdminAuthenticated={isAdminAuthenticated}
+              onOpenLoginModal={() => setShowLoginModal(true)}
+              onReturnToGuard={() => setActiveView('guard')}
+              onLock={handleAdminLock}
+              adminName={adminUser.name}
+              adminBadge={adminUser.badgeId}
+            />
           </div>
         )}
       </div>
@@ -338,13 +398,13 @@ const AppContent: React.FC = () => {
       {/* Feature Guide Modal */}
       {showHelpModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/75 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white max-w-2xl w-full rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="bg-[#1e3a8a] text-white p-5 flex justify-between items-center">
+          <div className="bg-white dark:bg-slate-900 max-w-2xl w-full rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-[#1e3a8a] dark:bg-slate-950 text-white p-5 flex justify-between items-center border-b dark:border-slate-800">
               <div>
                 <h3 className="font-black text-base uppercase tracking-wide">
                   SecureShift Security Operations Architecture
                 </h3>
-                <p className="text-xs text-blue-200">
+                <p className="text-xs text-blue-200 dark:text-blue-300">
                   Role-Separated Guard & Dispatch Command Structure
                 </p>
               </div>
@@ -356,43 +416,43 @@ const AppContent: React.FC = () => {
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto flex flex-col gap-4 text-xs text-slate-700">
+            <div className="p-6 overflow-y-auto flex flex-col gap-4 text-xs text-slate-700 dark:text-slate-300">
               {/* Role Separation Notice */}
-              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900">
-                <h4 className="font-bold text-amber-900 text-xs uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                  <Lock className="w-4 h-4 text-amber-700" />
+              <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-xl text-amber-900 dark:text-amber-200">
+                <h4 className="font-bold text-amber-900 dark:text-amber-300 text-xs uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                  <Lock className="w-4 h-4 text-amber-700 dark:text-amber-400" />
                   Admin Authentication & Guard Protection
                 </h4>
-                <p className="text-[11px] text-amber-800 leading-relaxed">
+                <p className="text-[11px] text-amber-800 dark:text-amber-300/90 leading-relaxed">
                   Security guards access the Guard App immediately without any login friction. The Ops Admin command dashboard is protected by an authentication layer requiring a dispatcher PIN (<strong>Default PIN: 1099</strong> or 1-click demo login).
                 </p>
               </div>
 
-              <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-xl">
-                <h4 className="font-bold text-[#1e3a8a] text-sm mb-1 flex items-center gap-1.5">
+              <div className="p-3.5 bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 rounded-xl text-slate-700 dark:text-slate-300">
+                <h4 className="font-bold text-[#1e3a8a] dark:text-blue-300 text-sm mb-1 flex items-center gap-1.5">
                   <Smartphone className="w-4 h-4" />
                   1. Guard View (Zero-Login User Environment)
                 </h4>
-                <ul className="list-disc pl-4 space-y-1 mt-1 text-slate-600">
+                <ul className="list-disc pl-4 space-y-1 mt-1 text-slate-600 dark:text-slate-400">
                   <li><strong>Open Shift Board:</strong> Scrollable feed with Site Name, Date, Time, Calculated Hours, and Urgency Badges.</li>
                   <li><strong>Text to Bid (3-Option Modal):</strong> Tap "Text to Bid" to choose <em>Trained</em>, <em>Needs OJT</em>, or <em>Cancel</em>. Pre-fills device SMS for mobile dispatch.</li>
                   <li><strong>Trade Board:</strong> Lists shifts other guards are giving away with <em>"+ Post Shift"</em> and <em>"Propose Swap"</em> forms.</li>
                 </ul>
               </div>
 
-              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
-                <h4 className="font-bold text-slate-800 text-sm mb-1 flex items-center gap-1.5">
-                  <LayoutDashboard className="w-4 h-4 text-[#1e3a8a]" />
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-300">
+                <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm mb-1 flex items-center gap-1.5">
+                  <LayoutDashboard className="w-4 h-4 text-[#1e3a8a] dark:text-blue-400" />
                   2. Ops Admin View (Authorized Dispatch Environment)
                 </h4>
-                <ul className="list-disc pl-4 space-y-1 mt-1 text-slate-600">
+                <ul className="list-disc pl-4 space-y-1 mt-1 text-slate-600 dark:text-slate-400">
                   <li><strong>Full Scrollable Dashboard:</strong> Complete management view with fluid vertical scrolling.</li>
                   <li><strong>Shift Manager:</strong> Post single shifts with auto-calculated duration or mass import JSON shift arrays.</li>
                   <li><strong>Active Shift Feed:</strong> Mark shifts filled (greys card out) or reopen shifts with "Hide Filled" toggle.</li>
                   <li><strong>Trade Approvals (3 Feeds, Oldest-First):</strong>
                     <ul className="list-circle pl-4 space-y-0.5 mt-1">
                       <li><em>Pending Posts:</em> Approve or Deny guard shift listings with mandatory reason.</li>
-                      <li><em>Pending Swaps:</em> Highlighted in <span className="text-red-700 font-bold">RED</span> if Guard B needs OJT training.</li>
+                      <li><em>Pending Swaps:</em> Highlighted in <span className="text-red-700 dark:text-red-400 font-bold">RED</span> if Guard B needs OJT training.</li>
                       <li><em>History Log:</em> Permanent audit trail with timestamps.</li>
                     </ul>
                   </li>
@@ -402,7 +462,7 @@ const AppContent: React.FC = () => {
 
               <button
                 onClick={() => setShowHelpModal(false)}
-                className="w-full py-2.5 bg-[#1e3a8a] text-white font-bold rounded-lg text-xs uppercase tracking-wider hover:bg-blue-900 shadow-md transition-all mt-2 cursor-pointer"
+                className="w-full py-2.5 bg-[#1e3a8a] hover:bg-blue-900 text-white font-bold rounded-lg text-xs uppercase tracking-wider shadow-md transition-all mt-2 cursor-pointer"
               >
                 Close Guide
               </button>

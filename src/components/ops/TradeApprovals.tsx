@@ -15,13 +15,26 @@ import {
   Calendar,
   CheckCircle2,
   FileText,
-  Info
+  Info,
+  Edit3,
+  Save,
+  Gift,
+  MapPin
 } from 'lucide-react';
 
-export const TradeApprovals: React.FC = () => {
-  const { trades, approveTradePost, denyTradePost, approveSwap, denySwap } = useShiftOps();
+interface TradeApprovalsProps {
+  onOpenGuardDirectory?: (guardId?: string) => void;
+}
+
+export const TradeApprovals: React.FC<TradeApprovalsProps> = ({ onOpenGuardDirectory }) => {
+  const { trades, guardsList, approveTradePost, denyTradePost, approveSwap, denySwap, updateTradePost } = useShiftOps();
   
   const [activeTab, setActiveTab] = useState<'pending_posts' | 'pending_swaps' | 'history'>('pending_posts');
+  const [editingTradeId, setEditingTradeId] = useState<string | null>(null);
+  const [editReason, setEditReason] = useState<string>('');
+  const [editType, setEditType] = useState<'giveaway' | 'swap'>('giveaway');
+  const [editLocation, setEditLocation] = useState<string>('');
+
   const [denialModalConfig, setDenialModalConfig] = useState<{
     isOpen: boolean;
     title: string;
@@ -35,6 +48,37 @@ export const TradeApprovals: React.FC = () => {
     targetId: '',
     type: 'post'
   });
+
+  const handleStartEdit = (trade: Trade) => {
+    setEditingTradeId(trade.id);
+    setEditReason(trade.reason || '');
+    setEditType(trade.type || 'giveaway');
+    setEditLocation(trade.originalShift.location || '');
+  };
+
+  const handleCancelEdit = () => {
+    setEditingTradeId(null);
+    setEditReason('');
+    setEditLocation('');
+  };
+
+  const handleSaveEdit = (tradeId: string) => {
+    updateTradePost(tradeId, {
+      reason: editReason,
+      type: editType,
+      location: editLocation
+    });
+    setEditingTradeId(null);
+  };
+
+  const handleApproveWithEdits = (tradeId: string) => {
+    if (editingTradeId === tradeId) {
+      approveTradePost(tradeId, undefined, editReason, editType);
+      setEditingTradeId(null);
+    } else {
+      approveTradePost(tradeId);
+    }
+  };
 
   // 1. Pending Posts (Sorted oldest-first)
   const pendingPosts = trades
@@ -172,58 +216,193 @@ export const TradeApprovals: React.FC = () => {
                 <p className="text-[11px] text-slate-400 mt-0.5">No pending guard shift posts require approval.</p>
               </div>
             ) : (
-              pendingPosts.map((trade) => (
-                <div
-                  key={trade.id}
-                  id={`pending-post-card-${trade.id}`}
-                  className="border-l-4 border-amber-500 bg-amber-50/70 p-3.5 rounded-r-xl border-y border-r border-amber-200/60 shadow-xs"
-                >
-                  <div className="flex justify-between items-start mb-1">
-                    <span className="text-xs font-black text-amber-800 uppercase tracking-tight flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5 text-amber-600" />
-                      Trade Request: Pending Ops Approval
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-mono">
-                      {formatTimestamp(trade.createdAt)}
-                    </span>
-                  </div>
+              pendingPosts.map((trade) => {
+                const isEditing = editingTradeId === trade.id;
+                const isGiveaway = trade.type === 'giveaway';
 
-                  <p className="text-sm text-slate-700 mt-1">
-                    <strong className="text-[#1e3a8a]">Guard:</strong>{' '}
-                    <span className="font-semibold">{trade.offeringGuard.name}</span> ({trade.offeringGuard.badgeNumber}){' '}
-                    wants to list shift{' '}
-                    <span className="underline font-bold text-slate-900">
-                      {trade.originalShift.siteName} ({formatDateLabel(trade.originalShift.date)} • {trade.originalShift.startTime}-{trade.originalShift.endTime}, {trade.originalShift.hours}h)
-                    </span>{' '}
-                    for trade.
-                  </p>
+                return (
+                  <div
+                    key={trade.id}
+                    id={`pending-post-card-${trade.id}`}
+                    className={`p-3.5 rounded-r-xl border-y border-r shadow-xs transition-all ${
+                      isEditing
+                        ? 'border-l-4 border-blue-600 bg-blue-50/40 border-blue-200'
+                        : isGiveaway
+                        ? 'border-l-4 border-emerald-500 bg-emerald-50/50 border-emerald-200/60'
+                        : 'border-l-4 border-amber-500 bg-amber-50/70 border-amber-200/60'
+                    }`}
+                  >
+                    {/* Header */}
+                    <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
+                      <div className="flex items-center gap-2">
+                        {isGiveaway ? (
+                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 flex items-center gap-1 border border-emerald-300/60">
+                            <Gift className="w-3 h-3 text-emerald-600" />
+                            Give Up / Drop Shift (Giveaway)
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-900 flex items-center gap-1 border border-blue-300/60">
+                            <ArrowRightLeft className="w-3 h-3 text-blue-700" />
+                            Trade / Swap Request
+                          </span>
+                        )}
 
-                  {trade.reason && (
-                    <p className="text-xs text-slate-600 bg-white/80 p-2 rounded border border-amber-200/60 mt-2 italic">
-                      Reason: "{trade.reason}"
+                        <span className="text-xs font-black text-slate-700 uppercase tracking-tight flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-slate-500" />
+                          Pending Review
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {formatTimestamp(trade.createdAt)}
+                        </span>
+                        {!isEditing ? (
+                          <button
+                            type="button"
+                            onClick={() => handleStartEdit(trade)}
+                            className="text-[11px] font-bold text-[#1e3a8a] hover:text-blue-900 bg-white hover:bg-blue-50 border border-slate-300 hover:border-blue-300 px-2 py-0.5 rounded flex items-center gap-1 transition-all cursor-pointer"
+                            title="Edit Guard Notes & Parameters"
+                          >
+                            <Edit3 className="w-3 h-3" />
+                            Edit Info
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleCancelEdit}
+                            className="text-[11px] font-bold text-slate-600 hover:text-slate-800 bg-white border border-slate-300 px-2 py-0.5 rounded transition-all cursor-pointer"
+                          >
+                            Cancel Edit
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Shift & Guard Summary */}
+                    <p className="text-sm text-slate-700 mt-1">
+                      <strong className="text-[#1e3a8a]">Guard:</strong>{' '}
+                      <span className="font-semibold">{trade.offeringGuard.name}</span> ({trade.offeringGuard.badgeNumber}){' '}
+                      {isGiveaway ? 'wants to drop/give up' : 'requests trade for'}{' '}
+                      <span className="underline font-bold text-slate-900">
+                        {trade.originalShift.siteName} ({formatDateLabel(trade.originalShift.date)} • {trade.originalShift.startTime}-{trade.originalShift.endTime}, {trade.originalShift.hours}h)
+                      </span>
                     </p>
-                  )}
 
-                  <div className="mt-3 flex items-center gap-2">
-                    <button
-                      id={`approve-post-btn-${trade.id}`}
-                      onClick={() => approveTradePost(trade.id)}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide shadow-xs flex items-center gap-1 transition-all"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      APPROVE
-                    </button>
-                    <button
-                      id={`deny-post-btn-${trade.id}`}
-                      onClick={() => handleOpenDenyModal(trade, 'post')}
-                      className="bg-red-600 hover:bg-red-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide shadow-xs flex items-center gap-1 transition-all"
-                    >
-                      <XIcon className="w-3.5 h-3.5" />
-                      DENY
-                    </button>
+                    {/* Normal View vs Edit Mode */}
+                    {!isEditing ? (
+                      <div>
+                        {trade.originalShift.location && (
+                          <p className="text-xs text-slate-600 flex items-center gap-1 mt-1 font-medium">
+                            <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                            Post: {trade.originalShift.location}
+                          </p>
+                        )}
+
+                        {trade.reason ? (
+                          <div className="text-xs text-slate-700 bg-white/90 p-2.5 rounded-lg border border-slate-200 mt-2">
+                            <span className="font-bold text-slate-500 block text-[10px] uppercase tracking-wider mb-0.5">
+                              Guard Notes / Open Text:
+                            </span>
+                            <p className="italic text-slate-800">"{trade.reason}"</p>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-400 mt-1 italic">No extra notes provided by guard.</p>
+                        )}
+                      </div>
+                    ) : (
+                      /* Inline Dispatcher Editor */
+                      <div className="bg-white p-3 rounded-lg border border-blue-300 shadow-xs mt-2.5 flex flex-col gap-2.5">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                          <span className="text-[11px] font-black text-[#1e3a8a] uppercase flex items-center gap-1">
+                            <Edit3 className="w-3 h-3" />
+                            Dispatcher Open Text & Information Editor
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            Edit details before publishing to Guard Trade Board
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {/* Edit Intent / Type */}
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">
+                              Listing Type / Intent
+                            </label>
+                            <select
+                              value={editType}
+                              onChange={(e) => setEditType(e.target.value as 'giveaway' | 'swap')}
+                              className="w-full text-xs border border-slate-300 rounded p-1.5 font-medium focus:ring-1 focus:ring-[#1e3a8a]"
+                            >
+                              <option value="giveaway">🎁 Shift Giveaway / Drop (No swap needed)</option>
+                              <option value="swap">🔄 Shift Swap Request (Exchange needed)</option>
+                            </select>
+                          </div>
+
+                          {/* Edit Location */}
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">
+                              Post Location / Gate
+                            </label>
+                            <input
+                              type="text"
+                              value={editLocation}
+                              onChange={(e) => setEditLocation(e.target.value)}
+                              placeholder="e.g. Main Lobby Desk"
+                              className="w-full text-xs border border-slate-300 rounded p-1.5 focus:ring-1 focus:ring-[#1e3a8a]"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Edit Guard Reason / Notes (Open text field) */}
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">
+                            Guard Reason & Notes (Open Text Field) *
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={editReason}
+                            onChange={(e) => setEditReason(e.target.value)}
+                            placeholder="Clean up or refine guard reason and posting instructions..."
+                            className="w-full text-xs border border-slate-300 rounded p-2 focus:ring-2 focus:ring-[#1e3a8a] text-slate-800"
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => handleSaveEdit(trade.id)}
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded border border-slate-300 flex items-center gap-1 transition-all cursor-pointer"
+                          >
+                            <Save className="w-3 h-3 text-slate-600" />
+                            Save Notes Only
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Decision Action Buttons */}
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <button
+                        id={`approve-post-btn-${trade.id}`}
+                        onClick={() => handleApproveWithEdits(trade.id)}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide shadow-xs flex items-center gap-1 transition-all cursor-pointer"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        {isEditing ? 'Save & Approve' : 'Approve & Post'}
+                      </button>
+                      <button
+                        id={`deny-post-btn-${trade.id}`}
+                        onClick={() => handleOpenDenyModal(trade, 'post')}
+                        className="bg-red-600 hover:bg-red-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide shadow-xs flex items-center gap-1 transition-all cursor-pointer"
+                      >
+                        <XIcon className="w-3.5 h-3.5" />
+                        Deny Request
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         )}
@@ -319,27 +498,41 @@ export const TradeApprovals: React.FC = () => {
                     )}
 
                     {/* Action buttons */}
-                    <div className="flex items-center gap-2">
-                      <button
-                        id={`approve-swap-btn-${trade.id}`}
-                        onClick={() => approveSwap(trade.id)}
-                        className={`px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide shadow-xs flex items-center gap-1 transition-all ${
-                          needsOjt
-                            ? 'bg-amber-600 hover:bg-amber-700 text-white'
-                            : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                        }`}
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                        {needsOjt ? 'APPROVE WITH OJT WAIVER' : 'APPROVE SWAP'}
-                      </button>
-                      <button
-                        id={`deny-swap-btn-${trade.id}`}
-                        onClick={() => handleOpenDenyModal(trade, 'swap')}
-                        className="bg-red-600 hover:bg-red-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide shadow-xs flex items-center gap-1 transition-all"
-                      >
-                        <XIcon className="w-3.5 h-3.5" />
-                        DENY
-                      </button>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <button
+                          id={`approve-swap-btn-${trade.id}`}
+                          onClick={() => approveSwap(trade.id)}
+                          className={`px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide shadow-xs flex items-center gap-1 transition-all cursor-pointer ${
+                            needsOjt
+                              ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                              : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                          }`}
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          {needsOjt ? 'APPROVE WITH OJT WAIVER' : 'APPROVE SWAP'}
+                        </button>
+                        <button
+                          id={`deny-swap-btn-${trade.id}`}
+                          onClick={() => handleOpenDenyModal(trade, 'swap')}
+                          className="bg-red-600 hover:bg-red-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide shadow-xs flex items-center gap-1 transition-all cursor-pointer"
+                        >
+                          <XIcon className="w-3.5 h-3.5" />
+                          DENY
+                        </button>
+                      </div>
+
+                      {onOpenGuardDirectory && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenGuardDirectory(guardB?.id || guardA.id)}
+                          className="text-[11px] font-bold text-[#1e3a8a] hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-all cursor-pointer"
+                          title="Open Guard Directory to review full site qualifications and contact info"
+                        >
+                          <User className="w-3 h-3 text-[#1e3a8a]" />
+                          <span>Check Training in Guard Directory</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

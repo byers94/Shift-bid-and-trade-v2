@@ -98,3 +98,39 @@ export function generateSmsLink(opsPhone: string, bodyText: string): string {
   // iOS and Android typically support sms:number?body=text or sms:number&body=text
   return `sms:${cleanPhone}?&body=${encodedBody}`;
 }
+
+/**
+ * Compare two shifts chronologically from soonest date/time to furthest
+ */
+export function compareShiftsByDateSoonest(
+  a: { date: string; startTime?: string },
+  b: { date: string; startTime?: string }
+): number {
+  if (!a.date && !b.date) return 0;
+  if (!a.date) return 1;
+  if (!b.date) return -1;
+
+  const timeA = a.startTime ? (a.startTime.length === 5 ? a.startTime : '00:00') : '00:00';
+  const timeB = b.startTime ? (b.startTime.length === 5 ? b.startTime : '00:00') : '00:00';
+
+  const dtA = new Date(`${a.date}T${timeA}:00`).getTime();
+  const dtB = new Date(`${b.date}T${timeB}:00`).getTime();
+
+  if (isNaN(dtA) && isNaN(dtB)) {
+    return a.date.localeCompare(b.date);
+  }
+  if (isNaN(dtA)) return 1;
+  if (isNaN(dtB)) return -1;
+
+  return dtA - dtB;
+}
+
+/**
+ * Compare two shifts chronologically from furthest date/time to soonest
+ */
+export function compareShiftsByDateFurthest(
+  a: { date: string; startTime?: string },
+  b: { date: string; startTime?: string }
+): number {
+  return compareShiftsByDateSoonest(b, a);
+}

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
 import { calculateHours } from '../../utils/time';
-import { Calendar, Clock, MapPin, ShieldAlert, X } from 'lucide-react';
+import { Calendar, Clock, MapPin, ShieldAlert, X, ArrowRightLeft, Gift, AlertCircle } from 'lucide-react';
 
 interface PostShiftModalProps {
   isOpen: boolean;
@@ -12,6 +12,7 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
   const { postTradeRequest, activeGuard } = useShiftOps();
   
   const todayStr = new Date().toISOString().split('T')[0];
+  const [tradeType, setTradeType] = useState<'giveaway' | 'swap'>('giveaway');
   const [siteName, setSiteName] = useState('');
   const [location, setLocation] = useState('');
   const [date, setDate] = useState(todayStr);
@@ -31,11 +32,12 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
       return;
     }
     if (!reason.trim()) {
-      setError('Please provide a reason for the giveaway/trade');
+      setError('Please provide a reason / notes for this request');
       return;
     }
 
     postTradeRequest({
+      type: tradeType,
       siteName,
       location,
       date,
@@ -61,14 +63,17 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
         {/* Header */}
         <div className="bg-[#1e3a8a] text-white p-4 flex justify-between items-center">
           <div>
-            <h3 className="font-bold text-sm uppercase tracking-wide">+ Post Shift for Trade / Giveaway</h3>
+            <h3 className="font-bold text-sm uppercase tracking-wide">
+              {tradeType === 'swap' ? '🔄 Post Shift for Swap (Trade)' : '🎁 Give Up / Drop Shift (Giveaway)'}
+            </h3>
             <p className="text-[11px] text-blue-200">
-              Submit to Ops Admin for review before it goes live on the Trade Board
+              Submit request to Ops Admin for review before it goes live on the Guard Board
             </p>
           </div>
           <button 
+            type="button"
             onClick={onClose} 
-            className="text-white/80 hover:text-white p-1 rounded hover:bg-white/10"
+            className="text-white/80 hover:text-white p-1 rounded hover:bg-white/10 cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -83,6 +88,68 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
             <span className="bg-blue-200 text-blue-800 text-[10px] font-black px-2 py-0.5 rounded uppercase">
               Logged In
             </span>
+          </div>
+
+          {/* Request Type Selector (Give Up / Drop vs Trade / Swap) */}
+          <div>
+            <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider mb-1.5">
+              Select Intent: What do you want to do with this shift? *
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* Option 1: Give Up / Drop Shift */}
+              <button
+                type="button"
+                id="intent-giveaway-btn"
+                onClick={() => setTradeType('giveaway')}
+                className={`p-3 rounded-xl border-2 text-left flex flex-col gap-1 transition-all cursor-pointer ${
+                  tradeType === 'giveaway'
+                    ? 'border-emerald-600 bg-emerald-50/60 text-emerald-950 shadow-xs ring-2 ring-emerald-500/20'
+                    : 'border-slate-200 bg-slate-50 hover:bg-slate-100/80 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-xs font-black">
+                    <Gift className={`w-4 h-4 ${tradeType === 'giveaway' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                    Give Up / Drop Shift
+                  </span>
+                  <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center ${
+                    tradeType === 'giveaway' ? 'border-emerald-600 bg-emerald-600' : 'border-slate-300'
+                  }`}>
+                    {tradeType === 'giveaway' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-snug mt-0.5">
+                  I want to drop this shift completely. Any qualified guard can claim coverage (no return trade needed).
+                </p>
+              </button>
+
+              {/* Option 2: Trade / Swap */}
+              <button
+                type="button"
+                id="intent-swap-btn"
+                onClick={() => setTradeType('swap')}
+                className={`p-3 rounded-xl border-2 text-left flex flex-col gap-1 transition-all cursor-pointer ${
+                  tradeType === 'swap'
+                    ? 'border-[#1e3a8a] bg-blue-50/60 text-blue-950 shadow-xs ring-2 ring-blue-500/20'
+                    : 'border-slate-200 bg-slate-50 hover:bg-slate-100/80 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-xs font-black">
+                    <ArrowRightLeft className={`w-4 h-4 ${tradeType === 'swap' ? 'text-[#1e3a8a]' : 'text-slate-400'}`} />
+                    Trade / Swap Shift
+                  </span>
+                  <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center ${
+                    tradeType === 'swap' ? 'border-[#1e3a8a] bg-[#1e3a8a]' : 'border-slate-300'
+                  }`}>
+                    {tradeType === 'swap' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-snug mt-0.5">
+                  I want to exchange this shift for another shift with a fellow guard.
+                </p>
+              </button>
+            </div>
           </div>
 
           {error && (
@@ -178,19 +245,28 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
             </span>
           </div>
 
-          {/* Reason */}
+          {/* Reason / Notes Open Text Field */}
           <div>
             <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
-              Reason for Trade / Giveaway *
+              {tradeType === 'swap'
+                ? 'Swap Preferences & Reason *'
+                : 'Reason for Giving Up Shift *'}
             </label>
             <textarea
               required
               rows={3}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. Family commitment, conflict with class schedule, or looking to swap for morning shift."
+              placeholder={
+                tradeType === 'swap'
+                  ? 'e.g. Looking to exchange for morning shift on Friday or weekend day watch.'
+                  : 'e.g. Personal emergency, doctor appointment, or need voluntary coverage drop.'
+              }
               className="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
             />
+            <p className="text-[10px] text-slate-400 mt-1">
+              Ops dispatchers can review and edit these notes before approving the listing.
+            </p>
           </div>
 
           {/* Buttons */}
@@ -198,16 +274,18 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2.5 border border-slate-300 text-slate-700 font-bold rounded-lg text-xs hover:bg-slate-50 uppercase tracking-wider"
+              className="flex-1 py-2.5 border border-slate-300 text-slate-700 font-bold rounded-lg text-xs hover:bg-slate-50 uppercase tracking-wider cursor-pointer"
             >
               Cancel
             </button>
             <button
               id="submit-post-trade-btn"
               type="submit"
-              className="flex-1 py-2.5 bg-[#1e3a8a] text-white font-bold rounded-lg text-xs hover:bg-blue-900 shadow-md uppercase tracking-wider transition-all"
+              className={`flex-1 py-2.5 text-white font-bold rounded-lg text-xs shadow-md uppercase tracking-wider transition-all cursor-pointer ${
+                tradeType === 'swap' ? 'bg-[#1e3a8a] hover:bg-blue-900' : 'bg-emerald-600 hover:bg-emerald-700'
+              }`}
             >
-              Submit to Ops
+              {tradeType === 'swap' ? 'Submit Swap Request' : 'Submit Shift Drop'}
             </button>
           </div>
         </form>
