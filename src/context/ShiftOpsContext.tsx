@@ -17,7 +17,9 @@ import {
   AlertNotificationCategory,
   SiteFeedbackEntry,
   GuardPerformanceStats,
-  SiteProfile
+  SiteProfile,
+  SiteCategory,
+  SiteSecurityTier
 } from '../types/shift';
 import { 
   INITIAL_SHIFTS, 
@@ -139,6 +141,10 @@ interface ShiftOpsContextType {
   updateSite: (id: string, data: Partial<SiteProfile>) => void;
   deleteSite: (id: string) => void;
   getSiteByName: (name: string) => SiteProfile | undefined;
+  bulkImportSites: (
+    sitesArray: any[],
+    options?: { overwrite?: boolean; defaultOjt?: boolean }
+  ) => { count: number; updatedCount: number; errors: string[] };
 
   // Shift Operations
   createShift: (data: {
@@ -1676,6 +1682,207 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     );
   };
 
+  const bulkImportSites = (
+    sitesArray: any[],
+    options?: { overwrite?: boolean; defaultOjt?: boolean }
+  ): { count: number; updatedCount: number; errors: string[] } => {
+    const errors: string[] = [];
+    if (!Array.isArray(sitesArray)) {
+      return { count: 0, updatedCount: 0, errors: ['Input must be a valid JSON array of site objects.'] };
+    }
+
+    if (sitesArray.length === 0) {
+      return { count: 0, updatedCount: 0, errors: ['The JSON array is empty.'] };
+    }
+
+    const overwrite = options?.overwrite ?? true;
+    const validCategories: SiteCategory[] = [
+      'maritime',
+      'corporate',
+      'healthcare',
+      'aviation',
+      'retail',
+      'industrial',
+      'tech',
+      'public_venue',
+      'government'
+    ];
+
+    const validTiers: SiteSecurityTier[] = [
+      'Tier 1 - Standard',
+      'Tier 2 - Elevated',
+      'Tier 3 - High Security',
+      'Tier 4 - Critical Infrastructure'
+    ];
+
+    let newCount = 0;
+    let updatedCount = 0;
+
+    setSitesList((currentList) => {
+      let updatedList = [...currentList];
+
+      sitesArray.forEach((item, index) => {
+        if (!item || typeof item !== 'object') {
+          errors.push(`Entry #${index + 1}: Invalid item format (not an object)`);
+          return;
+        }
+
+        const name = (item.name || item.siteName || item.facilityName || '').trim();
+        if (!name) {
+          errors.push(`Entry #${index + 1}: Missing required "name" property`);
+          return;
+        }
+
+        // Normalize Code
+        let code = (item.code || item.siteCode || item.facilityCode || '').trim().toUpperCase();
+        if (!code) {
+          const prefix = name.replace(/[^a-zA-Z0-9]/g, '').substring(0, 4).toUpperCase() || 'SITE';
+          code = `${prefix}-${String(index + 1).padStart(2, '0')}`;
+        }
+
+        // Normalize Address
+        const address = (item.address || item.streetAddress || `${name} Main Facility`).trim();
+        const city = (item.city || 'Seattle').trim();
+        const state = (item.state || 'WA').trim();
+        const zip = (item.zip || item.postalCode || '98101').trim();
+        const zone = (item.zone || item.district || item.sector || '').trim() || undefined;
+
+        // Normalize Category
+        let category: SiteCategory = 'corporate';
+        const rawCat = (item.category || item.type || '').toLowerCase();
+        const matchedCat = validCategories.find(c => c === rawCat || rawCat.includes(c));
+        if (matchedCat) {
+          category = matchedCat;
+        }
+
+        // Normalize Security Tier
+        let securityTier: SiteSecurityTier = 'Tier 2 - Elevated';
+        const rawTier = (item.securityTier || item.tier || '').toString().toLowerCase();
+        if (rawTier.includes('4') || rawTier.includes('critical')) {
+          securityTier = 'Tier 4 - Critical Infrastructure';
+        } else if (rawTier.includes('3') || rawTier.includes('high')) {
+          securityTier = 'Tier 3 - High Security';
+        } else if (rawTier.includes('1') || rawTier.includes('standard')) {
+          securityTier = 'Tier 1 - Standard';
+        } else if (rawTier.includes('2') || rawTier.includes('elevated')) {
+          securityTier = 'Tier 2 - Elevated';
+        }
+
+        // Normalize Certifications & Clearances
+        let requiredCertifications: string[] = ['Guard Card', 'CPR/AED'];
+        if (Array.isArray(item.requiredCertifications)) {
+          requiredCertifications = item.requiredCertifications.map(String).filter(Boolean);
+        } else if (typeof item.requiredCertifications === 'string') {
+          requiredCertifications = item.requiredCertifications.split(',').map((s: string) => s.trim()).filter(Boolean);
+        } else if (Array.isArray(item.certifications)) {
+          requiredCertifications = item.certifications.map(String).filter(Boolean);
+        }
+
+        let requiredClearances: string[] | undefined = undefined;
+        if (Array.isArray(item.requiredClearances)) {
+          requiredClearances = item.requiredClearances.map(String).filter(Boolean);
+        } else if (typeof item.requiredClearances === 'string') {
+          requiredClearances = item.requiredClearances.split(',').map((s: string) => s.trim()).filter(Boolean);
+        }
+
+        const activePostsCount = Math.max(1, Number(item.activePostsCount || item.postsCount || item.posts || 1));
+        const ojtRequired = options?.defaultOjt !== undefined 
+          ? options.defaultOjt 
+          : (typeof item.ojtRequired === 'boolean' ? item.ojtRequired : true);
+        const operatingHours = (item.operatingHours || item.hours || '24/7 Continuous Ops').trim();
+        const primaryContactName = (item.primaryContactName || item.contactName || 'Facility Dispatcher').trim();
+        const primaryContactPhone = (item.primaryContactPhone || item.contactPhone || '+1 (555) 206-9000').trim();
+        const primaryContactEmail = (item.primaryContactEmail || item.contactEmail || '').trim() || undefined;
+        const emergencyPhone = (item.emergencyPhone || item.emergencyContact || '+1 (555) 206-9911').trim();
+        const postInstructions = (item.postInstructions || item.instructions || item.orders || 'Standard post orders apply. Check in with security dispatch upon arrival.').trim();
+        const accessGateNotes = (item.accessGateNotes || item.accessNotes || item.gateNotes || '').trim() || undefined;
+        const status: 'active' | 'inactive' | 'maintenance' = 
+          item.status === 'inactive' ? 'inactive' : item.status === 'maintenance' ? 'maintenance' : 'active';
+        const notes = (item.notes || item.comments || '').trim() || undefined;
+
+        const siteData: Omit<SiteProfile, 'id' | 'createdAt'> = {
+          name,
+          code,
+          address,
+          city,
+          state,
+          zip,
+          zone,
+          category,
+          securityTier,
+          primaryContactName,
+          primaryContactPhone,
+          primaryContactEmail,
+          emergencyPhone,
+          postInstructions,
+          requiredCertifications,
+          requiredClearances,
+          activePostsCount,
+          ojtRequired,
+          operatingHours,
+          accessGateNotes,
+          status,
+          notes
+        };
+
+        // Check if existing site matches by code or name
+        const existingIndex = updatedList.findIndex(
+          (s) => s.code.toLowerCase() === code.toLowerCase() || s.name.toLowerCase() === name.toLowerCase()
+        );
+
+        if (existingIndex >= 0 && overwrite) {
+          const existing = updatedList[existingIndex];
+          updatedList[existingIndex] = {
+            ...existing,
+            ...siteData,
+            id: existing.id,
+            createdAt: existing.createdAt || new Date().toISOString()
+          };
+          updatedCount++;
+        } else {
+          const newSite: SiteProfile = {
+            ...siteData,
+            id: `site-bulk-${Date.now()}-${index}`,
+            createdAt: new Date().toISOString()
+          };
+          updatedList.push(newSite);
+          newCount++;
+        }
+      });
+
+      return updatedList;
+    });
+
+    const totalAffected = newCount + updatedCount;
+    if (totalAffected > 0) {
+      addAuditLog(
+        'SITE_BULK_IMPORT',
+        'system',
+        `Bulk onboarded ${totalAffected} facilities (${newCount} new registered, ${updatedCount} updated profile records).`,
+        'Ops Admin (Facilities)',
+        'success'
+      );
+
+      logAdminAction({
+        type: 'site_created',
+        title: 'Bulk Facility Onboarding Completed',
+        description: `Imported ${totalAffected} facilities via JSON onboarding parser (${newCount} added, ${updatedCount} synced).`,
+        adminName: "Lt. Mark O'Connor",
+        adminBadge: 'OPS-CMD-01',
+        badgeVariant: 'emerald',
+        metadata: { newCount, updatedCount, totalAffected }
+      });
+
+      showToast(
+        'Facilities Onboarded',
+        `Successfully processed ${totalAffected} facilities (${newCount} new, ${updatedCount} updated).`,
+        'success'
+      );
+    }
+
+    return { count: newCount, updatedCount, errors };
+  };
+
   // Shift Templates Management
   const addShiftTemplate = (data: Omit<ShiftTemplate, 'id' | 'createdAt'>): ShiftTemplate => {
     const newTemplate: ShiftTemplate = {
@@ -1999,6 +2206,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         updateSite,
         deleteSite,
         getSiteByName,
+        bulkImportSites,
         createShift,
         bulkImportShifts,
         markShiftFilled,

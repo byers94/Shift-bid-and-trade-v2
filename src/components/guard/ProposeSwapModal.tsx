@@ -164,7 +164,7 @@ export const ProposeSwapModal: React.FC<ProposeSwapModalProps> = ({ trade, isOpe
                   value={offeredLocation}
                   onChange={(e) => setOfferedLocation(e.target.value)}
                   placeholder="e.g. 2001 W Garfield St / Gate 3 Checkpoint"
-                  className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                  className="w-full border border-slate-300 rounded-lg p-2 text-xs text-slate-900 bg-white placeholder:text-slate-400 font-medium focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] focus:border-[#1e3a8a]"
                 />
               </div>
             </div>
@@ -179,7 +179,7 @@ export const ProposeSwapModal: React.FC<ProposeSwapModalProps> = ({ trade, isOpe
                   required
                   value={offeredDate}
                   onChange={(e) => setOfferedDate(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                  className="w-full border border-slate-300 rounded-lg p-2 text-xs text-slate-900 bg-white font-medium focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] focus:border-[#1e3a8a]"
                 />
               </div>
               <div>
@@ -191,7 +191,7 @@ export const ProposeSwapModal: React.FC<ProposeSwapModalProps> = ({ trade, isOpe
                   required
                   value={offeredStartTime}
                   onChange={(e) => setOfferedStartTime(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                  className="w-full border border-slate-300 rounded-lg p-2 text-xs text-slate-900 bg-white font-medium focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] focus:border-[#1e3a8a]"
                 />
               </div>
               <div>
@@ -203,7 +203,7 @@ export const ProposeSwapModal: React.FC<ProposeSwapModalProps> = ({ trade, isOpe
                   required
                   value={offeredEndTime}
                   onChange={(e) => setOfferedEndTime(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                  className="w-full border border-slate-300 rounded-lg p-2 text-xs text-slate-900 bg-white font-medium focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] focus:border-[#1e3a8a]"
                 />
               </div>
             </div>
@@ -225,7 +225,7 @@ export const ProposeSwapModal: React.FC<ProposeSwapModalProps> = ({ trade, isOpe
               value={datesTimesNotes}
               onChange={(e) => setDatesTimesNotes(e.target.value)}
               placeholder="e.g. Can cover full 12hr shift on Oct 17 or available anytime after 16:00."
-              className="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+              className="w-full border border-slate-300 rounded-lg p-2.5 text-sm text-slate-900 bg-white placeholder:text-slate-400 font-medium focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] focus:border-[#1e3a8a]"
             />
           </div>
 

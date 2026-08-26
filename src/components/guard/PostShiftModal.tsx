@@ -198,7 +198,7 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
                   placeholder="e.g. 2001 W Garfield St, Terminal 91 / Gate 3"
-                  className="w-full border border-slate-300 rounded-lg p-2.5 pl-9 text-xs focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                  className="w-full border border-slate-300 rounded-lg p-2.5 pl-9 text-xs text-slate-900 bg-white placeholder:text-slate-400 font-medium focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] focus:border-[#1e3a8a]"
                 />
               </div>
             </div>
@@ -215,7 +215,7 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
                 required
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                className="w-full border border-slate-300 rounded-lg p-2 text-sm text-slate-900 bg-white font-medium focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] focus:border-[#1e3a8a]"
               />
             </div>
 
@@ -228,7 +228,7 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
                 required
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
-                className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                className="w-full border border-slate-300 rounded-lg p-2 text-sm text-slate-900 bg-white font-medium focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] focus:border-[#1e3a8a]"
               />
             </div>
 
@@ -241,7 +241,7 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
                 required
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
-                className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                className="w-full border border-slate-300 rounded-lg p-2 text-sm text-slate-900 bg-white font-medium focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] focus:border-[#1e3a8a]"
               />
             </div>
           </div>
@@ -274,7 +274,7 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
                   ? 'e.g. Looking to exchange for morning shift on Friday or weekend day watch.'
                   : 'e.g. Personal emergency, doctor appointment, or need voluntary coverage drop.'
               }
-              className="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+              className="w-full border border-slate-300 rounded-lg p-2.5 text-sm text-slate-900 bg-white placeholder:text-slate-400 font-medium focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] focus:border-[#1e3a8a]"
             />
             <p className="text-[10px] text-slate-400 mt-1">
               Ops dispatchers can review and edit these notes before approving the listing.

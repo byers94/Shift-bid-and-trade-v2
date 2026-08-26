@@ -58,6 +58,7 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
     shifts, 
     trades, 
     bids, 
+    sitesList,
     addGuard, 
     updateGuard, 
     deleteGuard 
@@ -99,9 +100,12 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
   const [quickSiteAddGuardId, setQuickSiteAddGuardId] = useState<string | null>(null);
   const [selectedQuickSite, setSelectedQuickSite] = useState<string>('');
 
-  // Extract all known facilities / sites across shifts & existing guards
+  // Extract all known facilities / sites across shifts, Site Directory, & existing guards
   const allFacilities = useMemo(() => {
     const siteSet = new Set<string>();
+    sitesList.forEach((s) => {
+      if (s.name) siteSet.add(s.name);
+    });
     shifts.forEach((s) => {
       if (s.siteName) siteSet.add(s.siteName);
     });
@@ -121,7 +125,7 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
       'Downtown Financial Center'
     ].forEach((s) => siteSet.add(s));
     return Array.from(siteSet).sort();
-  }, [shifts, guardsList]);
+  }, [shifts, guardsList, sitesList]);
 
   // Common Certifications List
   const commonCertifications = [
@@ -358,15 +362,49 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
   const guardA = guardsList.find((g) => g.id === checkerGuardAId);
   const guardB = guardsList.find((g) => g.id === checkerGuardBId);
 
+  const siteProfileA = useMemo(() => {
+    if (!checkerSiteA) return undefined;
+    return sitesList.find((s) => s.name === checkerSiteA || s.code === checkerSiteA);
+  }, [checkerSiteA, sitesList]);
+
+  const siteProfileB = useMemo(() => {
+    if (!checkerSiteB) return undefined;
+    return sitesList.find((s) => s.name === checkerSiteB || s.code === checkerSiteB);
+  }, [checkerSiteB, sitesList]);
+
+  const requiredClearancesA = useMemo(() => {
+    return siteProfileA?.requiredClearances || siteProfileA?.requiredCertifications || [];
+  }, [siteProfileA]);
+
+  const requiredClearancesB = useMemo(() => {
+    return siteProfileB?.requiredClearances || siteProfileB?.requiredCertifications || [];
+  }, [siteProfileB]);
+
+  const missingClearancesA = useMemo(() => {
+    if (!guardA) return [];
+    const guardCerts = (guardA.certifications || []).map((c) => c.toLowerCase());
+    return requiredClearancesB.filter((req) => 
+      !guardCerts.some((gc) => gc.includes(req.toLowerCase()) || req.toLowerCase().includes(gc))
+    );
+  }, [guardA, requiredClearancesB]);
+
+  const missingClearancesB = useMemo(() => {
+    if (!guardB) return [];
+    const guardCerts = (guardB.certifications || []).map((c) => c.toLowerCase());
+    return requiredClearancesA.filter((req) => 
+      !guardCerts.some((gc) => gc.includes(req.toLowerCase()) || req.toLowerCase().includes(gc))
+    );
+  }, [guardB, requiredClearancesA]);
+
   const isGuardATrainedOnSiteB = useMemo(() => {
     if (!guardA || !checkerSiteB) return false;
-    return guardA.ojtSites?.includes(checkerSiteB) || guardA.trainingLevel === 'lead_certified';
-  }, [guardA, checkerSiteB]);
+    return (guardA.ojtSites?.includes(checkerSiteB) || guardA.trainingLevel === 'lead_certified') && missingClearancesA.length === 0;
+  }, [guardA, checkerSiteB, missingClearancesA]);
 
   const isGuardBTrainedOnSiteA = useMemo(() => {
     if (!guardB || !checkerSiteA) return false;
-    return guardB.ojtSites?.includes(checkerSiteA) || guardB.trainingLevel === 'lead_certified';
-  }, [guardB, checkerSiteA]);
+    return (guardB.ojtSites?.includes(checkerSiteA) || guardB.trainingLevel === 'lead_certified') && missingClearancesB.length === 0;
+  }, [guardB, checkerSiteA, missingClearancesB]);
 
   return (
     <div id="guard-directory-component" className="flex flex-col gap-4 w-full">
@@ -1318,7 +1356,9 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
                     </div>
                     <p className="text-[11px]">
                       {isGuardATrainedOnSiteB 
-                        ? `✅ Fully Trained & Qualified. ${guardA.name} holds active clearance for ${checkerSiteB}.` 
+                        ? `✅ Fully Trained & Qualified. ${guardA.name} holds active clearance and meets all site requirements for ${checkerSiteB}.` 
+                        : missingClearancesA.length > 0
+                        ? `⚠️ Missing Site Clearances: ${missingClearancesA.join(', ')} required by ${checkerSiteB}.`
                         : `⚠️ Needs Site OJT. ${guardA.name} has NOT completed orientation for ${checkerSiteB}. Supervisor briefing required.`
                       }
                     </p>
@@ -1340,7 +1380,9 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
                     </div>
                     <p className="text-[11px]">
                       {isGuardBTrainedOnSiteA 
-                        ? `✅ Fully Trained & Qualified. ${guardB.name} holds active clearance for ${checkerSiteA}.` 
+                        ? `✅ Fully Trained & Qualified. ${guardB.name} holds active clearance and meets all site requirements for ${checkerSiteA}.` 
+                        : missingClearancesB.length > 0
+                        ? `⚠️ Missing Site Clearances: ${missingClearancesB.join(', ')} required by ${checkerSiteA}.`
                         : `⚠️ Needs Site OJT. ${guardB.name} has NOT completed orientation for ${checkerSiteA}. Supervisor briefing required.`
                       }
                     </p>

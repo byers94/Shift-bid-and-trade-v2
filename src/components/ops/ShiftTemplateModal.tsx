@@ -380,7 +380,7 @@ export const ShiftTemplateModal: React.FC<ShiftTemplateModalProps> = ({
                     placeholder="e.g. Mon-Fri 0800-1600 Corporate Day Patrol"
                     value={templateName}
                     onChange={(e) => setTemplateName(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                    className="w-full border border-slate-300 rounded-lg p-2 text-xs font-semibold text-slate-900 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
                   />
                 </div>
 
@@ -393,7 +393,7 @@ export const ShiftTemplateModal: React.FC<ShiftTemplateModalProps> = ({
                   <select
                     value={daysPattern}
                     onChange={(e) => setDaysPattern(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2 text-xs bg-white font-medium focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                    className="w-full border border-slate-300 rounded-lg p-2 text-xs bg-white text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
                   >
                     <option value="Mon - Fri">Mon - Fri (Weekdays)</option>
                     <option value="Sat - Sun">Sat - Sun (Weekends)</option>
@@ -408,7 +408,7 @@ export const ShiftTemplateModal: React.FC<ShiftTemplateModalProps> = ({
                       placeholder="e.g. Tue, Thu, Sat"
                       value={customDays}
                       onChange={(e) => setCustomDays(e.target.value)}
-                      className="mt-1.5 w-full border border-slate-300 rounded-lg p-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                      className="mt-1.5 w-full border border-slate-300 rounded-lg p-1.5 text-xs text-slate-900 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
                     />
                   )}
                 </div>
@@ -421,7 +421,7 @@ export const ShiftTemplateModal: React.FC<ShiftTemplateModalProps> = ({
                   <select
                     value={urgency}
                     onChange={(e) => setUrgency(e.target.value as any)}
-                    className="w-full border border-slate-300 rounded-lg p-2 text-xs bg-white font-medium focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                    className="w-full border border-slate-300 rounded-lg p-2 text-xs bg-white text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
                   >
                     <option value="standard">Standard Routine Shift</option>
                     <option value="emergency">Emergency (High Priority Dispatch)</option>
@@ -461,7 +461,7 @@ export const ShiftTemplateModal: React.FC<ShiftTemplateModalProps> = ({
                     placeholder="e.g. Main Lobby & Access Gate"
                     value={location}
                     onChange={(e) => setLocation(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                    className="w-full border border-slate-300 rounded-lg p-2 text-xs text-slate-900 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
                   />
                 </div>
 
@@ -483,7 +483,7 @@ export const ShiftTemplateModal: React.FC<ShiftTemplateModalProps> = ({
                     placeholder="e.g. 100 Enterprise Way, Suite 400"
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                    className="w-full border border-slate-300 rounded-lg p-2 text-xs text-slate-900 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
                   />
                 </div>
 
@@ -498,7 +498,7 @@ export const ShiftTemplateModal: React.FC<ShiftTemplateModalProps> = ({
                     required
                     value={startTime}
                     onChange={(e) => setStartTime(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2 text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                    className="w-full border border-slate-300 rounded-lg p-2 text-xs font-mono font-bold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
                   />
                 </div>
 
@@ -512,7 +512,7 @@ export const ShiftTemplateModal: React.FC<ShiftTemplateModalProps> = ({
                     required
                     value={endTime}
                     onChange={(e) => setEndTime(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2 text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                    className="w-full border border-slate-300 rounded-lg p-2 text-xs font-mono font-bold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
                   />
                 </div>
 
@@ -536,7 +536,7 @@ export const ShiftTemplateModal: React.FC<ShiftTemplateModalProps> = ({
                     placeholder="e.g. Main executive lobby access control, visitor badge check-in..."
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                    className="w-full border border-slate-300 rounded-lg p-2 text-xs text-slate-900 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
                   />
                 </div>
               </div>

@@ -279,7 +279,8 @@ export interface SiteProfile {
   primaryContactEmail?: string;
   emergencyPhone: string;
   postInstructions: string;
-  requiredCertifications: string[];
+  requiredClearances?: string[]; // Mandatory facility security clearances & credentials from Site Directory
+  requiredCertifications: string[]; // Facility qualifications & certifications list
   activePostsCount: number;
   ojtRequired: boolean;
   operatingHours?: string; // e.g. "24/7 Continuous Ops"

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
 import { SiteProfile, SiteCategory, SiteSecurityTier } from '../../types/shift';
+import { SiteJsonImportModal } from './SiteJsonImportModal';
 import { 
   Building2, 
   MapPin, 
@@ -17,6 +18,7 @@ import {
   ChevronRight, 
   ExternalLink, 
   FileText, 
+  FileCode,
   LayoutGrid, 
   List, 
   Clock, 
@@ -71,6 +73,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
 
   // Modal States
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isJsonImportModalOpen, setIsJsonImportModalOpen] = useState(false);
   const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
   const [viewingDossierSite, setViewingDossierSite] = useState<SiteProfile | null>(null);
   const [deleteConfirmSite, setDeleteConfirmSite] = useState<SiteProfile | null>(null);
@@ -360,6 +363,16 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            type="button"
+            id="btn-open-site-json-import"
+            onClick={() => setIsJsonImportModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
+            title="Paste or import formatted JSON list of client security facilities"
+          >
+            <FileCode className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            JSON Bulk Import
+          </button>
           <button
             type="button"
             id="btn-add-new-site"
@@ -1150,6 +1163,29 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
             </div>
 
             <form onSubmit={handleSaveSite} className="p-5 space-y-4 text-xs">
+              {/* Quick Switch to JSON Import Banner */}
+              {!editingSiteId && (
+                <div className="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl flex items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2 text-blue-900 dark:text-blue-200">
+                    <FileCode className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                    <span>
+                      Need to onboard multiple client facilities quickly? Paste a formatted JSON array.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    id="btn-switch-to-json-import-from-modal"
+                    onClick={() => {
+                      setIsEditModalOpen(false);
+                      setIsJsonImportModalOpen(true);
+                    }}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-lg text-[11px] font-bold shrink-0 transition-colors shadow-2xs cursor-pointer"
+                  >
+                    Switch to JSON Import
+                  </button>
+                </div>
+              )}
+
               {/* Section 1: Facility Identity */}
               <div className="space-y-3">
                 <h4 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wider text-slate-400">
@@ -1519,6 +1555,12 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
           </div>
         </div>
       )}
+
+      {/* JSON Bulk Import Modal */}
+      <SiteJsonImportModal
+        isOpen={isJsonImportModalOpen}
+        onClose={() => setIsJsonImportModalOpen(false)}
+      />
     </div>
   );
 };

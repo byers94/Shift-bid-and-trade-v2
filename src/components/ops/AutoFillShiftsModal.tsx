@@ -46,6 +46,7 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
     shifts, 
     guardsList, 
     bids, 
+    sitesList,
     markShiftFilled, 
     showToast,
     logAdminAction
@@ -56,7 +57,7 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(initialShiftId || null);
 
   // Filters for single shift candidate view
-  const [candidateFilter, setCandidateFilter] = useState<'all' | 'site_trained' | 'high_rest' | 'has_bids'>('all');
+  const [candidateFilter, setCandidateFilter] = useState<'all' | 'site_cleared' | 'site_trained' | 'high_rest' | 'has_bids'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Batch assignments state: shiftId -> selected guardId
@@ -79,16 +80,17 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
     return openShifts[0] || null;
   }, [selectedShiftId, shifts, openShifts]);
 
-  // Candidates for active single shift
+  // Candidates for active single shift evaluated against Site Directory
   const candidateEvaluations = useMemo(() => {
     if (!activeShift) return [];
-    return suggestGuardsForShift(activeShift, guardsList, shifts, bids);
-  }, [activeShift, guardsList, shifts, bids]);
+    return suggestGuardsForShift(activeShift, guardsList, shifts, bids, sitesList);
+  }, [activeShift, guardsList, shifts, bids, sitesList]);
 
   // Filtered candidate list
   const filteredCandidates = useMemo(() => {
     return candidateEvaluations.filter((cand) => {
       // Filter tab
+      if (candidateFilter === 'site_cleared' && !cand.isSiteClearanceMet) return false;
       if (candidateFilter === 'site_trained' && !cand.isSiteTrained) return false;
       if (candidateFilter === 'high_rest' && (cand.daysSinceLastWorked === null ? false : cand.daysSinceLastWorked < 2)) return false;
       if (candidateFilter === 'has_bids' && !cand.hasBid) return false;
@@ -109,8 +111,8 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
 
   // Batch Auto-Fill Plan generated on open shifts
   const batchPlan = useMemo(() => {
-    return generateBatchAutoFillPlan(openShifts, guardsList, shifts, bids);
-  }, [openShifts, guardsList, shifts, bids]);
+    return generateBatchAutoFillPlan(openShifts, guardsList, shifts, bids, sitesList);
+  }, [openShifts, guardsList, shifts, bids, sitesList]);
 
   // Sync batch state when plan initializes or openShifts changes
   React.useEffect(() => {
@@ -561,6 +563,18 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
 
                   <button
                     type="button"
+                    onClick={() => setCandidateFilter('site_cleared')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                      candidateFilter === 'site_cleared'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
+                        : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
+                    }`}
+                  >
+                    ✓ Clearances Met
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => setCandidateFilter('site_trained')}
                     className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
                       candidateFilter === 'site_trained'
@@ -739,13 +753,21 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
                             </div>
                           </div>
 
-                          {/* Bid & Certs Status */}
-                          <div className="p-2 rounded-lg border bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                          {/* Bid & Clearances Status */}
+                          <div className={`p-2 rounded-lg border flex items-center gap-2 ${
+                            cand.isSiteClearanceMet
+                              ? 'bg-purple-50/70 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800/60 text-purple-900 dark:text-purple-300'
+                              : 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/60 text-rose-900 dark:text-rose-300'
+                          }`}>
                             <Award className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
                             <div className="truncate">
-                              <span className="font-bold block text-[10px] uppercase text-slate-400">Certifications</span>
-                              <span className="truncate">
-                                {cand.missingCertifications.length === 0 ? '✓ 100% Reqs Met' : `Missing ${cand.missingCertifications.length}`}
+                              <span className="font-bold block text-[10px] uppercase text-slate-400">Site Clearances</span>
+                              <span className="truncate font-semibold">
+                                {cand.siteRequiredClearances.length === 0
+                                  ? 'Standard Clearance'
+                                  : cand.isSiteClearanceMet
+                                  ? `✓ 100% Cleared (${cand.matchedClearances.length}/${cand.siteRequiredClearances.length})`
+                                  : `Missing ${cand.missingClearances.length} Clearance${cand.missingClearances.length === 1 ? '' : 's'}`}
                               </span>
                             </div>
                           </div>

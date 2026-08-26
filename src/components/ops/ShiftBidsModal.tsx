@@ -35,7 +35,7 @@ export const ShiftBidsModal: React.FC<ShiftBidsModalProps> = ({
   selectedShiftId,
   onSelectShiftId
 }) => {
-  const { shifts, bids, awardShiftBid, markShiftFilled, guardsList } = useShiftOps();
+  const { shifts, bids, awardShiftBid, markShiftFilled, guardsList, sitesList } = useShiftOps();
   const [filterMode, setFilterMode] = useState<'all' | 'trained' | 'needs_ojt'>('all');
   const [expandedSmsBidId, setExpandedSmsBidId] = useState<string | null>(null);
   const [assigningBidId, setAssigningBidId] = useState<string | null>(null);
@@ -299,6 +299,19 @@ export const ShiftBidsModal: React.FC<ShiftBidsModalProps> = ({
               const isShiftFilled = associatedShift?.status === 'filled';
               const isAssignedToThisBidder = isShiftFilled && associatedShift?.assignedGuardName?.toLowerCase() === bid.guardName.toLowerCase();
 
+              const siteProfile = sitesList.find(
+                (s) => s.name === bid.siteName || (associatedShift && s.name === associatedShift.siteName)
+              );
+              const guardProfile = guardsList.find(
+                (g) => g.name.toLowerCase() === bid.guardName.toLowerCase() || g.phone === bid.guardPhone
+              );
+              const requiredClearances = siteProfile?.requiredClearances || siteProfile?.requiredCertifications || [];
+              const guardCerts = (guardProfile?.certifications || []).map((c) => c.toLowerCase());
+              const missingClearances = requiredClearances.filter(
+                (req) => !guardCerts.some((gc) => gc.includes(req.toLowerCase()) || req.toLowerCase().includes(gc))
+              );
+              const isClearanceMet = missingClearances.length === 0;
+
               return (
                 <div
                   key={bid.id}
@@ -306,7 +319,7 @@ export const ShiftBidsModal: React.FC<ShiftBidsModalProps> = ({
                   className={`bg-white rounded-xl border p-4 shadow-xs transition-all ${
                     isAssignedToThisBidder
                       ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/30'
-                      : isTrained
+                      : isTrained && isClearanceMet
                       ? 'border-slate-200 hover:border-blue-300 hover:shadow-md'
                       : 'border-amber-200 bg-amber-50/20 hover:border-amber-300'
                   }`}
@@ -317,7 +330,7 @@ export const ShiftBidsModal: React.FC<ShiftBidsModalProps> = ({
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-extrabold text-sm shrink-0 ${
                         isAssignedToThisBidder
                           ? 'bg-emerald-600 text-white'
-                          : isTrained
+                          : isTrained && isClearanceMet
                           ? 'bg-blue-100 text-[#1e3a8a] border border-blue-200'
                           : 'bg-amber-100 text-amber-900 border border-amber-300'
                       }`}>
@@ -342,6 +355,17 @@ export const ShiftBidsModal: React.FC<ShiftBidsModalProps> = ({
                             <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black uppercase px-2 py-0.5 rounded-md flex items-center gap-1">
                               <AlertTriangle className="w-3 h-3 text-amber-600" />
                               Needs Site OJT
+                            </span>
+                          )}
+
+                          {requiredClearances.length > 0 && (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 ${
+                              isClearanceMet
+                                ? 'bg-purple-100 text-purple-900 border border-purple-200'
+                                : 'bg-rose-100 text-rose-900 border border-rose-200'
+                            }`}>
+                              <Award className="w-3 h-3" />
+                              {isClearanceMet ? '✓ Clearances Met' : `Missing: ${missingClearances.join(', ')}`}
                             </span>
                           )}
                         </div>
