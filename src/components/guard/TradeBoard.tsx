@@ -16,24 +16,44 @@ import {
   Sparkles,
   MapPin,
   Gift,
-  ArrowUpDown
+  ArrowUpDown,
+  Search
 } from 'lucide-react';
 
-export const TradeBoard: React.FC = () => {
-  const { trades, activeGuard } = useShiftOps();
+interface TradeBoardProps {
+  onOpenAlertPrefs?: () => void;
+}
+
+export const TradeBoard: React.FC<TradeBoardProps> = ({ onOpenAlertPrefs }) => {
+  const { trades, activeGuard, sitesList } = useShiftOps();
   const [isPostModalOpen, setIsPostModalOpen] = useState(false);
   const [selectedTradeForSwap, setSelectedTradeForSwap] = useState<Trade | null>(null);
   const [filterTab, setFilterTab] = useState<'active' | 'my_requests' | 'all'>('active');
+  const [siteFilter, setSiteFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'soonest' | 'furthest'>('soonest');
 
   // Filter trades
   const filteredTrades = trades.filter((t) => {
     if (filterTab === 'active') {
-      return t.status === 'active' || t.status === 'pending_swap';
+      if (t.status !== 'active' && t.status !== 'pending_swap') return false;
+    } else if (filterTab === 'my_requests') {
+      const isMine = t.offeringGuard.id === activeGuard.id || t.swapOffer?.offeredByGuard.id === activeGuard.id;
+      if (!isMine) return false;
     }
-    if (filterTab === 'my_requests') {
-      return t.offeringGuard.id === activeGuard.id || t.swapOffer?.offeredByGuard.id === activeGuard.id;
+
+    if (siteFilter !== 'all') {
+      if (t.originalShift.siteName.toLowerCase() !== siteFilter.toLowerCase()) return false;
     }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchSite = t.originalShift.siteName.toLowerCase().includes(q);
+      const matchGuard = t.offeringGuard.name.toLowerCase().includes(q) || t.offeringGuard.badgeNumber.toLowerCase().includes(q);
+      const matchNotes = t.reason?.toLowerCase().includes(q);
+      if (!matchSite && !matchGuard && !matchNotes) return false;
+    }
+
     return true;
   });
 
@@ -48,8 +68,39 @@ export const TradeBoard: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-slate-900 transition-colors">
       {/* Top Filter and Actions */}
-      <div className="p-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0 shadow-2xs">
-        <div className="flex items-center justify-between">
+      <div className="p-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2.5 shrink-0 shadow-2xs">
+        {/* Search & Post Action */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 absolute left-2.5 top-2.5" />
+            <input
+              type="text"
+              placeholder="Search site, guard, badge, or notes..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-[#1e3a8a] dark:focus:ring-blue-400"
+            />
+          </div>
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-1 cursor-pointer"
+            >
+              Clear
+            </button>
+          )}
+          <button
+            id="post-trade-top-btn"
+            onClick={() => setIsPostModalOpen(true)}
+            className="bg-[#1e3a8a] dark:bg-blue-600 hover:bg-blue-900 dark:hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors shrink-0 cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Post Shift / Trade</span>
+            <span className="sm:hidden">Post</span>
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1">
             <button
               onClick={() => setFilterTab('active')}
@@ -84,6 +135,20 @@ export const TradeBoard: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Site selector dropdown */}
+            <select
+              value={siteFilter}
+              onChange={(e) => setSiteFilter(e.target.value)}
+              className="text-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
+            >
+              <option value="all">All Sites ({sitesList.length})</option>
+              {sitesList.map((site) => (
+                <option key={site.id} value={site.name}>
+                  {site.code} - {site.name}
+                </option>
+              ))}
+            </select>
+
             {/* Sort toggle */}
             <button
               id="trade-sort-toggle-btn"
@@ -92,7 +157,7 @@ export const TradeBoard: React.FC = () => {
               title="Toggle sort date order"
             >
               <ArrowUpDown className="w-3 h-3 text-[#1e3a8a] dark:text-blue-400" />
-              <span>{sortOrder === 'soonest' ? '📅 Soonest First' : '📅 Furthest First'}</span>
+              <span>{sortOrder === 'soonest' ? '📅 Soonest' : '📅 Furthest'}</span>
             </button>
 
             <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 font-semibold">

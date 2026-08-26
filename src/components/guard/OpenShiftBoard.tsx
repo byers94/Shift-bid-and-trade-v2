@@ -20,16 +20,24 @@ import {
   ArrowUpNarrowWide
 } from 'lucide-react';
 
-export const OpenShiftBoard: React.FC = () => {
-  const { shifts, activeGuard } = useShiftOps();
+interface OpenShiftBoardProps {
+  onOpenAlertPrefs?: () => void;
+}
+
+export const OpenShiftBoard: React.FC<OpenShiftBoardProps> = ({ onOpenAlertPrefs }) => {
+  const { shifts, activeGuard, sitesList } = useShiftOps();
   const [selectedShiftForBid, setSelectedShiftForBid] = useState<Shift | null>(null);
   const [urgencyFilter, setUrgencyFilter] = useState<'all' | 'emergency' | 'standard'>('all');
+  const [siteFilter, setSiteFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'soonest' | 'furthest' | 'emergency' | 'hours'>('soonest');
 
   const filteredShifts = shifts.filter((s) => {
     if (urgencyFilter !== 'all' && s.urgency !== urgencyFilter) {
       return false;
+    }
+    if (siteFilter !== 'all') {
+      if (s.siteName.toLowerCase() !== siteFilter.toLowerCase()) return false;
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -88,8 +96,8 @@ export const OpenShiftBoard: React.FC = () => {
           )}
         </div>
 
-        {/* Urgency Filter Pills */}
-        <div className="flex items-center justify-between gap-1 text-xs">
+        {/* Urgency Filter Pills & Site Dropdown */}
+        <div className="flex flex-wrap items-center justify-between gap-1 text-xs">
           <div className="flex items-center gap-1">
             <button
               onClick={() => setUrgencyFilter('all')}
@@ -123,9 +131,24 @@ export const OpenShiftBoard: React.FC = () => {
             </button>
           </div>
 
-          <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 font-semibold">
-            {sortedShifts.length} Visible
-          </span>
+          <div className="flex items-center gap-2">
+            <select
+              value={siteFilter}
+              onChange={(e) => setSiteFilter(e.target.value)}
+              className="text-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium"
+            >
+              <option value="all">All Sites ({sitesList.length})</option>
+              {sitesList.map((site) => (
+                <option key={site.id} value={site.name}>
+                  {site.code} - {site.name}
+                </option>
+              ))}
+            </select>
+
+            <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 font-semibold">
+              {sortedShifts.length} Visible
+            </span>
+          </div>
         </div>
 
         {/* Sort Controls Bar */}

@@ -3,6 +3,7 @@ import { useShiftOps } from '../../context/ShiftOpsContext';
 import { OpenShiftBoard } from './OpenShiftBoard';
 import { TradeBoard } from './TradeBoard';
 import { EmergencyAlertOverlay } from './EmergencyAlertOverlay';
+import { ShiftAlertPreferencesModal } from './ShiftAlertPreferencesModal';
 import { 
   Shield, 
   UserCheck, 
@@ -10,8 +11,13 @@ import {
   Smartphone,
   PhoneCall,
   Bell,
+  BellRing,
   Sun,
-  Moon
+  Moon,
+  SlidersHorizontal,
+  AlertTriangle,
+  Zap,
+  RefreshCw
 } from 'lucide-react';
 
 interface GuardViewProps {
@@ -19,12 +25,29 @@ interface GuardViewProps {
 }
 
 export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) => {
-  const { activeGuard, guardsList, setActiveGuard, shifts, trades, opsPhone, theme, toggleTheme } = useShiftOps();
+  const { 
+    activeGuard, 
+    guardsList, 
+    setActiveGuard, 
+    shifts, 
+    trades, 
+    opsPhone, 
+    theme, 
+    toggleTheme,
+    alertPreferences 
+  } = useShiftOps();
   const [activeTab, setActiveTab] = useState<'open_board' | 'trade_board'>('open_board');
   const [showGuardMenu, setShowGuardMenu] = useState(false);
+  const [isAlertPrefsOpen, setIsAlertPrefsOpen] = useState(false);
 
   const openShiftsCount = shifts.filter((s) => s.status === 'open').length;
   const activeTradesCount = trades.filter((t) => t.status === 'active' || t.status === 'pending_swap').length;
+
+  const activeCategoriesCount = [
+    alertPreferences.emergencyAlerts,
+    alertPreferences.urgentOpenShifts,
+    alertPreferences.tradeMatches
+  ].filter(Boolean).length;
 
   return (
     <aside 
@@ -35,6 +58,12 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
     >
       {/* High-priority Emergency Alert Overlay */}
       <EmergencyAlertOverlay />
+
+      {/* Shift Alert Preferences Modal */}
+      <ShiftAlertPreferencesModal 
+        isOpen={isAlertPrefsOpen} 
+        onClose={() => setIsAlertPrefsOpen(false)} 
+      />
 
       {/* Navy Blue Header matching High Density theme */}
       <header className="bg-[#1e3a8a] dark:bg-slate-950 text-white p-4 sm:p-5 flex flex-col gap-3 shadow-md shrink-0 border-b dark:border-slate-800">
@@ -50,6 +79,24 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
           </div>
 
           <div className="flex items-center gap-1.5">
+            {/* Shift Alert Preferences Modal Trigger */}
+            <button
+              id="guard-alert-preferences-btn"
+              onClick={() => setIsAlertPrefsOpen(true)}
+              className="p-1.5 rounded-lg bg-blue-950/70 hover:bg-blue-900 border border-blue-400/30 text-blue-200 hover:text-white cursor-pointer transition-colors relative flex items-center gap-1.5 shadow-2xs group"
+              title="Shift Alert Preferences (Emergency, Urgent Shifts, Trades)"
+              aria-label="Open Shift Alert Preferences"
+            >
+              <Bell className="w-3.5 h-3.5 text-amber-300 group-hover:scale-110 transition-transform" />
+              <span className="text-[10px] font-bold font-mono text-white hidden sm:inline">Alerts</span>
+              <span 
+                className={`w-2 h-2 rounded-full ${
+                  activeCategoriesCount > 0 ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'
+                }`}
+                title={`${activeCategoriesCount} of 3 alert channels active`}
+              />
+            </button>
+
             {/* Quick theme toggle inside Guard View header */}
             <button
               id="guard-theme-toggle-btn"
@@ -128,6 +175,43 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
             </div>
           )}
         </div>
+
+        {/* Quick Shift Alert Status Strip */}
+        <div className="bg-blue-950/60 border border-blue-800/60 rounded-lg px-2.5 py-1.5 flex items-center justify-between text-[11px] gap-2">
+          <div className="flex items-center gap-1.5 overflow-hidden">
+            <BellRing className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+            <span className="text-[10px] text-blue-200 font-semibold uppercase tracking-wider shrink-0">Alerts:</span>
+            <div className="flex items-center gap-1 truncate">
+              {alertPreferences.emergencyAlerts && (
+                <span className="text-[9px] bg-rose-900/70 text-rose-200 border border-rose-700/50 px-1.5 py-0.2 rounded font-mono font-bold">
+                  Emergency
+                </span>
+              )}
+              {alertPreferences.urgentOpenShifts && (
+                <span className="text-[9px] bg-amber-900/70 text-amber-200 border border-amber-700/50 px-1.5 py-0.2 rounded font-mono font-bold">
+                  Urgent
+                </span>
+              )}
+              {alertPreferences.tradeMatches && (
+                <span className="text-[9px] bg-blue-800/80 text-blue-200 border border-blue-600/50 px-1.5 py-0.2 rounded font-mono font-bold">
+                  Trades
+                </span>
+              )}
+              {!alertPreferences.emergencyAlerts && !alertPreferences.urgentOpenShifts && !alertPreferences.tradeMatches && (
+                <span className="text-[9px] text-slate-400 italic">Muted</span>
+              )}
+            </div>
+          </div>
+
+          <button
+            id="guard-quick-prefs-config-btn"
+            onClick={() => setIsAlertPrefsOpen(true)}
+            className="text-[10px] font-bold text-blue-300 hover:text-white flex items-center gap-1 underline underline-offset-2 shrink-0 cursor-pointer"
+          >
+            <SlidersHorizontal className="w-3 h-3" />
+            <span>Config</span>
+          </button>
+        </div>
       </header>
 
       {/* Navigation Tabs */}
@@ -173,8 +257,9 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
 
       {/* Board Content */}
       <div className="flex-1 flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-900">
-        {activeTab === 'open_board' ? <OpenShiftBoard /> : <TradeBoard />}
+        {activeTab === 'open_board' ? <OpenShiftBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} /> : <TradeBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
       </div>
     </aside>
   );
 };
+

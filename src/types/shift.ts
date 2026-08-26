@@ -135,6 +135,11 @@ export type AdminActionType =
   | 'template_deleted'
   | 'emergency_broadcast_sent'
   | 'emergency_broadcast_resolved'
+  | 'feedback_logged'
+  | 'commendation_awarded'
+  | 'site_created'
+  | 'site_updated'
+  | 'site_deleted'
   | 'system_reset';
 
 export interface AdminAction {
@@ -199,4 +204,89 @@ export interface ShiftTemplate {
   requiredCertifications?: string[];
   createdAt?: string;
 }
+
+export type AlertNotificationCategory = 'emergency_alerts' | 'urgent_open_shifts' | 'trade_matches';
+
+export interface ShiftAlertPreferences {
+  emergencyAlerts: boolean; // Critical broadcasts, lockdown & active threat notifications
+  urgentOpenShifts: boolean; // Same-day / urgent unfilled shifts & priority open posts
+  tradeMatches: boolean; // Shift giveaways & swap proposals matching guard's sites or schedule
+  siteQualifiedOnly: boolean; // Filter shift notifications to only sites guard is OJT-cleared for
+  soundEnabled: boolean; // Play alert audio chime/siren for incoming notifications
+  quietHoursEnabled: boolean; // Mute non-emergency alerts during scheduled quiet hours
+  quietHoursStart: string; // "22:00"
+  quietHoursEnd: string; // "06:00"
+  notifyViaSms: boolean; // Dispatch fallback SMS dispatch alert
+}
+
+export interface SiteFeedbackEntry {
+  id: string;
+  guardId: string;
+  guardName: string;
+  siteName: string;
+  rating: number; // 1.0 to 5.0
+  reviewerName: string;
+  reviewerTitle: string;
+  comment: string;
+  tags: string[];
+  date: string; // YYYY-MM-DD
+  isVerifiedClient: boolean;
+}
+
+export interface GuardPerformanceStats {
+  guardId: string;
+  fulfilledShiftsCount: number;
+  totalHoursCompleted: number;
+  emergencyShiftsFulfilled: number;
+  ratingAverage: number; // 1.0 - 5.0
+  positiveFeedbackCount: number;
+  onTimeArrivalRate: number; // percentage e.g. 99.4
+  recognitionBadges: string[];
+  topCommendedSite: string;
+  recentFeedbacks?: SiteFeedbackEntry[];
+}
+
+export type SiteCategory = 
+  | 'maritime' 
+  | 'corporate' 
+  | 'healthcare' 
+  | 'aviation' 
+  | 'retail' 
+  | 'industrial' 
+  | 'tech' 
+  | 'public_venue' 
+  | 'government';
+
+export type SiteSecurityTier = 
+  | 'Tier 1 - Standard' 
+  | 'Tier 2 - Elevated' 
+  | 'Tier 3 - High Security' 
+  | 'Tier 4 - Critical Infrastructure';
+
+export interface SiteProfile {
+  id: string;
+  name: string;
+  code: string; // e.g. "PORT-P7", "CORP-HQ"
+  address: string; // Full street address
+  city: string;
+  state: string;
+  zip: string;
+  zone?: string; // Sector / District e.g. "Maritime District", "Downtown Metro"
+  category: SiteCategory;
+  securityTier: SiteSecurityTier;
+  primaryContactName: string;
+  primaryContactPhone: string;
+  primaryContactEmail?: string;
+  emergencyPhone: string;
+  postInstructions: string;
+  requiredCertifications: string[];
+  activePostsCount: number;
+  ojtRequired: boolean;
+  operatingHours?: string; // e.g. "24/7 Continuous Ops"
+  accessGateNotes?: string;
+  status: 'active' | 'inactive' | 'maintenance';
+  createdAt?: string;
+  notes?: string;
+}
+
 

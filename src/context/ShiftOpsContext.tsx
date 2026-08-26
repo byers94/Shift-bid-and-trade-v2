@@ -12,7 +12,12 @@ import {
   EmergencyBroadcast,
   AlertSeverity,
   AlertType,
-  BroadcastAcknowledgment
+  BroadcastAcknowledgment,
+  ShiftAlertPreferences,
+  AlertNotificationCategory,
+  SiteFeedbackEntry,
+  GuardPerformanceStats,
+  SiteProfile
 } from '../types/shift';
 import { 
   INITIAL_SHIFTS, 
@@ -24,7 +29,11 @@ import {
   INITIAL_BIDS,
   CURRENT_GUARD, 
   GUARDS_LIST,
-  OPS_DISPATCH_PHONE 
+  OPS_DISPATCH_PHONE,
+  DEFAULT_ALERT_PREFERENCES,
+  INITIAL_SITE_FEEDBACKS,
+  GUARD_BASE_METRICS,
+  INITIAL_SITES
 } from '../data/mockData';
 import { calculateHours, generateSmsLink } from '../utils/time';
 import { playEmergencyAlertSound } from '../utils/audioAlert';
@@ -54,6 +63,9 @@ interface ShiftOpsContextType {
   activeBroadcast: EmergencyBroadcast | null;
   broadcastHistory: EmergencyBroadcast[];
   theme: 'light' | 'dark';
+  alertPreferences: ShiftAlertPreferences;
+  siteFeedbacks: SiteFeedbackEntry[];
+  sitesList: SiteProfile[];
   
   // Actions
   setActiveView: (view: 'dual' | 'guard' | 'ops') => void;
@@ -64,6 +76,17 @@ interface ShiftOpsContextType {
   dismissToast: (id: string) => void;
   showToast: (title: string, message: string, type: 'info' | 'success' | 'warning' | 'danger') => void;
   logAdminAction: (action: Omit<AdminAction, 'id' | 'timestamp'> & { timestamp?: string }) => void;
+
+  // Top Performers & Site Feedback
+  addSiteFeedback: (feedback: Omit<SiteFeedbackEntry, 'id'>) => SiteFeedbackEntry;
+  awardGuardCommendation: (guardId: string, badgeName: string, note?: string) => void;
+  getGuardPerformance: (guardId: string) => GuardPerformanceStats;
+  getLeaderboard: (sortBy?: 'composite' | 'shifts' | 'rating' | 'emergency' | 'ontime', timeframe?: string) => (GuardProfile & GuardPerformanceStats)[];
+  
+  // Guard Shift Alert Preferences
+  updateAlertPreferences: (prefs: Partial<ShiftAlertPreferences>) => void;
+  resetAlertPreferences: () => void;
+  testAlertNotification: (category: 'emergency_alerts' | 'urgent_open_shifts' | 'trade_matches') => void;
   
   // Emergency Broadcast Operations
   sendEmergencyBroadcast: (data: {
@@ -110,6 +133,12 @@ interface ShiftOpsContextType {
   }) => GuardProfile;
   updateGuard: (id: string, data: Partial<GuardProfile>) => void;
   deleteGuard: (id: string) => void;
+  
+  // Site Directory Management
+  addSite: (data: Omit<SiteProfile, 'id' | 'createdAt'>) => SiteProfile;
+  updateSite: (id: string, data: Partial<SiteProfile>) => void;
+  deleteSite: (id: string) => void;
+  getSiteByName: (name: string) => SiteProfile | undefined;
 
   // Shift Operations
   createShift: (data: {
@@ -190,6 +219,9 @@ const STORAGE_KEY_TEMPLATES = 'secureshift_templates_v1';
 const STORAGE_KEY_BROADCAST = 'secureshift_emergency_broadcast_v1';
 const STORAGE_KEY_BROADCAST_HISTORY = 'secureshift_broadcast_history_v1';
 const STORAGE_KEY_THEME = 'secureshift_theme_mode_v1';
+const STORAGE_KEY_ALERT_PREFS = 'secureshift_guard_alert_prefs_v1';
+const STORAGE_KEY_SITE_FEEDBACKS = 'secureshift_site_feedbacks_v1';
+const STORAGE_KEY_SITES = 'secureshift_sites_v1';
 
 export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [shifts, setShifts] = useState<Shift[]>(() => {
@@ -289,6 +321,105 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [hideFilledShifts, setHideFilledShifts] = useState<boolean>(false);
   const [toasts, setToasts] = useState<NotificationToast[]>([]);
   const opsPhone = OPS_DISPATCH_PHONE;
+
+  // Guard Shift Alert Preferences State
+  const [alertPreferences, setAlertPreferencesState] = useState<ShiftAlertPreferences>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_ALERT_PREFS);
+      return saved ? { ...DEFAULT_ALERT_PREFERENCES, ...JSON.parse(saved) } : DEFAULT_ALERT_PREFERENCES;
+    } catch {
+      return DEFAULT_ALERT_PREFERENCES;
+    }
+  });
+
+  // Site Feedback & Commendations State
+  const [siteFeedbacks, setSiteFeedbacks] = useState<SiteFeedbackEntry[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_SITE_FEEDBACKS);
+      return saved ? JSON.parse(saved) : INITIAL_SITE_FEEDBACKS;
+    } catch {
+      return INITIAL_SITE_FEEDBACKS;
+    }
+  });
+
+  // Site Directory State
+  const [sitesList, setSitesList] = useState<SiteProfile[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_SITES);
+      return saved ? JSON.parse(saved) : INITIAL_SITES;
+    } catch {
+      return INITIAL_SITES;
+    }
+  });
+
+  const updateAlertPreferences = (prefs: Partial<ShiftAlertPreferences>) => {
+    setAlertPreferencesState((prev) => {
+      const updated = { ...prev, ...prefs };
+      try {
+        localStorage.setItem(STORAGE_KEY_ALERT_PREFS, JSON.stringify(updated));
+      } catch (e) {
+        console.warn('Failed to save alert preferences', e);
+      }
+      return updated;
+    });
+
+    addAuditLog(
+      'ALERT_PREFERENCES_UPDATED',
+      'system',
+      `Officer ${activeGuard.name} (${activeGuard.badgeNumber}) modified shift alert notification settings`,
+      `${activeGuard.name} (${activeGuard.badgeNumber})`,
+      'info'
+    );
+  };
+
+  const resetAlertPreferences = () => {
+    setAlertPreferencesState(DEFAULT_ALERT_PREFERENCES);
+    try {
+      localStorage.setItem(STORAGE_KEY_ALERT_PREFS, JSON.stringify(DEFAULT_ALERT_PREFERENCES));
+    } catch (e) {
+      console.warn('Failed to reset alert preferences', e);
+    }
+    showToast('Alert Preferences Reset', 'Default push alert categories restored.', 'info');
+  };
+
+  const testAlertNotification = (category: 'emergency_alerts' | 'urgent_open_shifts' | 'trade_matches') => {
+    let isCategoryEnabled = false;
+    let title = '';
+    let message = '';
+    let type: 'info' | 'success' | 'warning' | 'danger' = 'info';
+
+    if (category === 'emergency_alerts') {
+      isCategoryEnabled = alertPreferences.emergencyAlerts;
+      title = '🚨 [TEST ALERT] Emergency Facility Notice';
+      message = 'Perimeter sensor alarm triggered at Port Authority - Pier 7. All available units standby.';
+      type = 'danger';
+    } else if (category === 'urgent_open_shifts') {
+      isCategoryEnabled = alertPreferences.urgentOpenShifts;
+      title = '⚡ [TEST ALERT] Urgent Open Shift Posted';
+      message = 'Short-notice vacant post: Retail Plaza Night Patrol (22:00-06:00, 8h) with +$4.50/hr surge pay.';
+      type = 'warning';
+    } else if (category === 'trade_matches') {
+      isCategoryEnabled = alertPreferences.tradeMatches;
+      title = '🔄 [TEST ALERT] New Trade Board Match';
+      message = 'Officer Mike Chen posted a Saturday giveaway at Corporate HQ that matches your qualified sites.';
+      type = 'success';
+    }
+
+    if (!isCategoryEnabled) {
+      showToast(
+        'Alert Channel Muted',
+        `"${category.replace(/_/g, ' ').toUpperCase()}" is currently toggled OFF in your preferences. Turn it ON to receive live notifications.`,
+        'warning'
+      );
+      return;
+    }
+
+    if (alertPreferences.soundEnabled) {
+      playEmergencyAlertSound();
+    }
+
+    showToast(title, message, type);
+  };
 
   // Light / Dark Theme State with System / Storage fallback
   const [theme, setThemeState] = useState<'light' | 'dark'>(() => {
@@ -421,6 +552,22 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [bids]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_SITE_FEEDBACKS, JSON.stringify(siteFeedbacks));
+    } catch (e) {
+      console.warn('Storage save failed for siteFeedbacks', e);
+    }
+  }, [siteFeedbacks]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_SITES, JSON.stringify(sitesList));
+    } catch (e) {
+      console.warn('Storage save failed for sitesList', e);
+    }
+  }, [sitesList]);
+
   const showToast = (title: string, message: string, type: 'info' | 'success' | 'warning' | 'danger') => {
     const newToast: NotificationToast = {
       id: 'toast-' + Date.now() + '-' + Math.random().toString(36).substring(2, 5),
@@ -467,6 +614,157 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       status
     };
     setAuditLogs((prev) => [entry, ...prev]);
+  };
+
+  // Top Performers Leaderboard & Site Feedback System
+  const addSiteFeedback = (data: Omit<SiteFeedbackEntry, 'id'>): SiteFeedbackEntry => {
+    const newFeedback: SiteFeedbackEntry = {
+      ...data,
+      id: 'fb-' + Date.now() + '-' + Math.random().toString(36).substring(2, 5)
+    };
+
+    setSiteFeedbacks((prev) => [newFeedback, ...prev]);
+
+    addAuditLog(
+      'SITE_FEEDBACK_RECORDED',
+      'system',
+      `Site review logged for Officer ${data.guardName} at ${data.siteName} (${data.rating.toFixed(1)}★ - ${data.reviewerName})`,
+      'Ops Dispatcher',
+      data.rating >= 4.5 ? 'success' : 'info'
+    );
+
+    logAdminAction({
+      type: 'feedback_logged',
+      title: 'Site Feedback Recorded',
+      description: `Client commendation recorded for ${data.guardName} (${data.rating}★ at ${data.siteName})`,
+      adminName: "Ops Dispatcher",
+      adminBadge: "OPS-CMD-01",
+      badgeVariant: 'blue',
+      metadata: { guardId: data.guardId, rating: data.rating, siteName: data.siteName }
+    });
+
+    showToast(
+      'Site Feedback Recorded',
+      `Positive review (${data.rating}★) for ${data.guardName} added to performance metrics.`,
+      'success'
+    );
+
+    return newFeedback;
+  };
+
+  const awardGuardCommendation = (guardId: string, badgeName: string, note?: string) => {
+    const targetGuard = guardsList.find((g) => g.id === guardId);
+    if (!targetGuard) return;
+
+    addAuditLog(
+      'COMMENDATION_AWARDED',
+      'system',
+      `Official Commendation "${badgeName}" issued to Officer ${targetGuard.name} (${targetGuard.badgeNumber})`,
+      'Commander Mark O\'Connor',
+      'success'
+    );
+
+    logAdminAction({
+      type: 'commendation_awarded',
+      title: 'Commendation Awarded',
+      description: `Awarded "${badgeName}" to ${targetGuard.name} (${targetGuard.badgeNumber}) ${note ? ` - Note: ${note}` : ''}`,
+      adminName: "Commander Mark O'Connor",
+      adminBadge: "OPS-CMD-01",
+      badgeVariant: 'amber',
+      metadata: { guardId, badgeName, note }
+    });
+
+    showToast(
+      'Commendation Awarded',
+      `"${badgeName}" badge officially awarded to Officer ${targetGuard.name}.`,
+      'success'
+    );
+  };
+
+  const getGuardPerformance = (guardId: string): GuardPerformanceStats => {
+    const base = GUARD_BASE_METRICS[guardId] || {
+      fulfilledShiftsCount: 6,
+      totalHoursCompleted: 48,
+      emergencyShiftsFulfilled: 1,
+      ratingAverage: 4.65,
+      positiveFeedbackCount: 3,
+      onTimeArrivalRate: 96.0,
+      recognitionBadges: ['Active Patrol'],
+      topCommendedSite: 'Corporate HQ'
+    };
+
+    // Calculate dynamically filled shifts in current system state
+    const dynamicFilledShifts = shifts.filter(
+      (s) => s.status === 'filled' && (s.assignedGuardId === guardId || (guardsList.find(g => g.id === guardId)?.name === s.assignedGuardName))
+    );
+
+    const dynamicFulfilledCount = dynamicFilledShifts.length;
+    const dynamicHours = dynamicFilledShifts.reduce((acc, curr) => acc + (curr.hours || 8), 0);
+    const dynamicEmergencyCount = dynamicFilledShifts.filter((s) => s.urgency === 'emergency').length;
+
+    // Filter feedback entries
+    const guardFeedbacks = siteFeedbacks.filter((f) => f.guardId === guardId);
+    
+    let computedRating = base.ratingAverage;
+    if (guardFeedbacks.length > 0) {
+      const sum = guardFeedbacks.reduce((acc, f) => acc + f.rating, 0);
+      const avg = sum / guardFeedbacks.length;
+      computedRating = Math.round(((base.ratingAverage * 2 + avg) / 3) * 100) / 100;
+    }
+
+    const totalFulfilled = base.fulfilledShiftsCount + dynamicFulfilledCount;
+    const totalHours = base.totalHoursCompleted + dynamicHours;
+    const totalEmergency = base.emergencyShiftsFulfilled + dynamicEmergencyCount;
+    const totalPositiveReviews = base.positiveFeedbackCount + guardFeedbacks.length;
+
+    return {
+      guardId,
+      fulfilledShiftsCount: totalFulfilled,
+      totalHoursCompleted: totalHours,
+      emergencyShiftsFulfilled: totalEmergency,
+      ratingAverage: computedRating,
+      positiveFeedbackCount: totalPositiveReviews,
+      onTimeArrivalRate: base.onTimeArrivalRate,
+      recognitionBadges: base.recognitionBadges,
+      topCommendedSite: base.topCommendedSite,
+      recentFeedbacks: guardFeedbacks
+    };
+  };
+
+  const getLeaderboard = (
+    sortBy: 'composite' | 'shifts' | 'rating' | 'emergency' | 'ontime' = 'composite',
+    timeframe: string = 'all'
+  ): (GuardProfile & GuardPerformanceStats)[] => {
+    const enrichedGuards = guardsList.map((guard) => {
+      const stats = getGuardPerformance(guard.id);
+      return {
+        ...guard,
+        ...stats
+      };
+    });
+
+    return enrichedGuards.sort((a, b) => {
+      if (sortBy === 'shifts') {
+        return b.fulfilledShiftsCount - a.fulfilledShiftsCount;
+      }
+      if (sortBy === 'rating') {
+        if (b.ratingAverage !== a.ratingAverage) {
+          return b.ratingAverage - a.ratingAverage;
+        }
+        return b.positiveFeedbackCount - a.positiveFeedbackCount;
+      }
+      if (sortBy === 'emergency') {
+        return b.emergencyShiftsFulfilled - a.emergencyShiftsFulfilled;
+      }
+      if (sortBy === 'ontime') {
+        return b.onTimeArrivalRate - a.onTimeArrivalRate;
+      }
+      
+      // Default composite score
+      const scoreA = (a.fulfilledShiftsCount * 2) + (a.ratingAverage * 25) + (a.emergencyShiftsFulfilled * 4) + (a.onTimeArrivalRate / 5);
+      const scoreB = (b.fulfilledShiftsCount * 2) + (b.ratingAverage * 25) + (b.emergencyShiftsFulfilled * 4) + (b.onTimeArrivalRate / 5);
+      return scoreB - scoreA;
+    });
   };
 
   // 1. Create Shift
@@ -1279,6 +1577,105 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     showToast('Guard Removed', `${guardName} removed from roster.`, 'warning');
   };
 
+  // Site Directory Management Functions
+  const addSite = (data: Omit<SiteProfile, 'id' | 'createdAt'>): SiteProfile => {
+    const newSite: SiteProfile = {
+      ...data,
+      id: 'site-' + Date.now().toString().slice(-4),
+      createdAt: new Date().toISOString()
+    };
+
+    setSitesList((prev) => [...prev, newSite]);
+
+    addAuditLog(
+      'SITE_CREATED',
+      'system',
+      `Facility registered in site directory: ${newSite.name} (${newSite.code}) - ${newSite.category.toUpperCase()}`,
+      'Ops Admin (Facilities)',
+      'success'
+    );
+
+    logAdminAction({
+      type: 'site_created',
+      title: 'New Facility Registered',
+      description: `Added "${newSite.name}" (${newSite.code}) to authorized site directory at ${newSite.address}.`,
+      adminName: "Lt. Mark O'Connor",
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'emerald',
+      metadata: { siteId: newSite.id, siteName: newSite.name, code: newSite.code, category: newSite.category }
+    });
+
+    showToast('Facility Added', `${newSite.name} added to Site Directory.`, 'success');
+    return newSite;
+  };
+
+  const updateSite = (id: string, data: Partial<SiteProfile>) => {
+    setSitesList((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, ...data } : s))
+    );
+
+    const site = sitesList.find((s) => s.id === id);
+    const siteName = data.name || site?.name || 'Facility';
+
+    addAuditLog(
+      'SITE_UPDATED',
+      'system',
+      `Facility specifications updated for ${siteName} (${id})`,
+      'Ops Admin (Facilities)',
+      'info'
+    );
+
+    logAdminAction({
+      type: 'site_updated',
+      title: 'Facility Directory Updated',
+      description: `Updated address, emergency contacts, or post instructions for ${siteName}.`,
+      adminName: "Lt. Mark O'Connor",
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'blue',
+      metadata: { siteId: id, siteName }
+    });
+
+    showToast('Facility Updated', `${siteName} updated successfully.`, 'info');
+  };
+
+  const deleteSite = (id: string) => {
+    const site = sitesList.find((s) => s.id === id);
+    const siteName = site?.name || 'Facility';
+
+    setSitesList((prev) => prev.filter((s) => s.id !== id));
+
+    addAuditLog(
+      'SITE_DELETED',
+      'system',
+      `Facility ${siteName} (${id}) removed from Site Directory`,
+      'Ops Admin (Facilities)',
+      'warning'
+    );
+
+    logAdminAction({
+      type: 'site_deleted',
+      title: 'Facility Removed from Directory',
+      description: `Decommissioned site record for "${siteName}" (${site?.code || 'SITE'}).`,
+      adminName: "Lt. Mark O'Connor",
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'rose',
+      metadata: { siteId: id, siteName }
+    });
+
+    showToast('Facility Removed', `${siteName} removed from directory.`, 'warning');
+  };
+
+  const getSiteByName = (name: string): SiteProfile | undefined => {
+    if (!name) return undefined;
+    const clean = name.trim().toLowerCase();
+    return sitesList.find((s) => 
+      s.name.toLowerCase() === clean || 
+      s.name.toLowerCase().includes(clean) ||
+      clean.includes(s.name.toLowerCase()) ||
+      s.code.toLowerCase() === clean
+    );
+  };
+
   // Shift Templates Management
   const addShiftTemplate = (data: Omit<ShiftTemplate, 'id' | 'createdAt'>): ShiftTemplate => {
     const newTemplate: ShiftTemplate = {
@@ -1540,7 +1937,13 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     localStorage.removeItem(STORAGE_KEY_BIDS);
     localStorage.removeItem(STORAGE_KEY_BROADCAST);
     localStorage.removeItem(STORAGE_KEY_BROADCAST_HISTORY);
-    showToast('System Reset', 'Demo shift, trade, user, and alert data restored to initial state.', 'info');
+    localStorage.removeItem(STORAGE_KEY_ALERT_PREFS);
+    localStorage.removeItem(STORAGE_KEY_SITE_FEEDBACKS);
+    localStorage.removeItem(STORAGE_KEY_SITES);
+    setAlertPreferencesState(DEFAULT_ALERT_PREFERENCES);
+    setSiteFeedbacks(INITIAL_SITE_FEEDBACKS);
+    setSitesList(INITIAL_SITES);
+    showToast('System Reset', 'Demo shift, trade, user, site directory, feedback, and alert data restored to initial state.', 'info');
   };
 
   return (
@@ -1562,6 +1965,9 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         activeBroadcast,
         broadcastHistory,
         theme,
+        alertPreferences,
+        siteFeedbacks,
+        sitesList,
         setActiveView,
         setActiveGuard,
         setTheme,
@@ -1570,6 +1976,13 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         dismissToast,
         showToast,
         logAdminAction,
+        addSiteFeedback,
+        awardGuardCommendation,
+        getGuardPerformance,
+        getLeaderboard,
+        updateAlertPreferences,
+        resetAlertPreferences,
+        testAlertNotification,
         sendEmergencyBroadcast,
         acknowledgeBroadcast,
         cancelOrResolveBroadcast,
@@ -1582,6 +1995,10 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         addGuard,
         updateGuard,
         deleteGuard,
+        addSite,
+        updateSite,
+        deleteSite,
+        getSiteByName,
         createShift,
         bulkImportShifts,
         markShiftFilled,

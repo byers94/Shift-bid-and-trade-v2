@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
 import { ShiftTemplate } from '../../types/shift';
 import { calculateHours } from '../../utils/time';
+import { SiteSelectDropdown } from '../common/SiteSelectDropdown';
 import {
   Bookmark,
   BookmarkPlus,
@@ -427,19 +428,26 @@ export const ShiftTemplateModal: React.FC<ShiftTemplateModalProps> = ({
                   </select>
                 </div>
 
-                {/* Site Name */}
+                {/* Site Name Dropdown */}
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1 flex items-center gap-1">
-                    <Building2 className="w-3 h-3 text-[#1e3a8a]" />
-                    Site Name *
-                  </label>
-                  <input
-                    type="text"
+                  <SiteSelectDropdown
+                    id="template-site-select"
                     required
-                    placeholder="e.g. Corporate HQ"
                     value={siteName}
-                    onChange={(e) => setSiteName(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                    onChange={(name, site) => {
+                      setSiteName(name);
+                      if (site) {
+                        setAddress(site.address);
+                        if (site.accessGateNotes && !location) {
+                          setLocation(site.accessGateNotes);
+                        }
+                      }
+                    }}
+                    onAddressAutoPopulate={(addr) => {
+                      setAddress(addr);
+                    }}
+                    label="Authorized Facility / Site *"
+                    placeholder="Select facility from directory..."
                   />
                 </div>
 
@@ -459,9 +467,16 @@ export const ShiftTemplateModal: React.FC<ShiftTemplateModalProps> = ({
 
                 {/* Address */}
                 <div className="sm:col-span-2">
-                  <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1 flex items-center gap-1">
-                    <MapPin className="w-3 h-3 text-[#1e3a8a]" />
-                    Site Physical Address
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <MapPin className="w-3 h-3 text-[#1e3a8a]" />
+                      Site Physical Address
+                    </span>
+                    {address && (
+                      <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1 normal-case">
+                        <Sparkles className="w-3 h-3" /> Auto-populated
+                      </span>
+                    )}
                   </label>
                   <input
                     type="text"

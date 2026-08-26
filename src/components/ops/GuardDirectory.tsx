@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
 import { GuardProfile, TrainingStatus } from '../../types/shift';
+import { SiteQualificationCircle } from './SiteQualificationCircle';
 import { 
   Users, 
   UserPlus, 
@@ -36,17 +37,21 @@ import {
   Send, 
   Zap, 
   BookOpen,
-  Info
+  Info,
+  TrendingUp,
+  Trophy
 } from 'lucide-react';
 
 interface GuardDirectoryProps {
   onSelectGuardForSwap?: (guardId: string) => void;
   onNavigateToTrades?: () => void;
+  onNavigateToLeaderboard?: () => void;
 }
 
 export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
   onSelectGuardForSwap,
-  onNavigateToTrades
+  onNavigateToTrades,
+  onNavigateToLeaderboard
 }) => {
   const { 
     guardsList, 
@@ -178,6 +183,9 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
   const trainedCount = guardsList.filter((g) => (g.trainingLevel === 'trained' || (!g.trainingLevel && g.ojtSites.length > 1))).length;
   const needsOjtCount = guardsList.filter((g) => (g.trainingLevel === 'needs_ojt' || (!g.trainingLevel && g.ojtSites.length <= 1))).length;
   const leadCount = guardsList.filter((g) => g.trainingLevel === 'lead_certified' || g.role === 'lead' || g.role === 'supervisor').length;
+  const totalFleetClearances = guardsList.reduce((acc, g) => acc + (g.ojtSites?.length || 0), 0);
+  const maxPossibleClearances = Math.max(1, totalGuards * allFacilities.length);
+  const avgFleetQualificationPct = Math.round((totalFleetClearances / maxPossibleClearances) * 100);
 
   // Open Form to Add New Guard
   const handleOpenAddGuard = () => {
@@ -385,6 +393,19 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
 
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {onNavigateToLeaderboard && (
+            <button
+              id="directory-open-leaderboard-btn"
+              type="button"
+              onClick={onNavigateToLeaderboard}
+              className="bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+              title="View Top Performers Leaderboard, Shift Fulfillments, and Site Evaluations"
+            >
+              <Trophy className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <span>Top Performers</span>
+            </button>
+          )}
+
           <button
             id="open-swap-eligibility-checker-btn"
             type="button"
@@ -419,12 +440,21 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
 
       {/* Metrics Summary Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
-          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Total Active Roster</p>
-          <div className="flex items-baseline justify-between mt-1">
-            <span className="text-xl font-black font-mono text-slate-800">{totalGuards}</span>
-            <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-bold">100% Available</span>
+        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
+          <div>
+            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Total Active Roster</p>
+            <div className="flex items-baseline gap-1.5 mt-1">
+              <span className="text-xl font-black font-mono text-slate-800">{totalGuards}</span>
+              <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-bold">100% Active</span>
+            </div>
+            <p className="text-[10px] text-slate-400 font-mono mt-0.5">{totalFleetClearances} Total Clearances</p>
           </div>
+          <SiteQualificationCircle
+            id="fleet-avg-qualification-indicator"
+            qualifiedSitesCount={totalFleetClearances}
+            totalSitesCount={maxPossibleClearances}
+            size="sm"
+          />
         </div>
 
         <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-200 shadow-2xs">
@@ -438,6 +468,7 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
               {Math.round((trainedCount / (totalGuards || 1)) * 100)}% of Roster
             </span>
           </div>
+          <p className="text-[10px] text-emerald-700 font-medium mt-0.5">Multi-Facility Ready</p>
         </div>
 
         <div className="bg-amber-50/70 p-3 rounded-xl border border-amber-200 shadow-2xs">
@@ -449,6 +480,7 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
             <span className="text-xl font-black font-mono text-amber-900">{needsOjtCount}</span>
             <span className="text-[10px] bg-amber-200 text-amber-950 px-1.5 py-0.2 rounded font-bold">Orientation Req.</span>
           </div>
+          <p className="text-[10px] text-amber-700 font-medium mt-0.5">Single / No Clearance</p>
         </div>
 
         <div className="bg-purple-50/70 p-3 rounded-xl border border-purple-200 shadow-2xs">
@@ -460,6 +492,7 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
             <span className="text-xl font-black font-mono text-purple-900">{leadCount}</span>
             <span className="text-[10px] bg-purple-200 text-purple-900 px-1.5 py-0.2 rounded font-bold">OJT Sign-Off</span>
           </div>
+          <p className="text-[10px] text-purple-700 font-medium mt-0.5">Field Authority</p>
         </div>
       </div>
 
@@ -715,21 +748,40 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
 
                 {/* Card Body */}
                 <div className="p-4 flex flex-col gap-3 flex-1">
-                  {/* Training Status Ribbon */}
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                        Training Status:
-                      </span>
-                      {renderTrainingBadge(guard)}
+                  {/* Training Status & Site Qualification Circular Progress Panel */}
+                  <div className="bg-slate-50/90 border border-slate-200/90 rounded-xl p-2.5 flex items-center justify-between gap-2.5 shadow-2xs">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <SiteQualificationCircle
+                        id={`guard-card-qual-circle-${guard.id}`}
+                        qualifiedSitesCount={guard.ojtSites?.length || 0}
+                        totalSitesCount={allFacilities.length}
+                        trainingLevel={guard.trainingLevel}
+                        role={guard.role}
+                        size="md"
+                      />
+                      <div className="flex flex-col gap-1 min-w-0">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                          Training & Clearance
+                        </span>
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {renderTrainingBadge(guard)}
+                        </div>
+                        <div className="flex items-center gap-1 text-[10px] text-slate-500 font-medium">
+                          <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span className="font-mono font-bold text-slate-700">
+                            {guard.ojtSites?.length || 0} / {allFacilities.length}
+                          </span>
+                          <span>Facilities Cleared</span>
+                        </div>
+                      </div>
                     </div>
 
                     {/* Quick Status Switcher */}
-                    <div className="relative group">
+                    <div className="relative group shrink-0">
                       <select
                         value={level}
                         onChange={(e) => handleToggleTrainingLevel(guard.id, e.target.value as any)}
-                        className="text-[10px] font-bold border border-slate-200 rounded px-1.5 py-0.5 bg-slate-50 text-slate-600 hover:bg-slate-100 cursor-pointer"
+                        className="text-[10px] font-bold border border-slate-200 rounded px-1.5 py-1 bg-white text-slate-700 hover:bg-slate-50 cursor-pointer shadow-2xs focus:ring-1 focus:ring-[#1e3a8a]"
                         title="Quick change training level"
                       >
                         <option value="trained">Set: Trained</option>
@@ -923,7 +975,7 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
             <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
               <tr>
                 <th className="px-4 py-3">Security Officer</th>
-                <th className="px-4 py-3">Training Status</th>
+                <th className="px-4 py-3">Training Status & Site Qualification</th>
                 <th className="px-4 py-3">Contact Details</th>
                 <th className="px-4 py-3">Site Qualifications</th>
                 <th className="px-4 py-3">Credentials</th>
@@ -964,13 +1016,23 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
                       </div>
                     </td>
 
-                    {/* Training Level */}
+                    {/* Training Level with Circular Progress Indicator */}
                     <td className="px-4 py-3">
-                      <div className="flex flex-col gap-1 items-start">
-                        {renderTrainingBadge(guard)}
-                        <span className="text-[10px] text-slate-400 font-mono">
-                          {guard.ojtSites.length} Site{guard.ojtSites.length !== 1 ? 's' : ''} Cleared
-                        </span>
+                      <div className="flex items-center gap-3">
+                        <SiteQualificationCircle
+                          id={`guard-table-qual-circle-${guard.id}`}
+                          qualifiedSitesCount={guard.ojtSites?.length || 0}
+                          totalSitesCount={allFacilities.length}
+                          trainingLevel={guard.trainingLevel}
+                          role={guard.role}
+                          size="sm"
+                        />
+                        <div className="flex flex-col gap-1 items-start">
+                          {renderTrainingBadge(guard)}
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {guard.ojtSites?.length || 0} of {allFacilities.length} Facilities ({Math.round(((guard.ojtSites?.length || 0) / Math.max(1, allFacilities.length)) * 100)}%)
+                          </span>
+                        </div>
                       </div>
                     </td>
 
@@ -1098,11 +1160,23 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
               {/* Guard A (Offering Side) */}
               <div className="flex flex-col gap-2.5 bg-white p-3.5 rounded-lg border border-slate-200 shadow-2xs">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <span className="font-extrabold text-blue-900 uppercase text-[10px] tracking-wider">
                     Officer 1 (Offering Shift)
                   </span>
-                  {guardA && renderTrainingBadge(guardA)}
+                  {guardA && (
+                    <div className="flex items-center gap-1.5">
+                      <SiteQualificationCircle
+                        id="swap-checker-guard-a-circle"
+                        qualifiedSitesCount={guardA.ojtSites?.length || 0}
+                        totalSitesCount={allFacilities.length}
+                        trainingLevel={guardA.trainingLevel}
+                        role={guardA.role}
+                        size="xs"
+                      />
+                      {renderTrainingBadge(guardA)}
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -1153,11 +1227,23 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
 
               {/* Guard B (Accepting Side) */}
               <div className="flex flex-col gap-2.5 bg-white p-3.5 rounded-lg border border-slate-200 shadow-2xs">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <span className="font-extrabold text-blue-900 uppercase text-[10px] tracking-wider">
                     Officer 2 (Proposing Swap)
                   </span>
-                  {guardB && renderTrainingBadge(guardB)}
+                  {guardB && (
+                    <div className="flex items-center gap-1.5">
+                      <SiteQualificationCircle
+                        id="swap-checker-guard-b-circle"
+                        qualifiedSitesCount={guardB.ojtSites?.length || 0}
+                        totalSitesCount={allFacilities.length}
+                        trainingLevel={guardB.trainingLevel}
+                        role={guardB.role}
+                        size="xs"
+                      />
+                      {renderTrainingBadge(guardB)}
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -1445,9 +1531,20 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
 
               {/* OJT Sites Clearances */}
               <div>
-                <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
-                  Site Qualifications (Sites where guard has completed OJT)
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase">
+                    Site Qualifications (Sites where guard has completed OJT)
+                  </label>
+                  <SiteQualificationCircle
+                    id="guard-form-qual-circle"
+                    qualifiedSitesCount={formOjtSites.length}
+                    totalSitesCount={allFacilities.length}
+                    trainingLevel={formTrainingLevel}
+                    role={formRole}
+                    size="sm"
+                    showFraction
+                  />
+                </div>
                 <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-lg min-h-[50px] mb-2">
                   {formOjtSites.map((site) => (
                     <span

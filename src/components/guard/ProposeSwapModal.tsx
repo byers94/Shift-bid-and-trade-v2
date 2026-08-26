@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
 import { Trade, TrainingStatus } from '../../types/shift';
 import { calculateHours, formatDateLabel } from '../../utils/time';
+import { SiteSelectDropdown } from '../common/SiteSelectDropdown';
 import { 
   ArrowRightLeft, 
   Clock, 
@@ -10,7 +11,9 @@ import {
   MapPin, 
   ShieldAlert, 
   X,
-  User
+  User,
+  Building2,
+  Sparkles
 } from 'lucide-react';
 
 interface ProposeSwapModalProps {
@@ -128,29 +131,40 @@ export const ProposeSwapModal: React.FC<ProposeSwapModalProps> = ({ trade, isOpe
 
             <div className="grid grid-cols-1 gap-3 mb-3">
               <div>
-                <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
-                  Your Site Name *
-                </label>
-                <input
-                  type="text"
+                <SiteSelectDropdown
+                  id="propose-swap-site-select"
                   required
                   value={offeredSite}
-                  onChange={(e) => setOfferedSite(e.target.value)}
-                  placeholder="e.g. Industrial Warehouse Night Watch"
-                  className="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                  onChange={(name, site) => {
+                    setOfferedSite(name);
+                    if (site) {
+                      setOfferedLocation(site.address);
+                    }
+                  }}
+                  onAddressAutoPopulate={(addr) => {
+                    setOfferedLocation(addr);
+                  }}
+                  label="Your Facility / Site Name *"
+                  placeholder="Select facility being offered from directory..."
+                  helperText="Standardized site selection will automatically populate facility address"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
-                  Post Location (Optional)
+                <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1 flex items-center justify-between">
+                  <span>Post Location / Address</span>
+                  {offeredLocation && (
+                    <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1 normal-case">
+                      <Sparkles className="w-3 h-3" /> Auto-populated
+                    </span>
+                  )}
                 </label>
                 <input
                   type="text"
                   value={offeredLocation}
                   onChange={(e) => setOfferedLocation(e.target.value)}
-                  placeholder="e.g. Gate 3 Checkpoint"
-                  className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                  placeholder="e.g. 2001 W Garfield St / Gate 3 Checkpoint"
+                  className="w-full border border-slate-300 rounded-lg p-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
                 />
               </div>
             </div>

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
 import { calculateHours } from '../../utils/time';
-import { Calendar, Clock, MapPin, ShieldAlert, X, ArrowRightLeft, Gift, AlertCircle } from 'lucide-react';
+import { SiteSelectDropdown } from '../common/SiteSelectDropdown';
+import { Calendar, Clock, MapPin, ShieldAlert, X, ArrowRightLeft, Gift, AlertCircle, Building2, Sparkles } from 'lucide-react';
 
 interface PostShiftModalProps {
   isOpen: boolean;
@@ -159,34 +160,45 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
             </div>
           )}
 
-          {/* Site Name & Post Location */}
+          {/* Site Name Dropdown & Post Location */}
           <div className="grid grid-cols-1 gap-3">
             <div>
-              <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
-                Site Name *
-              </label>
-              <input
-                type="text"
+              <SiteSelectDropdown
+                id="post-trade-site-select"
                 required
                 value={siteName}
-                onChange={(e) => setSiteName(e.target.value)}
-                placeholder="e.g. Gotham Financial Plaza"
-                className="w-full border border-slate-300 rounded-lg p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                onChange={(name, site) => {
+                  setSiteName(name);
+                  if (site) {
+                    setLocation(site.address);
+                  }
+                }}
+                onAddressAutoPopulate={(addr) => {
+                  setLocation(addr);
+                }}
+                label="Authorized Facility / Site *"
+                placeholder="Select facility from directory..."
+                helperText="Select from standardized facility directory or type custom name"
               />
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
-                Post Location / Gate (Optional)
+              <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1 flex items-center justify-between">
+                <span>Facility Address & Post Location</span>
+                {location && (
+                  <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1 normal-case">
+                    <Sparkles className="w-3 h-3" /> Auto-populated
+                  </span>
+                )}
               </label>
               <div className="relative">
-                <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                <MapPin className="w-4 h-4 text-rose-500 absolute left-3 top-3" />
                 <input
                   type="text"
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
-                  placeholder="e.g. North Gate Access / Main Lobby"
-                  className="w-full border border-slate-300 rounded-lg p-2.5 pl-9 text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+                  placeholder="e.g. 2001 W Garfield St, Terminal 91 / Gate 3"
+                  className="w-full border border-slate-300 rounded-lg p-2.5 pl-9 text-xs focus:outline-none focus:ring-2 focus:ring-[#1e3a8a]"
                 />
               </div>
             </div>

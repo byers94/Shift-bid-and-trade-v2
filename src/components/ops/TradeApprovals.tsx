@@ -132,30 +132,30 @@ export const TradeApprovals: React.FC<TradeApprovalsProps> = ({ onOpenGuardDirec
   };
 
   return (
-    <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col">
+    <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col">
       {/* Sub-header Navigation Tabs */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3 mb-3 shrink-0">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-3 mb-3 shrink-0">
         <div>
-          <h2 className="text-xs font-black text-slate-700 uppercase tracking-wider">
+          <h2 className="text-xs font-black text-slate-700 dark:text-slate-200 uppercase tracking-wider">
             Trade & Swap Approvals
           </h2>
           <p className="text-[10px] text-slate-400">Oldest-first operational queue</p>
         </div>
 
-        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+        <div className="flex flex-wrap items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
           {/* Pending Posts Tab */}
           <button
             id="tab-pending-posts-btn"
             onClick={() => setActiveTab('pending_posts')}
-            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'pending_posts'
-                ? 'bg-[#1e3a8a] text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-[#1e3a8a] dark:bg-blue-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <span>Pending Posts</span>
+            <span>Posts</span>
             <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-              activeTab === 'pending_posts' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+              activeTab === 'pending_posts' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
             }`}>
               {pendingPosts.length}
             </span>
@@ -165,19 +165,19 @@ export const TradeApprovals: React.FC<TradeApprovalsProps> = ({ onOpenGuardDirec
           <button
             id="tab-pending-swaps-btn"
             onClick={() => setActiveTab('pending_swaps')}
-            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'pending_swaps'
-                ? 'bg-[#1e3a8a] text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-[#1e3a8a] dark:bg-blue-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <span>Pending Swaps</span>
+            <span>Swaps</span>
             <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
               pendingSwaps.length > 0 
                 ? 'bg-amber-400 text-slate-900 font-black' 
                 : activeTab === 'pending_swaps' 
                 ? 'bg-white/20 text-white' 
-                : 'bg-slate-200 text-slate-700'
+                : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
             }`}>
               {pendingSwaps.length}
             </span>
@@ -187,16 +187,16 @@ export const TradeApprovals: React.FC<TradeApprovalsProps> = ({ onOpenGuardDirec
           <button
             id="tab-trade-history-btn"
             onClick={() => setActiveTab('history')}
-            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'history'
-                ? 'bg-[#1e3a8a] text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
+                ? 'bg-[#1e3a8a] dark:bg-blue-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             <History className="w-3.5 h-3.5" />
-            <span>History Log</span>
+            <span>History</span>
             <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-              activeTab === 'history' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+              activeTab === 'history' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
             }`}>
               {historyTrades.length}
             </span>

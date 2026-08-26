@@ -98,7 +98,7 @@ export const ShiftBidsModal: React.FC<ShiftBidsModalProps> = ({
     >
       <div 
         id="shift-bids-modal-container"
-        className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150"
+        className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150"
       >
         {/* Modal Header */}
         <div className="bg-[#1e3a8a] text-white p-4 sm:p-5 flex items-center justify-between shrink-0">
@@ -132,9 +132,9 @@ export const ShiftBidsModal: React.FC<ShiftBidsModalProps> = ({
         </div>
 
         {/* Shift Selector Bar (Switch between shifts or View All) */}
-        <div className="bg-slate-100 p-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+        <div className="bg-slate-100 dark:bg-slate-800/80 p-3 border-b border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2.5 text-xs">
           <div className="flex items-center gap-2 flex-1 min-w-[240px]">
-            <span className="font-bold text-slate-600 uppercase tracking-wider text-[10px] whitespace-nowrap">
+            <span className="font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider text-[10px] whitespace-nowrap">
               Shift Focus:
             </span>
             <select
@@ -146,13 +146,13 @@ export const ShiftBidsModal: React.FC<ShiftBidsModalProps> = ({
                   onSelectShiftId(val === 'ALL' ? '' : val);
                 }
               }}
-              className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 font-bold text-slate-800 text-xs focus:ring-2 focus:ring-[#1e3a8a] focus:outline-none flex-1 truncate"
+              className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 rounded-lg px-2.5 py-1.5 font-bold text-xs focus:ring-2 focus:ring-[#1e3a8a] dark:focus:ring-blue-500 focus:outline-none flex-1 truncate"
             >
-              <option value="ALL">🌐 All Active Bids ({bids.length} across entire schedule)</option>
+              <option value="ALL" className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100">🌐 All Active Bids ({bids.length} across entire schedule)</option>
               {shifts.map((s) => {
                 const count = bids.filter((b) => b.shiftId === s.id).length;
                 return (
-                  <option key={s.id} value={s.id}>
+                  <option key={s.id} value={s.id} className="bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100">
                     {s.siteName} • {formatDateLabel(s.date)} ({s.startTime}-{s.endTime}) — {count} Bid{count !== 1 ? 's' : ''} {s.status === 'filled' ? '[FILLED]' : '[OPEN]'}
                   </option>
                 );
@@ -164,10 +164,10 @@ export const ShiftBidsModal: React.FC<ShiftBidsModalProps> = ({
             <div className="flex items-center gap-2">
               <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
                 targetShift.status === 'filled'
-                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
                   : targetShift.urgency === 'emergency'
-                  ? 'bg-red-100 text-red-800 border border-red-300 animate-pulse'
-                  : 'bg-blue-100 text-blue-800 border border-blue-300'
+                  ? 'bg-red-100 dark:bg-red-950/60 text-red-800 dark:text-red-300 border border-red-300 dark:border-red-800 animate-pulse'
+                  : 'bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800'
               }`}>
                 {targetShift.status === 'filled' ? '✅ Filled' : targetShift.urgency === 'emergency' ? '🚨 Emergency Open' : 'Open for Bids'}
               </span>
@@ -177,25 +177,25 @@ export const ShiftBidsModal: React.FC<ShiftBidsModalProps> = ({
 
         {/* Shift Details Hero Card (If a specific shift is selected) */}
         {targetShift && (
-          <div className="p-3.5 bg-blue-50/70 border-b border-blue-200/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="p-3.5 bg-blue-50/70 dark:bg-slate-800/60 border-b border-blue-200/80 dark:border-slate-700 flex flex-wrap items-center justify-between gap-3 text-xs">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <span className="font-extrabold text-sm text-[#1e3a8a]">{targetShift.siteName}</span>
+                <span className="font-extrabold text-sm text-[#1e3a8a] dark:text-blue-400">{targetShift.siteName}</span>
                 {targetShift.location && (
-                  <span className="text-[11px] text-slate-500 font-medium">({targetShift.location})</span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">({targetShift.location})</span>
                 )}
               </div>
-              <div className="flex flex-wrap items-center gap-3 text-slate-600 text-[11px]">
+              <div className="flex flex-wrap items-center gap-3 text-slate-600 dark:text-slate-300 text-[11px]">
                 <span className="flex items-center gap-1 font-medium">
-                  <Calendar className="w-3.5 h-3.5 text-blue-700" />
+                  <Calendar className="w-3.5 h-3.5 text-blue-700 dark:text-blue-400" />
                   {formatDateLabel(targetShift.date)}
                 </span>
-                <span className="flex items-center gap-1 font-mono font-bold text-slate-800">
-                  <Clock className="w-3.5 h-3.5 text-blue-700" />
+                <span className="flex items-center gap-1 font-mono font-bold text-slate-800 dark:text-slate-200">
+                  <Clock className="w-3.5 h-3.5 text-blue-700 dark:text-blue-400" />
                   {targetShift.startTime} - {targetShift.endTime} ({targetShift.hours}h)
                 </span>
                 {targetShift.address && (
-                  <span className="flex items-center gap-1 text-slate-500">
+                  <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400">
                     <MapPin className="w-3.5 h-3.5 text-slate-400" />
                     {targetShift.address}
                   </span>
@@ -204,8 +204,8 @@ export const ShiftBidsModal: React.FC<ShiftBidsModalProps> = ({
             </div>
 
             {targetShift.status === 'filled' ? (
-              <div className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5">
-                <CheckCircle className="w-4 h-4 text-emerald-600" />
+              <div className="bg-emerald-100 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5">
+                <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 <span>Assigned Guard: {targetShift.assignedGuardName || 'Assigned'}</span>
               </div>
             ) : (

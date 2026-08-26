@@ -140,22 +140,22 @@ export const RecentAdminActionsPanel: React.FC<RecentAdminActionsPanelProps> = (
   return (
     <aside 
       id="recent-admin-actions-panel"
-      className="bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col overflow-hidden h-full"
+      className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col overflow-hidden h-full"
     >
       {/* Panel Header */}
-      <div className="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
+      <div className="p-3.5 bg-slate-50 dark:bg-slate-800/90 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-blue-100 text-blue-900 rounded-lg">
+          <div className="p-1.5 bg-blue-100 dark:bg-blue-950 text-blue-900 dark:text-blue-300 rounded-lg">
             <History className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+            <h2 className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
               Recent Admin Actions
-              <span className="bg-[#1e3a8a] text-white text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold">
+              <span className="bg-[#1e3a8a] dark:bg-blue-600 text-white text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold">
                 {recentAdminActions.length}
               </span>
             </h2>
-            <p className="text-[10px] text-slate-500 font-medium">
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
               Live dispatcher session log
             </p>
           </div>
@@ -164,7 +164,7 @@ export const RecentAdminActionsPanel: React.FC<RecentAdminActionsPanelProps> = (
         {onToggleCollapse && (
           <button
             onClick={onToggleCollapse}
-            className="text-xs text-slate-400 hover:text-slate-700 p-1 rounded hover:bg-slate-200 transition-colors"
+            className="text-xs text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
             title="Toggle panel"
           >
             <ChevronRight className="w-4 h-4" />
@@ -173,16 +173,16 @@ export const RecentAdminActionsPanel: React.FC<RecentAdminActionsPanelProps> = (
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="p-2.5 bg-white border-b border-slate-100 flex flex-col gap-2 shrink-0">
+      <div className="p-2.5 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex flex-col gap-2 shrink-0">
         {/* Category Pills */}
         <div className="flex items-center gap-1">
           <button
             id="admin-actions-filter-all"
             onClick={() => setFilterType('all')}
-            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all ${
+            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all cursor-pointer ${
               filterType === 'all'
-                ? 'bg-[#1e3a8a] text-white shadow-2xs'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                ? 'bg-[#1e3a8a] dark:bg-blue-600 text-white shadow-2xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
             }`}
           >
             All ({recentAdminActions.length})
@@ -190,10 +190,10 @@ export const RecentAdminActionsPanel: React.FC<RecentAdminActionsPanelProps> = (
           <button
             id="admin-actions-filter-logins"
             onClick={() => setFilterType('logins')}
-            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all ${
+            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all cursor-pointer ${
               filterType === 'logins'
-                ? 'bg-[#1e3a8a] text-white shadow-2xs'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                ? 'bg-[#1e3a8a] dark:bg-blue-600 text-white shadow-2xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
             }`}
           >
             Logins
@@ -201,10 +201,10 @@ export const RecentAdminActionsPanel: React.FC<RecentAdminActionsPanelProps> = (
           <button
             id="admin-actions-filter-shifts"
             onClick={() => setFilterType('shifts')}
-            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all ${
+            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all cursor-pointer ${
               filterType === 'shifts'
-                ? 'bg-[#1e3a8a] text-white shadow-2xs'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                ? 'bg-[#1e3a8a] dark:bg-blue-600 text-white shadow-2xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
             }`}
           >
             Shifts
@@ -212,10 +212,10 @@ export const RecentAdminActionsPanel: React.FC<RecentAdminActionsPanelProps> = (
           <button
             id="admin-actions-filter-trades"
             onClick={() => setFilterType('trades')}
-            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all ${
+            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all cursor-pointer ${
               filterType === 'trades'
-                ? 'bg-[#1e3a8a] text-white shadow-2xs'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                ? 'bg-[#1e3a8a] dark:bg-blue-600 text-white shadow-2xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
             }`}
           >
             Trades
@@ -223,10 +223,10 @@ export const RecentAdminActionsPanel: React.FC<RecentAdminActionsPanelProps> = (
           <button
             id="admin-actions-filter-personnel"
             onClick={() => setFilterType('personnel')}
-            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all ${
+            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all cursor-pointer ${
               filterType === 'personnel'
-                ? 'bg-[#1e3a8a] text-white shadow-2xs'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                ? 'bg-[#1e3a8a] dark:bg-blue-600 text-white shadow-2xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
             }`}
           >
             Users
@@ -241,18 +241,18 @@ export const RecentAdminActionsPanel: React.FC<RecentAdminActionsPanelProps> = (
             placeholder="Search dispatcher, site, action..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-6 pr-2 py-1 bg-slate-50 border border-slate-200 rounded text-[11px] focus:outline-none focus:ring-1 focus:ring-[#1e3a8a]"
+            className="w-full pl-6 pr-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded text-[11px] focus:outline-none focus:ring-1 focus:ring-[#1e3a8a] dark:focus:ring-blue-500 placeholder-slate-400"
           />
         </div>
       </div>
 
       {/* Action Feed Cards */}
-      <div className="flex-1 p-3 overflow-y-auto flex flex-col gap-2.5 bg-slate-50/40">
+      <div className="flex-1 p-3 overflow-y-auto flex flex-col gap-2.5 bg-slate-50/80 dark:bg-slate-950/60">
         {filteredActions.length === 0 ? (
-          <div className="text-center py-8 px-3 bg-white rounded-lg border border-dashed border-slate-200">
-            <History className="w-7 h-7 text-slate-300 mx-auto mb-1.5" />
-            <p className="text-xs font-bold text-slate-600">No Recent Actions Found</p>
-            <p className="text-[10px] text-slate-400 mt-0.5">
+          <div className="text-center py-8 px-3 bg-white dark:bg-slate-900 rounded-lg border border-dashed border-slate-200 dark:border-slate-800">
+            <History className="w-7 h-7 text-slate-300 dark:text-slate-600 mx-auto mb-1.5" />
+            <p className="text-xs font-bold text-slate-600 dark:text-slate-300">No Recent Actions Found</p>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
               Actions will log automatically as dispatch operations occur.
             </p>
           </div>
@@ -261,34 +261,34 @@ export const RecentAdminActionsPanel: React.FC<RecentAdminActionsPanelProps> = (
             <div
               key={action.id}
               id={`admin-action-${action.id}`}
-              className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs hover:border-blue-300 transition-all flex flex-col gap-1.5"
+              className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-800 shadow-2xs hover:border-blue-300 dark:hover:border-blue-700 transition-all flex flex-col gap-1.5"
             >
               {/* Card Header: Icon + Title + Time */}
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <div className="p-1 rounded bg-slate-100 shrink-0">
+                  <div className="p-1 rounded bg-slate-100 dark:bg-slate-800 shrink-0">
                     {getActionIcon(action.type)}
                   </div>
-                  <h3 className="text-xs font-bold text-slate-800 truncate">
+                  <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
                     {action.title}
                   </h3>
                 </div>
 
-                <span className="text-[10px] font-mono text-slate-400 shrink-0 font-medium flex items-center gap-1">
+                <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 shrink-0 font-medium flex items-center gap-1">
                   <Clock className="w-2.5 h-2.5" />
                   {formatRelativeTime(action.timestamp)}
                 </span>
               </div>
 
               {/* Description */}
-              <p className="text-[11px] text-slate-600 leading-relaxed">
+              <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
                 {action.description}
               </p>
 
               {/* Dispatcher Actor & Badge Footer */}
-              <div className="flex items-center justify-between text-[10px] pt-1.5 border-t border-slate-100">
-                <span className="font-semibold text-slate-700 flex items-center gap-1 truncate">
-                  <Shield className="w-3 h-3 text-[#1e3a8a] shrink-0" />
+              <div className="flex items-center justify-between text-[10px] pt-1.5 border-t border-slate-100 dark:border-slate-800">
+                <span className="font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1 truncate">
+                  <Shield className="w-3 h-3 text-[#1e3a8a] dark:text-blue-400 shrink-0" />
                   {action.adminName}
                 </span>
 
