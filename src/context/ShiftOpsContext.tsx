@@ -19,7 +19,16 @@ import {
   GuardPerformanceStats,
   SiteProfile,
   SiteCategory,
-  SiteSecurityTier
+  SiteSecurityTier,
+  CallForService,
+  CallPriority,
+  CallStatus,
+  CallType,
+  CallDisposition,
+  BoloSubjectInfo,
+  CallerInfo,
+  CallReceiptNotification,
+  CallReceiptRecord
 } from '../types/shift';
 import { 
   INITIAL_SHIFTS, 
@@ -35,10 +44,11 @@ import {
   DEFAULT_ALERT_PREFERENCES,
   INITIAL_SITE_FEEDBACKS,
   GUARD_BASE_METRICS,
-  INITIAL_SITES
+  INITIAL_SITES,
+  INITIAL_CALLS_FOR_SERVICE
 } from '../data/mockData';
 import { calculateHours, generateSmsLink } from '../utils/time';
-import { playEmergencyAlertSound } from '../utils/audioAlert';
+import { playEmergencyAlertSound, playCallDispatchSound, playReceiptConfirmedSound } from '../utils/audioAlert';
 
 interface NotificationToast {
   id: string;
@@ -68,6 +78,11 @@ interface ShiftOpsContextType {
   alertPreferences: ShiftAlertPreferences;
   siteFeedbacks: SiteFeedbackEntry[];
   sitesList: SiteProfile[];
+  callsForService: CallForService[];
+  latestDispatchedCall: CallForService | null;
+  isCallAlertOpen: boolean;
+  latestCallReceipt: CallReceiptNotification | null;
+  callReceipts: CallReceiptNotification[];
   
   // Actions
   setActiveView: (view: 'dual' | 'guard' | 'ops') => void;
@@ -78,6 +93,40 @@ interface ShiftOpsContextType {
   dismissToast: (id: string) => void;
   showToast: (title: string, message: string, type: 'info' | 'success' | 'warning' | 'danger') => void;
   logAdminAction: (action: Omit<AdminAction, 'id' | 'timestamp'> & { timestamp?: string }) => void;
+  dismissCallReceiptNotification: (id?: string) => void;
+  clearAllCallReceipts: () => void;
+
+  // Calls for Service & BOLOs
+  dispatchCall: (data: {
+    callType: CallType;
+    customTypeLabel?: string;
+    priority: CallPriority;
+    siteName: string;
+    locationDetails: string;
+    summary: string;
+    details?: string;
+    isBolo?: boolean;
+    boloSubject?: BoloSubjectInfo;
+    callerInfo?: CallerInfo;
+    officerInstructions?: string;
+    dispatchedBy?: { name: string; badge: string };
+  }) => CallForService;
+  acknowledgeCall: (
+    callId: string, 
+    guard: GuardProfile,
+    options?: { note?: string; channel?: 'alert_modal' | 'queue_action' | 'bolo_banner' }
+  ) => void;
+  updateCallStatus: (callId: string, status: CallStatus, note?: string) => void;
+  clearCall: (
+    callId: string,
+    guard: GuardProfile,
+    disposition: CallDisposition,
+    resolutionNote?: string
+  ) => void;
+  cancelCall: (callId: string, reason: string, cancelledBy?: string) => void;
+  dismissCallAlert: () => void;
+  openCallAlert: (call: CallForService) => void;
+  deleteCall: (callId: string) => void;
 
   // Top Performers & Site Feedback
   addSiteFeedback: (feedback: Omit<SiteFeedbackEntry, 'id'>) => SiteFeedbackEntry;
@@ -228,8 +277,33 @@ const STORAGE_KEY_THEME = 'secureshift_theme_mode_v1';
 const STORAGE_KEY_ALERT_PREFS = 'secureshift_guard_alert_prefs_v1';
 const STORAGE_KEY_SITE_FEEDBACKS = 'secureshift_site_feedbacks_v1';
 const STORAGE_KEY_SITES = 'secureshift_sites_v1';
+const STORAGE_KEY_CALLS_FOR_SERVICE = 'secureshift_calls_for_service_v1';
+const STORAGE_KEY_CALL_RECEIPTS = 'secureshift_call_receipts_v1';
 
 export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [callsForService, setCallsForService] = useState<CallForService[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_CALLS_FOR_SERVICE);
+      return saved ? JSON.parse(saved) : INITIAL_CALLS_FOR_SERVICE;
+    } catch {
+      return INITIAL_CALLS_FOR_SERVICE;
+    }
+  });
+
+  const [callReceipts, setCallReceipts] = useState<CallReceiptNotification[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_CALL_RECEIPTS);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [latestCallReceipt, setLatestCallReceipt] = useState<CallReceiptNotification | null>(null);
+
+  const [latestDispatchedCall, setLatestDispatchedCall] = useState<CallForService | null>(null);
+  const [isCallAlertOpen, setIsCallAlertOpen] = useState<boolean>(false);
+
   const [shifts, setShifts] = useState<Shift[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_SHIFTS);
@@ -573,6 +647,37 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       console.warn('Storage save failed for sitesList', e);
     }
   }, [sitesList]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_CALLS_FOR_SERVICE, JSON.stringify(callsForService));
+    } catch (e) {
+      console.warn('Storage save failed for callsForService', e);
+    }
+  }, [callsForService]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_CALL_RECEIPTS, JSON.stringify(callReceipts));
+    } catch (e) {
+      console.warn('Storage save failed for callReceipts', e);
+    }
+  }, [callReceipts]);
+
+  const dismissCallReceiptNotification = (id?: string) => {
+    if (!id || latestCallReceipt?.id === id) {
+      setLatestCallReceipt(null);
+    }
+  };
+
+  const clearAllCallReceipts = () => {
+    setCallReceipts([]);
+    setLatestCallReceipt(null);
+    try {
+      localStorage.removeItem(STORAGE_KEY_CALL_RECEIPTS);
+    } catch {}
+    showToast('Receipts Cleared', 'Acknowledgment receipts log has been cleared.', 'info');
+  };
 
   const showToast = (title: string, message: string, type: 'info' | 'success' | 'warning' | 'danger') => {
     const newToast: NotificationToast = {
@@ -2121,6 +2226,334 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     );
   };
 
+  // Calls for Service & BOLOs Operations
+  const dispatchCall = (data: {
+    callType: CallType;
+    customTypeLabel?: string;
+    priority: CallPriority;
+    siteName: string;
+    locationDetails: string;
+    summary: string;
+    details?: string;
+    isBolo?: boolean;
+    boloSubject?: BoloSubjectInfo;
+    callerInfo?: CallerInfo;
+    officerInstructions?: string;
+    dispatchedBy?: { name: string; badge: string };
+  }): CallForService => {
+    const year = new Date().getFullYear();
+    const randNum = Math.floor(100 + Math.random() * 900);
+    const newCall: CallForService = {
+      id: `CFS-${year}-${randNum}`,
+      callType: data.callType,
+      customTypeLabel: data.customTypeLabel?.trim(),
+      priority: data.priority,
+      status: 'dispatched',
+      siteName: data.siteName.trim(),
+      locationDetails: data.locationDetails.trim(),
+      summary: data.summary.trim(),
+      details: data.details?.trim(),
+      isBolo: !!data.isBolo,
+      boloSubject: data.boloSubject,
+      callerInfo: data.callerInfo,
+      officerInstructions: data.officerInstructions?.trim(),
+      createdAt: new Date().toISOString(),
+      dispatchedBy: data.dispatchedBy || {
+        name: "Lt. Mark O'Connor",
+        badge: "OPS-CMD-01"
+      }
+    };
+
+    setCallsForService((prev) => [newCall, ...prev]);
+    setLatestDispatchedCall(newCall);
+    setIsCallAlertOpen(true);
+
+    try {
+      playCallDispatchSound(data.priority);
+    } catch {}
+
+    const typeDesc = data.isBolo ? 'BOLO BROADCAST' : data.callType.replace(/_/g, ' ').toUpperCase();
+    const logDetails = `[CALL DISPATCHED - ${data.priority.toUpperCase()}] ${newCall.id} (${typeDesc}) dispatched to ${data.siteName} [${data.locationDetails}]: "${data.summary}"`;
+    addAuditLog(
+      'CALL_FOR_SERVICE_DISPATCHED',
+      'broadcast',
+      logDetails,
+      `${newCall.dispatchedBy.name} (${newCall.dispatchedBy.badge})`,
+      data.priority === 'urgent_bolo' ? 'danger' : data.priority === 'priority' ? 'warning' : 'info'
+    );
+
+    logAdminAction({
+      type: 'call_dispatched',
+      title: `Call Dispatched: ${newCall.id} (${data.priority.toUpperCase()})`,
+      description: `${data.isBolo ? 'BOLO / ' : ''}${newCall.summary} @ ${newCall.siteName}`,
+      adminName: newCall.dispatchedBy.name,
+      adminBadge: newCall.dispatchedBy.badge,
+      badgeVariant: data.priority === 'urgent_bolo' ? 'rose' : data.priority === 'priority' ? 'amber' : 'blue',
+      metadata: { callId: newCall.id, siteName: newCall.siteName, priority: newCall.priority, isBolo: newCall.isBolo }
+    });
+
+    showToast(
+      data.isBolo ? '🚨 BOLO ALERT DISPATCHED' : '📞 Call for Service Dispatched',
+      `${newCall.id} pushed to active guard units at ${data.siteName}.`,
+      data.priority === 'urgent_bolo' ? 'danger' : 'info'
+    );
+
+    return newCall;
+  };
+
+  const acknowledgeCall = (
+    callId: string, 
+    guard: GuardProfile,
+    options?: { note?: string; channel?: 'alert_modal' | 'queue_action' | 'bolo_banner' }
+  ) => {
+    const nowIso = new Date().toISOString();
+    let updatedTargetCall: CallForService | null = null;
+    let timeToAcknowledgeSec = 0;
+
+    setCallsForService((prev) =>
+      prev.map((c) => {
+        if (c.id === callId) {
+          const createdAtTime = new Date(c.createdAt).getTime();
+          const ackTime = new Date(nowIso).getTime();
+          timeToAcknowledgeSec = Math.max(1, Math.round((ackTime - createdAtTime) / 1000));
+
+          const newReceiptRecord: CallReceiptRecord = {
+            guardId: guard.id,
+            guardName: guard.name,
+            badgeNumber: guard.badgeNumber,
+            acknowledgedAt: nowIso,
+            receiptChannel: options?.channel || 'alert_modal',
+            notes: options?.note
+          };
+
+          const updated: CallForService = {
+            ...c,
+            status: c.status === 'dispatched' ? 'en_route' : c.status,
+            timeToAcknowledgeSec,
+            acknowledgedByGuard: {
+              guardId: guard.id,
+              guardName: guard.name,
+              badgeNumber: guard.badgeNumber,
+              acknowledgedAt: nowIso,
+              receiptChannel: options?.channel || 'alert_modal',
+              notes: options?.note
+            },
+            allReceipts: [...(c.allReceipts || []), newReceiptRecord]
+          };
+          updatedTargetCall = updated;
+          return updated;
+        }
+        return c;
+      })
+    );
+
+    // Find call data for notification
+    const targetCall = updatedTargetCall || callsForService.find((c) => c.id === callId);
+    const callSummary = targetCall ? targetCall.summary : 'Call For Service';
+    const siteName = targetCall ? targetCall.siteName : 'Facility';
+    const locationDetails = targetCall ? targetCall.locationDetails : '';
+    const isBolo = targetCall ? (targetCall.isBolo || targetCall.priority === 'urgent_bolo') : false;
+    const priority = targetCall ? targetCall.priority : 'routine';
+    const callType = targetCall ? targetCall.callType : 'other';
+
+    const newReceiptNotification: CallReceiptNotification = {
+      id: `receipt-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+      callId,
+      callType,
+      customTypeLabel: targetCall?.customTypeLabel,
+      isBolo,
+      priority,
+      siteName,
+      locationDetails,
+      summary: callSummary,
+      callSummary,
+      guardId: guard.id,
+      guardName: guard.name,
+      badgeNumber: guard.badgeNumber,
+      guardBadge: guard.badgeNumber,
+      acknowledgedAt: nowIso,
+      timeToAcknowledgeSec,
+      latencySeconds: timeToAcknowledgeSec,
+      receiptChannel: options?.channel || 'queue_action',
+      notes: options?.note
+    };
+
+    setLatestCallReceipt(newReceiptNotification);
+    setCallReceipts((prev) => [newReceiptNotification, ...prev.slice(0, 49)]);
+
+    // Trigger Ops-side affirmative audio receipt chime
+    try {
+      playReceiptConfirmedSound();
+    } catch {}
+
+    const formattedTime = new Date(nowIso).toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit' 
+    });
+
+    addAuditLog(
+      'CALL_FOR_SERVICE_ACKNOWLEDGED',
+      'shift',
+      `[RECEIPT CONFIRMED] Officer ${guard.name} (${guard.badgeNumber}) acknowledged ${isBolo ? 'BOLO ' : ''}${callId} at ${formattedTime} (ACK Latency: ${timeToAcknowledgeSec}s)`,
+      `${guard.name} (${guard.badgeNumber})`,
+      'success'
+    );
+
+    logAdminAction({
+      type: 'call_acknowledged',
+      title: `Receipt Acknowledged: ${callId}`,
+      description: `Officer ${guard.name} (${guard.badgeNumber}) confirmed receipt of ${isBolo ? 'BOLO' : 'Call'} @ ${siteName} (${timeToAcknowledgeSec}s response).`,
+      adminName: guard.name,
+      adminBadge: guard.badgeNumber,
+      badgeVariant: isBolo ? 'rose' : 'emerald',
+      metadata: { callId, guardId: guard.id, acknowledgedAt: nowIso, timeToAcknowledgeSec, isBolo }
+    });
+
+    showToast(
+      isBolo ? '🎯 BOLO Receipt Confirmed' : '✓ Call Receipt Confirmed',
+      `Officer ${guard.name} (${guard.badgeNumber}) acknowledged ${callId} at ${formattedTime}`,
+      'success'
+    );
+  };
+
+  const updateCallStatus = (callId: string, status: CallStatus, note?: string) => {
+    setCallsForService((prev) =>
+      prev.map((c) => {
+        if (c.id === callId) {
+          return {
+            ...c,
+            status,
+            details: note ? (c.details ? `${c.details}\n[Update]: ${note}` : `[Update]: ${note}`) : c.details
+          };
+        }
+        return c;
+      })
+    );
+
+    addAuditLog(
+      'CALL_FOR_SERVICE_UPDATED',
+      'shift',
+      `Call ${callId} status changed to ${status.toUpperCase()}${note ? ` (${note})` : ''}`,
+      'Guard Terminal / Dispatch',
+      'info'
+    );
+
+    showToast('Call Status Updated', `Call ${callId} marked ${status.toUpperCase().replace(/_/g, ' ')}`, 'info');
+  };
+
+  const clearCall = (
+    callId: string,
+    guard: GuardProfile,
+    disposition: CallDisposition,
+    resolutionNote?: string
+  ) => {
+    const nowIso = new Date().toISOString();
+    setCallsForService((prev) =>
+      prev.map((c) => {
+        if (c.id === callId) {
+          return {
+            ...c,
+            status: 'cleared',
+            clearedAt: nowIso,
+            clearedByGuard: {
+              guardId: guard.id,
+              guardName: guard.name,
+              badgeNumber: guard.badgeNumber
+            },
+            disposition,
+            resolutionNote: resolutionNote?.trim() || undefined
+          };
+        }
+        return c;
+      })
+    );
+
+    const noteText = resolutionNote?.trim() ? ` — Note: "${resolutionNote.trim()}"` : '';
+    addAuditLog(
+      'CALL_FOR_SERVICE_CLEARED',
+      'shift',
+      `Call ${callId} marked [${disposition}] by Officer ${guard.name} (${guard.badgeNumber})${noteText}`,
+      `${guard.name} (${guard.badgeNumber})`,
+      'success'
+    );
+
+    logAdminAction({
+      type: 'call_cleared',
+      title: `Call Cleared: ${callId} [${disposition}]`,
+      description: `Resolved by ${guard.name} (${guard.badgeNumber})${resolutionNote ? `: "${resolutionNote}"` : ''}`,
+      adminName: guard.name,
+      adminBadge: guard.badgeNumber,
+      badgeVariant: 'emerald',
+      metadata: { callId, disposition, resolutionNote }
+    });
+
+    showToast(
+      'Call Resolved & Logged',
+      `${callId} cleared [${disposition}] and logged to Ops Dashboard records.`,
+      'success'
+    );
+  };
+
+  const cancelCall = (callId: string, reason: string, cancelledBy?: string) => {
+    const admin = cancelledBy || "Lt. Mark O'Connor (OPS-CMD-01)";
+    setCallsForService((prev) =>
+      prev.map((c) => {
+        if (c.id === callId) {
+          return {
+            ...c,
+            status: 'cancelled',
+            cancelledAt: new Date().toISOString(),
+            cancelledBy: admin,
+            cancellationReason: reason.trim()
+          };
+        }
+        return c;
+      })
+    );
+
+    addAuditLog(
+      'CALL_FOR_SERVICE_CANCELLED',
+      'broadcast',
+      `Call ${callId} cancelled by ${admin}. Reason: "${reason.trim()}"`,
+      admin,
+      'warning'
+    );
+
+    logAdminAction({
+      type: 'call_cancelled',
+      title: `Call Cancelled: ${callId}`,
+      description: `Cancelled by ${admin}. Reason: ${reason}`,
+      adminName: admin.split(' (')[0],
+      adminBadge: admin.match(/\((.*?)\)/)?.[1] || 'OPS-CMD-01',
+      badgeVariant: 'rose',
+      metadata: { callId, reason }
+    });
+
+    showToast('Call Cancelled', `Call ${callId} was cancelled by dispatch.`, 'warning');
+  };
+
+  const dismissCallAlert = () => {
+    setIsCallAlertOpen(false);
+  };
+
+  const openCallAlert = (call: CallForService) => {
+    setLatestDispatchedCall(call);
+    setIsCallAlertOpen(true);
+  };
+
+  const deleteCall = (callId: string) => {
+    setCallsForService((prev) => prev.filter((c) => c.id !== callId));
+    addAuditLog(
+      'CALL_FOR_SERVICE_DELETED',
+      'system',
+      `Call log ${callId} expunged from system by Ops Admin`,
+      "Lt. Mark O'Connor",
+      'warning'
+    );
+    showToast('Call Log Removed', `Record ${callId} deleted from database.`, 'info');
+  };
+
   // Reset to Defaults
   const resetToDefaults = () => {
     setShifts(INITIAL_SHIFTS);
@@ -2134,6 +2567,9 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setBids(INITIAL_BIDS);
     setActiveBroadcast(null);
     setBroadcastHistory([]);
+    setCallsForService(INITIAL_CALLS_FOR_SERVICE);
+    setLatestDispatchedCall(null);
+    setIsCallAlertOpen(false);
     localStorage.removeItem(STORAGE_KEY_SHIFTS);
     localStorage.removeItem(STORAGE_KEY_TRADES);
     localStorage.removeItem(STORAGE_KEY_LOGS);
@@ -2147,10 +2583,14 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     localStorage.removeItem(STORAGE_KEY_ALERT_PREFS);
     localStorage.removeItem(STORAGE_KEY_SITE_FEEDBACKS);
     localStorage.removeItem(STORAGE_KEY_SITES);
+    localStorage.removeItem(STORAGE_KEY_CALLS_FOR_SERVICE);
+    localStorage.removeItem(STORAGE_KEY_CALL_RECEIPTS);
+    setCallReceipts([]);
+    setLatestCallReceipt(null);
     setAlertPreferencesState(DEFAULT_ALERT_PREFERENCES);
     setSiteFeedbacks(INITIAL_SITE_FEEDBACKS);
     setSitesList(INITIAL_SITES);
-    showToast('System Reset', 'Demo shift, trade, user, site directory, feedback, and alert data restored to initial state.', 'info');
+    showToast('System Reset', 'Demo shift, trade, user, site directory, CFS calls, feedback, and alert data restored to initial state.', 'info');
   };
 
   return (
@@ -2175,6 +2615,11 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         alertPreferences,
         siteFeedbacks,
         sitesList,
+        callsForService,
+        latestDispatchedCall,
+        isCallAlertOpen,
+        latestCallReceipt,
+        callReceipts,
         setActiveView,
         setActiveGuard,
         setTheme,
@@ -2183,6 +2628,16 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         dismissToast,
         showToast,
         logAdminAction,
+        dismissCallReceiptNotification,
+        clearAllCallReceipts,
+        dispatchCall,
+        acknowledgeCall,
+        updateCallStatus,
+        clearCall,
+        cancelCall,
+        dismissCallAlert,
+        openCallAlert,
+        deleteCall,
         addSiteFeedback,
         awardGuardCommendation,
         getGuardPerformance,

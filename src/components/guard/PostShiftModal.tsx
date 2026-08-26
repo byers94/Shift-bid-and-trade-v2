@@ -59,10 +59,10 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs animate-in fade-in duration-200">
       <div 
         id="post-shift-modal" 
-        className="bg-white w-full max-w-lg rounded-xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]"
+        className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh]"
       >
         {/* Header */}
-        <div className="bg-[#1e3a8a] text-white p-4 flex justify-between items-center">
+        <div className="bg-[#1e3a8a] text-white p-4 flex justify-between items-center shrink-0">
           <div>
             <h3 className="font-bold text-sm uppercase tracking-wide">
               {tradeType === 'swap' ? '🔄 Post Shift for Swap (Trade)' : '🎁 Give Up / Drop Shift (Giveaway)'}
@@ -80,20 +80,20 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-4 overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-4 overflow-y-auto bg-white dark:bg-slate-900">
           {/* Guard identifier chip */}
-          <div className="flex items-center justify-between bg-blue-50/60 p-2.5 rounded-lg border border-blue-100 text-xs text-blue-900">
+          <div className="flex items-center justify-between bg-blue-50/80 dark:bg-blue-950/40 p-2.5 rounded-lg border border-blue-100 dark:border-blue-900/60 text-xs text-blue-900 dark:text-blue-200">
             <span>
-              Requesting Guard: <strong>{activeGuard.name}</strong> ({activeGuard.badgeNumber})
+              Requesting Guard: <strong className="text-slate-900 dark:text-white">{activeGuard.name}</strong> ({activeGuard.badgeNumber})
             </span>
-            <span className="bg-blue-200 text-blue-800 text-[10px] font-black px-2 py-0.5 rounded uppercase">
+            <span className="bg-blue-200 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-[10px] font-black px-2 py-0.5 rounded uppercase">
               Logged In
             </span>
           </div>
 
           {/* Request Type Selector (Give Up / Drop vs Trade / Swap) */}
           <div>
-            <label className="block text-[11px] font-black text-slate-700 uppercase tracking-wider mb-1.5">
+            <label className="block text-[11px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
               Select Intent: What do you want to do with this shift? *
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -104,22 +104,22 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
                 onClick={() => setTradeType('giveaway')}
                 className={`p-3 rounded-xl border-2 text-left flex flex-col gap-1 transition-all cursor-pointer ${
                   tradeType === 'giveaway'
-                    ? 'border-emerald-600 bg-emerald-50/60 text-emerald-950 shadow-xs ring-2 ring-emerald-500/20'
-                    : 'border-slate-200 bg-slate-50 hover:bg-slate-100/80 text-slate-700'
+                    ? 'border-emerald-600 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-950 dark:text-emerald-200 shadow-xs ring-2 ring-emerald-500/20'
+                    : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
                 }`}
               >
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-1.5 text-xs font-black">
-                    <Gift className={`w-4 h-4 ${tradeType === 'giveaway' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                    <Gift className={`w-4 h-4 ${tradeType === 'giveaway' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`} />
                     Give Up / Drop Shift
                   </span>
                   <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center ${
-                    tradeType === 'giveaway' ? 'border-emerald-600 bg-emerald-600' : 'border-slate-300'
+                    tradeType === 'giveaway' ? 'border-emerald-600 bg-emerald-600' : 'border-slate-300 dark:border-slate-600'
                   }`}>
                     {tradeType === 'giveaway' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
                   </div>
                 </div>
-                <p className="text-[11px] text-slate-600 leading-snug mt-0.5">
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-snug mt-0.5">
                   I want to drop this shift completely. Any qualified guard can claim coverage (no return trade needed).
                 </p>
               </button>
@@ -131,22 +131,22 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
                 onClick={() => setTradeType('swap')}
                 className={`p-3 rounded-xl border-2 text-left flex flex-col gap-1 transition-all cursor-pointer ${
                   tradeType === 'swap'
-                    ? 'border-[#1e3a8a] bg-blue-50/60 text-blue-950 shadow-xs ring-2 ring-blue-500/20'
-                    : 'border-slate-200 bg-slate-50 hover:bg-slate-100/80 text-slate-700'
+                    ? 'border-[#1e3a8a] dark:border-blue-500 bg-blue-50/80 dark:bg-blue-950/40 text-blue-950 dark:text-blue-200 shadow-xs ring-2 ring-blue-500/20'
+                    : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
                 }`}
               >
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-1.5 text-xs font-black">
-                    <ArrowRightLeft className={`w-4 h-4 ${tradeType === 'swap' ? 'text-[#1e3a8a]' : 'text-slate-400'}`} />
+                    <ArrowRightLeft className={`w-4 h-4 ${tradeType === 'swap' ? 'text-[#1e3a8a] dark:text-blue-400' : 'text-slate-400'}`} />
                     Trade / Swap Shift
                   </span>
                   <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center ${
-                    tradeType === 'swap' ? 'border-[#1e3a8a] bg-[#1e3a8a]' : 'border-slate-300'
+                    tradeType === 'swap' ? 'border-[#1e3a8a] dark:border-blue-500 bg-[#1e3a8a] dark:bg-blue-500' : 'border-slate-300 dark:border-slate-600'
                   }`}>
                     {tradeType === 'swap' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
                   </div>
                 </div>
-                <p className="text-[11px] text-slate-600 leading-snug mt-0.5">
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-snug mt-0.5">
                   I want to exchange this shift for another shift with a fellow guard.
                 </p>
               </button>
@@ -154,7 +154,7 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 text-xs p-2.5 rounded-lg font-medium flex items-center gap-2">
+            <div className="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 text-red-700 dark:text-red-300 text-xs p-2.5 rounded-lg font-medium flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 shrink-0" />
               {error}
             </div>
@@ -183,10 +183,10 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1 flex items-center justify-between">
+              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase mb-1 flex items-center justify-between">
                 <span>Facility Address & Post Location</span>
                 {location && (
-                  <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1 normal-case">
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1 normal-case">
                     <Sparkles className="w-3 h-3" /> Auto-populated
                   </span>
                 )}
@@ -198,7 +198,7 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
                   placeholder="e.g. 2001 W Garfield St, Terminal 91 / Gate 3"
-                  className="w-full border border-slate-300 rounded-lg p-2.5 pl-9 text-xs text-slate-900 bg-white placeholder:text-slate-400 font-medium focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] focus:border-[#1e3a8a]"
+                  className="w-full border border-slate-300 dark:border-slate-700 rounded-lg p-2.5 pl-9 text-xs text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-800 placeholder:text-slate-400 dark:placeholder:text-slate-500 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
             </div>
@@ -207,7 +207,7 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
           {/* Date & Time Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
+              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
                 Shift Date *
               </label>
               <input
@@ -215,12 +215,12 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
                 required
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full border border-slate-300 rounded-lg p-2 text-sm text-slate-900 bg-white font-medium focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] focus:border-[#1e3a8a]"
+                className="w-full border border-slate-300 dark:border-slate-700 rounded-lg p-2 text-sm text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
+              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
                 Start Time *
               </label>
               <input
@@ -228,12 +228,12 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
                 required
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
-                className="w-full border border-slate-300 rounded-lg p-2 text-sm text-slate-900 bg-white font-medium focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] focus:border-[#1e3a8a]"
+                className="w-full border border-slate-300 dark:border-slate-700 rounded-lg p-2 text-sm text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
+              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
                 End Time *
               </label>
               <input
@@ -241,25 +241,25 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
                 required
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
-                className="w-full border border-slate-300 rounded-lg p-2 text-sm text-slate-900 bg-white font-medium focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] focus:border-[#1e3a8a]"
+                className="w-full border border-slate-300 dark:border-slate-700 rounded-lg p-2 text-sm text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
           </div>
 
           {/* Hours banner */}
-          <div className="flex items-center justify-between bg-slate-100 px-3 py-2 rounded-lg text-xs font-semibold text-slate-700">
+          <div className="flex items-center justify-between bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300">
             <span className="flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-slate-500" />
+              <Clock className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
               Calculated Duration
             </span>
-            <span className="font-bold text-[#1e3a8a] bg-white px-2 py-0.5 rounded shadow-2xs">
+            <span className="font-bold text-[#1e3a8a] dark:text-blue-400 bg-white dark:bg-slate-900 px-2 py-0.5 rounded shadow-2xs border border-slate-200 dark:border-slate-700">
               {hours} Hours
             </span>
           </div>
 
           {/* Reason / Notes Open Text Field */}
           <div>
-            <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
+            <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
               {tradeType === 'swap'
                 ? 'Swap Preferences & Reason *'
                 : 'Reason for Giving Up Shift *'}
@@ -274,19 +274,19 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
                   ? 'e.g. Looking to exchange for morning shift on Friday or weekend day watch.'
                   : 'e.g. Personal emergency, doctor appointment, or need voluntary coverage drop.'
               }
-              className="w-full border border-slate-300 rounded-lg p-2.5 text-sm text-slate-900 bg-white placeholder:text-slate-400 font-medium focus:outline-none focus:ring-2 focus:ring-[#1e3a8a] focus:border-[#1e3a8a]"
+              className="w-full border border-slate-300 dark:border-slate-700 rounded-lg p-2.5 text-sm text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-800 placeholder:text-slate-400 dark:placeholder:text-slate-500 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
-            <p className="text-[10px] text-slate-400 mt-1">
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
               Ops dispatchers can review and edit these notes before approving the listing.
             </p>
           </div>
 
           {/* Buttons */}
-          <div className="flex gap-2 pt-2 border-t border-slate-200">
+          <div className="flex gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2.5 border border-slate-300 text-slate-700 font-bold rounded-lg text-xs hover:bg-slate-50 uppercase tracking-wider cursor-pointer"
+              className="flex-1 py-2.5 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-lg text-xs hover:bg-slate-50 dark:hover:bg-slate-700 uppercase tracking-wider cursor-pointer transition-colors"
             >
               Cancel
             </button>
@@ -294,7 +294,7 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
               id="submit-post-trade-btn"
               type="submit"
               className={`flex-1 py-2.5 text-white font-bold rounded-lg text-xs shadow-md uppercase tracking-wider transition-all cursor-pointer ${
-                tradeType === 'swap' ? 'bg-[#1e3a8a] hover:bg-blue-900' : 'bg-emerald-600 hover:bg-emerald-700'
+                tradeType === 'swap' ? 'bg-[#1e3a8a] hover:bg-blue-900 dark:bg-blue-600 dark:hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'
               }`}
             >
               {tradeType === 'swap' ? 'Submit Swap Request' : 'Submit Shift Drop'}

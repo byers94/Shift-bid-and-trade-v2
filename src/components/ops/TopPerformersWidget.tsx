@@ -43,6 +43,7 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
 }) => {
   const { 
     guardsList, 
+    sitesList,
     siteFeedbacks, 
     addSiteFeedback, 
     awardGuardCommendation, 
@@ -330,10 +331,11 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
                   </div>
                   <div className="absolute -bottom-1 -right-1">
                     <SiteQualificationCircle 
-                      ojtCount={secondPerformer.ojtSites.length} 
-                      totalSites={8} 
-                      size={22} 
-                      strokeWidth={3} 
+                      qualifiedSitesCount={secondPerformer.ojtSites?.length || 0} 
+                      totalSitesCount={sitesList.length || 8} 
+                      size="xs"
+                      trainingLevel={secondPerformer.trainingLevel}
+                      role={secondPerformer.role}
                     />
                   </div>
                 </div>
@@ -396,10 +398,11 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
                 </div>
                 <div className="absolute -bottom-1 -right-1">
                   <SiteQualificationCircle 
-                    ojtCount={topPerformer.ojtSites.length} 
-                    totalSites={8} 
-                    size={24} 
-                    strokeWidth={3} 
+                    qualifiedSitesCount={topPerformer.ojtSites?.length || 0} 
+                    totalSitesCount={sitesList.length || 8} 
+                    size="xs" 
+                    trainingLevel={topPerformer.trainingLevel}
+                    role={topPerformer.role}
                   />
                 </div>
               </div>
@@ -484,10 +487,11 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
                   </div>
                   <div className="absolute -bottom-1 -right-1">
                     <SiteQualificationCircle 
-                      ojtCount={thirdPerformer.ojtSites.length} 
-                      totalSites={8} 
-                      size={22} 
-                      strokeWidth={3} 
+                      qualifiedSitesCount={thirdPerformer.ojtSites?.length || 0} 
+                      totalSitesCount={sitesList.length || 8} 
+                      size="xs" 
+                      trainingLevel={thirdPerformer.trainingLevel}
+                      role={thirdPerformer.role}
                     />
                   </div>
                 </div>

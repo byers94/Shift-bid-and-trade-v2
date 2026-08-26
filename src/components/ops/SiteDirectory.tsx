@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
 import { SiteProfile, SiteCategory, SiteSecurityTier } from '../../types/shift';
 import { SiteJsonImportModal } from './SiteJsonImportModal';
+import { validateSite, auditAllSites, SiteValidationResult } from '../../utils/siteValidation';
 import { 
   Building2, 
   MapPin, 
@@ -39,7 +40,9 @@ import {
   Info,
   Navigation,
   Compass,
-  ArrowRight
+  ArrowRight,
+  ClipboardCheck,
+  CheckCheck
 } from 'lucide-react';
 
 interface SiteDirectoryProps {
@@ -69,11 +72,13 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [tierFilter, setTierFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [validationFilter, setValidationFilter] = useState<'all' | 'needs_attention' | 'missing_contact' | 'incomplete_orders' | 'ready'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
 
   // Modal States
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isJsonImportModalOpen, setIsJsonImportModalOpen] = useState(false);
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
   const [viewingDossierSite, setViewingDossierSite] = useState<SiteProfile | null>(null);
   const [deleteConfirmSite, setDeleteConfirmSite] = useState<SiteProfile | null>(null);
@@ -102,9 +107,10 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
   const [formStatus, setFormStatus] = useState<'active' | 'inactive' | 'maintenance'>('active');
   const [formNotes, setFormNotes] = useState('');
   const [newCertInput, setNewCertInput] = useState('');
+  const [customCertificationsList, setCustomCertificationsList] = useState<string[]>([]);
 
-  // Certifications Master List
-  const commonCertifications = [
+  // Master Certifications Pool
+  const baseCertifications = [
     'TWIC Card',
     'Armed Endorsement',
     'CPR/AED',
@@ -123,6 +129,25 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
     'Incident Command',
     'Asset Protection'
   ];
+
+  const allAvailableCertifications = useMemo(() => {
+    const combined = [...baseCertifications, ...customCertificationsList];
+    return Array.from(new Set(combined));
+  }, [baseCertifications, customCertificationsList]);
+
+  // Validation Map for All Sites
+  const siteValidationsMap = useMemo(() => {
+    const map = new Map<string, SiteValidationResult>();
+    sitesList.forEach(site => {
+      map.set(site.id, validateSite(site));
+    });
+    return map;
+  }, [sitesList]);
+
+  // Directory Audit Metrics
+  const auditSummary = useMemo(() => {
+    return auditAllSites(sitesList);
+  }, [sitesList]);
 
   // Category Configuration Helper
   const getCategoryMeta = (cat: SiteCategory) => {
@@ -167,7 +192,23 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
   // Filtered Sites
   const filteredSites = useMemo(() => {
     return sitesList.filter((site) => {
-      // 1. Search Query
+      const validation = siteValidationsMap.get(site.id) || validateSite(site);
+
+      // 1. Validation Readiness Filter
+      if (validationFilter === 'needs_attention' && validation.isValid) {
+        return false;
+      }
+      if (validationFilter === 'missing_contact' && !validation.hasMissingContact) {
+        return false;
+      }
+      if (validationFilter === 'incomplete_orders' && !validation.hasIncompleteOrders) {
+        return false;
+      }
+      if (validationFilter === 'ready' && !validation.isValid) {
+        return false;
+      }
+
+      // 2. Search Query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchesName = site.name.toLowerCase().includes(q);
@@ -181,24 +222,24 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
         }
       }
 
-      // 2. Category Filter
+      // 3. Category Filter
       if (categoryFilter !== 'all' && site.category !== categoryFilter) {
         return false;
       }
 
-      // 3. Tier Filter
+      // 4. Tier Filter
       if (tierFilter !== 'all' && site.securityTier !== tierFilter) {
         return false;
       }
 
-      // 4. Status Filter
+      // 5. Status Filter
       if (statusFilter !== 'all' && site.status !== statusFilter) {
         return false;
       }
 
       return true;
     });
-  }, [sitesList, searchQuery, categoryFilter, tierFilter, statusFilter]);
+  }, [sitesList, searchQuery, categoryFilter, tierFilter, statusFilter, validationFilter, siteValidationsMap]);
 
   // Aggregate Metrics
   const metrics = useMemo(() => {
@@ -313,6 +354,57 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
         setViewingDossierSite(null);
       }
       setDeleteConfirmSite(null);
+    }
+  };
+
+  // Certifications Form Handlers
+  const handleAddCustomCertification = () => {
+    const trimmed = newCertInput.trim();
+    if (!trimmed) return;
+    if (!formRequiredCertifications.includes(trimmed)) {
+      setFormRequiredCertifications(prev => [...prev, trimmed]);
+    }
+    if (!customCertificationsList.includes(trimmed)) {
+      setCustomCertificationsList(prev => [...prev, trimmed]);
+    }
+    setNewCertInput('');
+    showToast('Certification Added', `"${trimmed}" added to required facility endorsements.`, 'success');
+  };
+
+  const handleRemoveCertification = (certToRemove: string) => {
+    setFormRequiredCertifications(prev => prev.filter(c => c !== certToRemove));
+    showToast('Certification Removed', `"${certToRemove}" removed from facility requirements.`, 'info');
+  };
+
+  const handleToggleCertification = (cert: string) => {
+    if (formRequiredCertifications.includes(cert)) {
+      handleRemoveCertification(cert);
+    } else {
+      setFormRequiredCertifications(prev => [...prev, cert]);
+    }
+  };
+
+  const handlePresetStandardCertifications = () => {
+    setFormRequiredCertifications(['Guard Card', 'CPR/AED']);
+    showToast('Preset Applied', 'Standard Guard Card & CPR/AED requirements set.', 'info');
+  };
+
+  const handleClearAllCertifications = () => {
+    setFormRequiredCertifications([]);
+  };
+
+  // Run validation script & audit modal trigger
+  const handleRunValidationScript = () => {
+    const report = auditAllSites(sitesList);
+    setIsAuditModalOpen(true);
+    if (report.criticalIssuesCount > 0 || report.missingContactCount > 0 || report.incompleteOrdersCount > 0) {
+      showToast(
+        'Validation Script Complete',
+        `Audit flagged ${report.missingContactCount} sites missing contacts and ${report.incompleteOrdersCount} with incomplete orders.`,
+        'warning'
+      );
+    } else {
+      showToast('Validation Script Passed', '100% of facilities meet operational dispatch standards.', 'success');
     }
   };
 
@@ -440,6 +532,115 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
           <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1 mt-0.5">
             Cross-trained fleet
           </span>
+        </div>
+      </div>
+
+      {/* Data Quality & Dispatch Readiness Audit Banner */}
+      <div className="bg-slate-900 text-white rounded-xl p-4 border border-slate-800 shadow-sm space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="p-2 rounded-lg bg-blue-600/30 border border-blue-500/40 text-blue-400">
+              <ClipboardCheck className="w-5 h-5" />
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+                  Site Directory Validation & Dispatch Readiness
+                </h3>
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                  {auditSummary.overallReadinessPercentage}% Fleet Compliance
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Automated data quality verification flagging missing client contact info or incomplete post orders before dispatching.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <button
+              type="button"
+              id="btn-run-validation-audit"
+              onClick={handleRunValidationScript}
+              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <CheckCheck className="w-4 h-4" /> Run Compliance Audit
+            </button>
+          </div>
+        </div>
+
+        {/* Audit Filter Tabs */}
+        <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-slate-800 text-xs">
+          <span className="text-[11px] text-slate-400 font-medium mr-1">Filter by Audit Status:</span>
+          
+          <button
+            type="button"
+            id="filter-audit-all"
+            onClick={() => setValidationFilter('all')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${
+              validationFilter === 'all'
+                ? 'bg-white text-slate-900 font-bold'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+            }`}
+          >
+            All Sites ({sitesList.length})
+          </button>
+
+          <button
+            type="button"
+            id="filter-audit-needs-attention"
+            onClick={() => setValidationFilter('needs_attention')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${
+              validationFilter === 'needs_attention'
+                ? 'bg-rose-500 text-white font-bold'
+                : 'bg-slate-800 hover:bg-slate-700 text-rose-300'
+            }`}
+          >
+            <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+            Needs Attention ({auditSummary.totalSites - auditSummary.fullyReadyCount})
+          </button>
+
+          <button
+            type="button"
+            id="filter-audit-missing-contact"
+            onClick={() => setValidationFilter('missing_contact')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${
+              validationFilter === 'missing_contact'
+                ? 'bg-amber-500 text-white font-bold'
+                : 'bg-slate-800 hover:bg-slate-700 text-amber-300'
+            }`}
+          >
+            <Phone className="w-3.5 h-3.5 text-amber-400" />
+            Missing Client Contact ({auditSummary.missingContactCount})
+          </button>
+
+          <button
+            type="button"
+            id="filter-audit-incomplete-orders"
+            onClick={() => setValidationFilter('incomplete_orders')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${
+              validationFilter === 'incomplete_orders'
+                ? 'bg-orange-500 text-white font-bold'
+                : 'bg-slate-800 hover:bg-slate-700 text-orange-300'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5 text-orange-400" />
+            Incomplete Post Orders ({auditSummary.incompleteOrdersCount})
+          </button>
+
+          <button
+            type="button"
+            id="filter-audit-ready"
+            onClick={() => setValidationFilter('ready')}
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${
+              validationFilter === 'ready'
+                ? 'bg-emerald-500 text-white font-bold'
+                : 'bg-slate-800 hover:bg-slate-700 text-emerald-300'
+            }`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+            100% Dispatch Ready ({auditSummary.fullyReadyCount})
+          </button>
         </div>
       </div>
 
@@ -591,12 +792,17 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
             const qualifiedGuards = getQualifiedGuardsForSite(site.name);
             const activeShifts = getShiftsForSite(site.name);
             const isCopied = copiedAddressId === site.id;
+            const validation = siteValidationsMap.get(site.id) || validateSite(site);
 
             return (
               <div
                 key={site.id}
                 id={`site-card-${site.id}`}
-                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between overflow-hidden"
+                className={`bg-white dark:bg-slate-900 border rounded-xl shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between overflow-hidden ${
+                  !validation.isValid 
+                    ? 'border-amber-300 dark:border-amber-800/80 ring-1 ring-amber-400/20' 
+                    : 'border-slate-200 dark:border-slate-800'
+                }`}
               >
                 <div>
                   {/* Card Header */}
@@ -613,6 +819,24 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                           {site.status !== 'active' && (
                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300">
                               {site.status.toUpperCase()}
+                            </span>
+                          )}
+                          {/* Validation Badge */}
+                          {validation.isValid ? (
+                            <span 
+                              className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1"
+                              title="Site meets all dispatch data requirements"
+                            >
+                              <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                              Ready
+                            </span>
+                          ) : (
+                            <span 
+                              className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center gap-1"
+                              title={`Validation issues: ${validation.issues.map(i => i.message).join(' • ')}`}
+                            >
+                              <AlertTriangle className="w-3 h-3 text-amber-500" />
+                              Needs Data ({validation.issues.length})
                             </span>
                           )}
                         </div>
@@ -712,6 +936,32 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                       </div>
                     )}
 
+                    {/* Validation Data Quality Warning Box if Issues Found */}
+                    {!validation.isValid && (
+                      <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                            Dispatch Readiness Warning:
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditModal(site)}
+                            className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                          >
+                            Resolve Data
+                          </button>
+                        </div>
+                        <ul className="space-y-0.5 text-[10px] text-amber-700 dark:text-amber-300/90 list-disc list-inside">
+                          {validation.issues.map((issue, idx) => (
+                            <li key={idx} className="line-clamp-1">
+                              {issue.message}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
                     {/* Guard Clearance Summary Bar */}
                     <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800 text-[11px]">
                       <div className="flex items-center gap-1 text-slate-600 dark:text-slate-400 font-medium">
@@ -794,6 +1044,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                   <th className="py-3 px-4">Street Address</th>
                   <th className="py-3 px-4">Primary Contact</th>
                   <th className="py-3 px-4">Emergency Phone</th>
+                  <th className="py-3 px-4 text-center">Readiness</th>
                   <th className="py-3 px-4 text-center">Qualified</th>
                   <th className="py-3 px-4 text-center">Posts</th>
                   <th className="py-3 px-4 text-right">Actions</th>
@@ -804,11 +1055,14 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                   const catMeta = getCategoryMeta(site.category);
                   const tierMeta = getTierMeta(site.securityTier);
                   const qualifiedGuards = getQualifiedGuardsForSite(site.name);
+                  const validation = siteValidationsMap.get(site.id) || validateSite(site);
 
                   return (
                     <tr 
                       key={site.id} 
-                      className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors"
+                      className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors ${
+                        !validation.isValid ? 'bg-amber-50/20 dark:bg-amber-950/10' : ''
+                      }`}
                     >
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
@@ -860,6 +1114,28 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                         <span className="text-rose-600 dark:text-rose-400 font-bold font-mono">
                           {site.emergencyPhone}
                         </span>
+                      </td>
+
+                      <td className="py-3 px-4 text-center">
+                        {validation.isValid ? (
+                          <span 
+                            className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300"
+                            title="Meets all dispatch data standards"
+                          >
+                            <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                            100% Ready
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditModal(site)}
+                            className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/80 transition-colors cursor-pointer"
+                            title={`Issues:\n${validation.issues.map(i => `• ${i.message}`).join('\n')}`}
+                          >
+                            <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                            {validation.issues.length} Flag{validation.issues.length > 1 ? 's' : ''}
+                          </button>
+                        )}
                       </td>
 
                       <td className="py-3 px-4 text-center">
@@ -1462,34 +1738,142 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                   />
                 </div>
 
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-medium mb-1">
-                    Required Security Certifications & Endorsements
-                  </label>
-                  <div className="flex items-center gap-1.5 flex-wrap mb-2">
-                    {commonCertifications.map((cert) => {
-                      const isSelected = formRequiredCertifications.includes(cert);
-                      return (
-                        <button
-                          key={cert}
-                          type="button"
-                          onClick={() => {
-                            if (isSelected) {
-                              setFormRequiredCertifications(formRequiredCertifications.filter(c => c !== cert));
-                            } else {
-                              setFormRequiredCertifications([...formRequiredCertifications, cert]);
-                            }
-                          }}
-                          className={`px-2 py-1 rounded text-[11px] font-medium border transition-colors ${
-                            isSelected
-                              ? 'bg-blue-600 text-white border-blue-600'
-                              : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
-                          }`}
-                        >
-                          {isSelected ? '✓ ' : '+ '}{cert}
-                        </button>
-                      );
-                    })}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-slate-700 dark:text-slate-300 font-medium">
+                      Required Security Certifications & Endorsements
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handlePresetStandardCertifications}
+                        className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline font-semibold"
+                      >
+                        Reset Standard (Guard Card + CPR)
+                      </button>
+                      {formRequiredCertifications.length > 0 && (
+                        <>
+                          <span className="text-slate-300 dark:text-slate-600">|</span>
+                          <button
+                            type="button"
+                            onClick={handleClearAllCertifications}
+                            className="text-[11px] text-rose-500 hover:underline font-semibold"
+                          >
+                            Clear All
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Active Selected Certifications List with Remove (x) Buttons */}
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                      <span className="font-semibold flex items-center gap-1">
+                        <Award className="w-3.5 h-3.5 text-blue-500" />
+                        Active Required Endorsements ({formRequiredCertifications.length}):
+                      </span>
+                      {formRequiredCertifications.length === 0 && (
+                        <span className="text-amber-600 dark:text-amber-400 text-[10px] font-medium">
+                          No certifications specified
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5 flex-wrap min-h-[38px]">
+                      {formRequiredCertifications.length === 0 ? (
+                        <p className="text-xs text-slate-400 italic py-1">
+                          No endorsements currently assigned. Select from suggested badges below or enter a custom credential.
+                        </p>
+                      ) : (
+                        formRequiredCertifications.map((cert) => (
+                          <span
+                            key={cert}
+                            id={`active-cert-badge-${cert.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-600 text-white shadow-2xs group animate-in fade-in-50 zoom-in-95 duration-100"
+                          >
+                            <Award className="w-3 h-3 text-blue-200" />
+                            <span>{cert}</span>
+                            <button
+                              type="button"
+                              id={`btn-remove-cert-${cert.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
+                              onClick={() => handleRemoveCertification(cert)}
+                              className="p-0.5 ml-0.5 rounded-full hover:bg-blue-700 text-blue-200 hover:text-white transition-colors cursor-pointer"
+                              title={`Remove ${cert}`}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Add New Custom Certification Input */}
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Award className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        id="input-custom-certification"
+                        value={newCertInput}
+                        onChange={(e) => setNewCertInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddCustomCertification();
+                          }
+                        }}
+                        placeholder="Add custom certification or endorsement (e.g. K9 Handler, Baton, OSHA 30)..."
+                        className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      id="btn-add-custom-certification"
+                      onClick={handleAddCustomCertification}
+                      disabled={!newCertInput.trim()}
+                      className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white dark:bg-slate-700 dark:hover:bg-slate-600 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 shrink-0 shadow-xs cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add Endorsement
+                    </button>
+                  </div>
+
+                  {/* Suggested Badges Pool */}
+                  <div className="space-y-1.5 pt-1">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                      Quick Suggestions & Directory Credentials:
+                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {allAvailableCertifications.map((cert) => {
+                        const isSelected = formRequiredCertifications.includes(cert);
+                        return (
+                          <button
+                            key={cert}
+                            type="button"
+                            id={`btn-toggle-cert-${cert.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
+                            onClick={() => handleToggleCertification(cert)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all flex items-center gap-1 cursor-pointer ${
+                              isSelected
+                                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700'
+                                : 'bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700/60'
+                            }`}
+                          >
+                            {isSelected ? (
+                              <>
+                                <Check className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                                <span>{cert}</span>
+                              </>
+                            ) : (
+                              <>
+                                <Plus className="w-3 h-3 text-slate-400" />
+                                <span>{cert}</span>
+                              </>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1561,6 +1945,186 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
         isOpen={isJsonImportModalOpen}
         onClose={() => setIsJsonImportModalOpen(false)}
       />
+
+      {/* Site Validation & Dispatch Readiness Audit Modal */}
+      {isAuditModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in-50 duration-150">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-start justify-between bg-slate-50/50 dark:bg-slate-800/40">
+              <div className="flex items-center gap-3">
+                <span className="p-2.5 bg-blue-600 text-white rounded-xl shadow-xs">
+                  <ClipboardCheck className="w-6 h-6" />
+                </span>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    Facility Validation & Dispatch Readiness Audit
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Pre-dispatch audit script evaluating contact completeness, post orders, and emergency readiness.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                id="btn-close-audit-modal"
+                onClick={() => setIsAuditModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-5 overflow-y-auto space-y-5 text-xs">
+              {/* Compliance Statistics Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl">
+                  <span className="text-[11px] text-slate-500 font-medium">Compliance Rate</span>
+                  <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">
+                    {auditSummary.overallReadinessPercentage}%
+                  </p>
+                  <span className="text-[10px] text-emerald-600 font-semibold mt-0.5 block">
+                    {auditSummary.fullyReadyCount} of {auditSummary.totalSites} Ready
+                  </span>
+                </div>
+
+                <div className="p-3.5 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/60 rounded-xl">
+                  <span className="text-[11px] text-rose-700 dark:text-rose-300 font-medium">Missing Contacts</span>
+                  <p className="text-2xl font-bold text-rose-700 dark:text-rose-400 mt-1">
+                    {auditSummary.missingContactCount}
+                  </p>
+                  <span className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold mt-0.5 block">
+                    Critical Dispatch Blocker
+                  </span>
+                </div>
+
+                <div className="p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 rounded-xl">
+                  <span className="text-[11px] text-amber-700 dark:text-amber-300 font-medium">Incomplete Orders</span>
+                  <p className="text-2xl font-bold text-amber-700 dark:text-amber-400 mt-1">
+                    {auditSummary.incompleteOrdersCount}
+                  </p>
+                  <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold mt-0.5 block">
+                    Needs SOP Expansion
+                  </span>
+                </div>
+
+                <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/60 rounded-xl">
+                  <span className="text-[11px] text-emerald-700 dark:text-emerald-300 font-medium">100% Fully Ready</span>
+                  <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-400 mt-1">
+                    {auditSummary.fullyReadyCount}
+                  </p>
+                  <span className="text-[10px] text-emerald-600 font-semibold mt-0.5 block">
+                    Zero Dispatch Flags
+                  </span>
+                </div>
+              </div>
+
+              {/* Detailed Breakdown per Facility */}
+              <div className="space-y-3">
+                <h4 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                  <span>Facility Breakdown ({sitesList.length} total)</span>
+                  <span className="text-[11px] font-normal text-slate-500 lowercase">
+                    click 'Resolve' on any site to update records directly
+                  </span>
+                </h4>
+
+                <div className="space-y-2.5">
+                  {sitesList.map((site) => {
+                    const validation = siteValidationsMap.get(site.id) || validateSite(site);
+                    const catMeta = getCategoryMeta(site.category);
+
+                    return (
+                      <div
+                        key={site.id}
+                        id={`audit-site-item-${site.id}`}
+                        className={`p-3.5 rounded-xl border transition-all ${
+                          !validation.isValid
+                            ? 'bg-amber-50/40 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/60'
+                            : 'bg-slate-50/50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800'
+                        }`}
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-slate-900 dark:bg-slate-700 text-white">
+                              {site.code}
+                            </span>
+                            <h5 className="font-bold text-slate-900 dark:text-white text-xs">
+                              {site.name}
+                            </h5>
+                            <span className={`text-[10px] font-semibold px-2 py-0.2 rounded-full border ${catMeta.color}`}>
+                              {catMeta.label}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {validation.isValid ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                                100% Dispatch Ready
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsAuditModalOpen(false);
+                                  handleOpenEditModal(site);
+                                }}
+                                className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[11px] font-semibold shadow-2xs flex items-center gap-1 transition-colors cursor-pointer"
+                              >
+                                <Edit3 className="w-3 h-3" /> Resolve Issues ({validation.issues.length})
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Issues List */}
+                        {!validation.isValid && (
+                          <div className="mt-2 pt-2 border-t border-amber-200/60 dark:border-amber-900/40 space-y-1">
+                            {validation.issues.map((issue, idx) => (
+                              <div key={idx} className="flex items-start gap-1.5 text-[11px]">
+                                {issue.severity === 'error' ? (
+                                  <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
+                                ) : (
+                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                                )}
+                                <div className="flex-1">
+                                  <span className={`font-semibold ${issue.severity === 'error' ? 'text-rose-700 dark:text-rose-300' : 'text-amber-800 dark:text-amber-300'}`}>
+                                    {issue.message}
+                                  </span>
+                                  {issue.suggestedAction && (
+                                    <span className="text-slate-500 dark:text-slate-400 block text-[10px] mt-0.5">
+                                      Fix: {issue.suggestedAction}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 flex items-center justify-between">
+              <span className="text-xs text-slate-500">
+                Audit automatically re-evaluates upon every facility creation and edit.
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsAuditModalOpen(false)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-700 dark:hover:bg-slate-600 rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+              >
+                Close Audit Report
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

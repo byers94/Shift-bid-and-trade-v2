@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
 import { OpenShiftBoard } from './OpenShiftBoard';
 import { TradeBoard } from './TradeBoard';
+import { ActiveCallsPanel } from './ActiveCallsPanel';
+import { CallAlertModal } from './CallAlertModal';
 import { EmergencyAlertOverlay } from './EmergencyAlertOverlay';
 import { ShiftAlertPreferencesModal } from './ShiftAlertPreferencesModal';
 import { 
@@ -31,17 +33,20 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
     setActiveGuard, 
     shifts, 
     trades, 
+    callsForService,
     opsPhone, 
     theme, 
     toggleTheme,
     alertPreferences 
   } = useShiftOps();
-  const [activeTab, setActiveTab] = useState<'open_board' | 'trade_board'>('open_board');
+  const [activeTab, setActiveTab] = useState<'open_board' | 'trade_board' | 'active_calls'>('open_board');
   const [showGuardMenu, setShowGuardMenu] = useState(false);
   const [isAlertPrefsOpen, setIsAlertPrefsOpen] = useState(false);
 
   const openShiftsCount = shifts.filter((s) => s.status === 'open').length;
   const activeTradesCount = trades.filter((t) => t.status === 'active' || t.status === 'pending_swap').length;
+  const activeCallsCount = callsForService.filter((c) => c.status !== 'cleared' && c.status !== 'cancelled').length;
+  const boloCount = callsForService.filter((c) => (c.isBolo || c.priority === 'urgent_bolo') && c.status !== 'cleared' && c.status !== 'cancelled').length;
 
   const activeCategoriesCount = [
     alertPreferences.emergencyAlerts,
@@ -58,6 +63,9 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
     >
       {/* High-priority Emergency Alert Overlay */}
       <EmergencyAlertOverlay />
+
+      {/* Calls for Service & BOLO Alert Modal */}
+      <CallAlertModal />
 
       {/* Shift Alert Preferences Modal */}
       <ShiftAlertPreferencesModal 
@@ -219,7 +227,7 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
         <button
           id="guard-tab-open-board"
           onClick={() => setActiveTab('open_board')}
-          className={`flex-1 py-3 text-xs font-bold transition-all relative flex items-center justify-center gap-1.5 cursor-pointer ${
+          className={`flex-1 py-3 text-[11px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
             activeTab === 'open_board'
               ? 'border-b-2 border-[#1e3a8a] dark:border-blue-400 text-[#1e3a8a] dark:text-blue-400 bg-blue-50/40 dark:bg-blue-950/30'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
@@ -238,7 +246,7 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
         <button
           id="guard-tab-trade-board"
           onClick={() => setActiveTab('trade_board')}
-          className={`flex-1 py-3 text-xs font-bold transition-all relative flex items-center justify-center gap-1.5 cursor-pointer ${
+          className={`flex-1 py-3 text-[11px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
             activeTab === 'trade_board'
               ? 'border-b-2 border-[#1e3a8a] dark:border-blue-400 text-[#1e3a8a] dark:text-blue-400 bg-blue-50/40 dark:bg-blue-950/30'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
@@ -253,11 +261,35 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
             {activeTradesCount}
           </span>
         </button>
+
+        <button
+          id="guard-tab-active-calls"
+          onClick={() => setActiveTab('active_calls')}
+          className={`flex-1 py-3 text-[11px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
+            activeTab === 'active_calls'
+              ? 'border-b-2 border-rose-600 text-rose-700 dark:text-rose-400 bg-rose-50/40 dark:bg-rose-950/30'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+          }`}
+        >
+          <PhoneCall className="w-3 h-3 text-rose-500" />
+          <span>ACTIVE CALLS</span>
+          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-black ${
+            boloCount > 0
+              ? 'bg-rose-600 text-white animate-pulse'
+              : activeCallsCount > 0
+              ? 'bg-blue-600 text-white'
+              : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+          }`}>
+            {activeCallsCount}
+          </span>
+        </button>
       </nav>
 
       {/* Board Content */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-slate-50 dark:bg-slate-900">
-        {activeTab === 'open_board' ? <OpenShiftBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} /> : <TradeBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
+      <div className="flex-1 flex flex-col overflow-y-auto min-h-0 bg-slate-50 dark:bg-slate-900 p-2 sm:p-3">
+        {activeTab === 'open_board' && <OpenShiftBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
+        {activeTab === 'trade_board' && <TradeBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
+        {activeTab === 'active_calls' && <ActiveCallsPanel />}
       </div>
     </aside>
   );

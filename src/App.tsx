@@ -3,6 +3,7 @@ import { ShiftOpsProvider, useShiftOps } from './context/ShiftOpsContext';
 import { GuardView } from './components/guard/GuardView';
 import { OpsAdminView } from './components/ops/OpsAdminView';
 import { ToastContainer } from './components/common/ToastContainer';
+import { CallReceiptBanner } from './components/ops/CallReceiptBanner';
 import { 
   AdminAuthModal, 
   DispatcherIdentity, 
@@ -391,6 +392,9 @@ const AppContent: React.FC = () => {
         }}
         onSuccess={handleAdminLoginSuccess}
       />
+
+      {/* Ops Admin Acknowledged Receipt Notification Layer */}
+      <CallReceiptBanner />
 
       {/* Toast Notification Layer */}
       <ToastContainer />

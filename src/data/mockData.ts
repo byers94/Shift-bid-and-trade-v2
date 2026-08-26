@@ -10,7 +10,8 @@ import {
   ShiftAlertPreferences,
   SiteFeedbackEntry,
   GuardPerformanceStats,
-  SiteProfile
+  SiteProfile,
+  CallForService
 } from '../types/shift';
 
 export const OPS_DISPATCH_PHONE = '+1 (800) 555-0199';
@@ -327,6 +328,58 @@ export const INITIAL_SITES: SiteProfile[] = [
     status: 'active',
     createdAt: '2025-05-01T08:00:00Z',
     notes: 'High-value art museum and exhibition galleries.'
+  },
+  {
+    id: 'site-13',
+    name: 'Beacon Hill Storage Yards',
+    code: 'BCN-YRD',
+    address: '2800 15th Ave S, Seattle, WA 98144',
+    city: 'Seattle',
+    state: 'WA',
+    zip: '98144',
+    zone: 'Beacon Hill District',
+    category: 'industrial',
+    securityTier: 'Tier 2 - Elevated',
+    primaryContactName: 'TBD - Site Contact',
+    primaryContactPhone: '',
+    primaryContactEmail: '',
+    emergencyPhone: '',
+    postInstructions: 'Gate 2 vehicle entry monitoring, night container lock verification, log all truck transport arrivals.',
+    requiredClearances: ['Guard Card', 'Heavy Equipment Perimeter'],
+    requiredCertifications: ['Guard Card', 'Heavy Equipment Perimeter'],
+    activePostsCount: 1,
+    ojtRequired: false,
+    operatingHours: 'Daily 18:00 - 06:00',
+    accessGateNotes: 'Combination padlocks on north gate perimeter.',
+    status: 'active',
+    createdAt: '2026-08-10T08:00:00Z',
+    notes: 'Pending updated client emergency liaison contact details.'
+  },
+  {
+    id: 'site-14',
+    name: 'Cascadia Substation Gate 9',
+    code: 'CSC-SUB9',
+    address: '4100 Marginal Way S, Sector 9, Seattle, WA 98134',
+    city: 'Seattle',
+    state: 'WA',
+    zip: '98134',
+    zone: 'Utilities Power Grid',
+    category: 'industrial',
+    securityTier: 'Tier 4 - Critical Infrastructure',
+    primaryContactName: 'Supervisor Ray Callahan',
+    primaryContactPhone: '+1 (555) 206-9811',
+    primaryContactEmail: 'rcallahan@cascadiagrid.org',
+    emergencyPhone: '+1 (555) 206-9999',
+    postInstructions: 'Standard post orders apply.',
+    requiredClearances: ['Armed Endorsement', 'Incident Command'],
+    requiredCertifications: ['Armed Endorsement', 'Incident Command'],
+    activePostsCount: 2,
+    ojtRequired: true,
+    operatingHours: '24/7 Continuous Ops',
+    accessGateNotes: 'Keycard reader on security fence.',
+    status: 'active',
+    createdAt: '2026-08-18T08:00:00Z',
+    notes: 'Awaiting comprehensive post orders and facility directive documentation.'
   }
 ];
 
@@ -1281,6 +1334,186 @@ export const GUARD_BASE_METRICS: Record<string, {
     topCommendedSite: 'Retail Plaza'
   }
 };
+
+export const INITIAL_CALLS_FOR_SERVICE: CallForService[] = [
+  {
+    id: 'CFS-2026-081',
+    callType: 'suspicious_vehicle',
+    priority: 'urgent_bolo',
+    siteName: 'Port Authority - Pier 7',
+    locationDetails: 'South Cargo Gate 4 / Berth 7 Perimeter',
+    summary: 'BOLO: Black Dodge Charger Loitering Near Secure Perimeter',
+    details: 'Dockmaster reported dark tinted Charger idling along restricted perimeter fence for >25 mins taking photos of container cranes.',
+    isBolo: true,
+    boloSubject: {
+      subjectType: 'vehicle',
+      description: 'Black late-model Dodge Charger, dark tinted windows, damaged front passenger headlight',
+      licensePlate: 'WA 7XYZ992',
+      makeModelColor: 'Dodge Charger - Matte Black',
+      directionOfTravel: 'Idling facing South Cargo Exit'
+    },
+    callerInfo: {
+      name: 'Cmdr. David Vance',
+      roleOrTitle: 'Dockmaster Office',
+      phone: '+1 (555) 206-7788'
+    },
+    officerInstructions: 'Maintain safe distance, record plate verification on body cam, do not approach alone if vehicle attempts to flee.',
+    dispatchedBy: {
+      name: "Lt. Mark O'Connor",
+      badge: 'OPS-CMD-01'
+    },
+    createdAt: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
+    status: 'dispatched'
+  },
+  {
+    id: 'CFS-2026-082',
+    callType: 'noise_complaint',
+    priority: 'routine',
+    siteName: 'Corporate HQ - Main Tower',
+    locationDetails: 'Floor 14 Executive Lounge & Terrace',
+    summary: 'Noise Complaint: Loud Music & Disturbance on 14th Floor Patio',
+    details: 'Tenant in Suite 1420 reporting excessive noise and loud gathering on outdoor terrace during designated quiet work hours.',
+    callerInfo: {
+      name: 'James Caldwell',
+      roleOrTitle: 'Suite 1420 Manager',
+      phone: '+1 (555) 425-3310'
+    },
+    officerInstructions: 'Contact party organizer courteously, advise building noise ordinance after 18:00, ensure patio doors are closed.',
+    dispatchedBy: {
+      name: 'Dispatcher Sarah Jenkins',
+      badge: 'OPS-DISP-04'
+    },
+    createdAt: new Date(Date.now() - 24 * 60 * 1000).toISOString(),
+    status: 'dispatched'
+  },
+  {
+    id: 'CFS-2026-083',
+    callType: 'escort_request',
+    priority: 'priority',
+    siteName: 'West Medical Center - Emergency Dept',
+    locationDetails: 'Staff East Parking Garage - Level P3',
+    summary: 'Staff Safety Escort Request to Vehicle',
+    details: 'Night shift triage nurse requesting security escort from Emergency Room staff exit to vehicle parked on P3 East structure.',
+    callerInfo: {
+      name: 'Nurse Rachel Adams, RN',
+      roleOrTitle: 'ER Triage Charge Nurse',
+      phone: '+1 (555) 206-4412'
+    },
+    officerInstructions: 'Meet staff member at ER Triage Security desk, escort to stall #314, verify vehicle starts safely.',
+    dispatchedBy: {
+      name: "Lt. Mark O'Connor",
+      badge: 'OPS-CMD-01'
+    },
+    createdAt: new Date(Date.now() - 8 * 60 * 1000).toISOString(),
+    status: 'dispatched'
+  },
+  {
+    id: 'CFS-2026-084',
+    callType: 'trespass_warning',
+    priority: 'routine',
+    siteName: 'Retail Plaza - Patrol',
+    locationDetails: 'West Transit Concourse Entrance',
+    summary: 'Trespass Warning: Individual Solicitating Near Turnstiles',
+    details: 'Plaza concourse store manager reported recurring individual harassing customers entering from light rail escalator.',
+    boloSubject: {
+      subjectType: 'person',
+      description: 'Male, mid-30s, red hooded jacket, carrying blue duffel bag'
+    },
+    callerInfo: {
+      name: 'Store Mgr. Kenji Sato',
+      roleOrTitle: 'Plaza Retail Suite 104'
+    },
+    officerInstructions: 'Issue standard verbal trespass reminder, offer city outreach resource card if cooperative.',
+    dispatchedBy: {
+      name: 'Dispatcher Sarah Jenkins',
+      badge: 'OPS-DISP-04'
+    },
+    createdAt: new Date(Date.now() - 38 * 60 * 1000).toISOString(),
+    status: 'en_route',
+    acknowledgedByGuard: {
+      guardId: 'guard-102',
+      guardName: 'Mike Chen',
+      badgeNumber: 'SEC-102',
+      acknowledgedAt: new Date(Date.now() - 15 * 60 * 1000).toISOString()
+    }
+  },
+  {
+    id: 'CFS-2026-079',
+    callType: 'open_door_alarm',
+    priority: 'priority',
+    siteName: 'Tech Campus North - Data Center',
+    locationDetails: 'Server Hall B Exterior Fire Exit 3',
+    summary: 'Door Prop Alarm - Server Hall B Exit 3',
+    details: 'Automated access control sensor triggered door held open alarm for over 90 seconds.',
+    dispatchedBy: {
+      name: "Lt. Mark O'Connor",
+      badge: 'OPS-CMD-01'
+    },
+    createdAt: new Date(Date.now() - 110 * 60 * 1000).toISOString(),
+    status: 'cleared',
+    clearedAt: new Date(Date.now() - 95 * 60 * 1000).toISOString(),
+    clearedByGuard: {
+      guardId: 'guard-104',
+      guardName: 'Elena Rostova',
+      badgeNumber: 'SEC-104'
+    },
+    disposition: 'Resolved',
+    resolutionNote: 'Found cleaning contractor holding door while moving trash receptacle. Advised on security policy, verified door latch fully secured.'
+  },
+  {
+    id: 'CFS-2026-078',
+    callType: 'suspicious_person',
+    priority: 'urgent_bolo',
+    isBolo: true,
+    siteName: 'Port Authority - Pier 7',
+    locationDetails: 'Berth 2 North Gate',
+    summary: 'BOLO: Unbadged Person Attempting Entry at Berth 2',
+    details: 'Individual claimed to be a contractor without TWIC card or visitor pass.',
+    boloSubject: {
+      subjectType: 'person',
+      description: 'Individual in yellow construction vest without credentials',
+      makeModelColor: 'High-Vis Vest / Blue Jeans'
+    },
+    dispatchedBy: {
+      name: "Lt. Mark O'Connor",
+      badge: 'OPS-CMD-01'
+    },
+    createdAt: new Date(Date.now() - 180 * 60 * 1000).toISOString(),
+    status: 'cleared',
+    clearedAt: new Date(Date.now() - 160 * 60 * 1000).toISOString(),
+    clearedByGuard: {
+      guardId: 'guard-current',
+      guardName: 'Alex Mercer',
+      badgeNumber: 'SEC-108'
+    },
+    disposition: 'Warning Issued',
+    resolutionNote: 'Contacted individual at Berth 2 gate. Determined delivery driver went to incorrect gate. Re-directed to Main Security Badging Office at Gate 1.'
+  },
+  {
+    id: 'CFS-2026-077',
+    callType: 'noise_complaint',
+    priority: 'routine',
+    siteName: 'Corporate HQ - Main Tower',
+    locationDetails: 'Building South Alleyway',
+    summary: 'Idling Freight Truck with Loud Generator',
+    details: 'Call from 3rd floor office regarding generator noise vibrating conference room.',
+    dispatchedBy: {
+      name: 'Dispatcher Sarah Jenkins',
+      badge: 'OPS-DISP-04'
+    },
+    createdAt: new Date(Date.now() - 240 * 60 * 1000).toISOString(),
+    status: 'cleared',
+    clearedAt: new Date(Date.now() - 225 * 60 * 1000).toISOString(),
+    clearedByGuard: {
+      guardId: 'guard-101',
+      guardName: 'Sarah Jenkins',
+      badgeNumber: 'SEC-101'
+    },
+    disposition: 'Resolved',
+    resolutionNote: 'Driver was completing catering delivery. Driver shut down auxiliary unit and departed alley within 10 minutes.'
+  }
+];
+
 
 
 

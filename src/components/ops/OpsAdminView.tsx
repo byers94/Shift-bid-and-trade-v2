@@ -11,6 +11,7 @@ import { EmergencyBroadcastModal } from './EmergencyBroadcastModal';
 import { AutoFillShiftsModal } from './AutoFillShiftsModal';
 import { TopPerformersWidget } from './TopPerformersWidget';
 import { SiteDirectory } from './SiteDirectory';
+import { CallsForServicePanel } from './CallsForServicePanel';
 import { 
   ShieldCheck, 
   Activity, 
@@ -34,7 +35,9 @@ import {
   AlertOctagon,
   Volume2,
   Sparkles,
-  Trophy
+  Trophy,
+  PhoneCall,
+  ShieldAlert
 } from 'lucide-react';
 
 interface OpsAdminViewProps {
@@ -50,18 +53,18 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   adminName = "Lt. Mark O'Connor", 
   adminBadge = "OPS-CMD-01" 
 }) => {
-  const { shifts, trades, bids, recentAdminActions, adminUsers, guardsList, sitesList, activeBroadcast } = useShiftOps();
-  const [activeMainTab, setActiveMainTabState] = useState<'operations' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal'>(() => {
+  const { shifts, trades, bids, callsForService, recentAdminActions, adminUsers, guardsList, sitesList, activeBroadcast } = useShiftOps();
+  const [activeMainTab, setActiveMainTabState] = useState<'operations' | 'calls_for_service' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal'>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_OPS_MAIN_TAB_KEY);
-      if (saved === 'operations' || saved === 'site_directory' || saved === 'guard_directory' || saved === 'top_performers' || saved === 'audit_terminal') {
+      if (saved === 'operations' || saved === 'calls_for_service' || saved === 'site_directory' || saved === 'guard_directory' || saved === 'top_performers' || saved === 'audit_terminal') {
         return saved;
       }
     } catch {}
     return 'operations';
   });
 
-  const setActiveMainTab = (tab: 'operations' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal') => {
+  const setActiveMainTab = (tab: 'operations' | 'calls_for_service' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal') => {
     setActiveMainTabState(tab);
     try {
       localStorage.setItem(STORAGE_OPS_MAIN_TAB_KEY, tab);
@@ -81,6 +84,8 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   const pendingPostsCount = trades.filter((t) => t.status === 'pending_approval').length;
   const emergencyCount = shifts.filter((s) => s.status === 'open' && s.urgency === 'emergency').length;
   const activeBidsCount = bids.length;
+  const activeCallsCount = callsForService.filter((c) => c.status !== 'cleared' && c.status !== 'cancelled').length;
+  const activeBoloCount = callsForService.filter((c) => (c.isBolo || c.priority === 'urgent_bolo') && c.status !== 'cleared' && c.status !== 'cancelled').length;
 
   return (
     <main 
@@ -194,13 +199,35 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
               </p>
             </div>
 
-            {/* Listing Reqs */}
-            <div className="bg-blue-900/40 dark:bg-slate-900/60 border border-blue-700/40 dark:border-slate-800 px-2.5 py-1 rounded-lg text-left hidden sm:block">
-              <p className="text-[8px] sm:text-[9px] text-blue-200 dark:text-blue-300 uppercase font-semibold">Listing Reqs</p>
-              <p className="text-xs sm:text-sm font-black font-mono text-blue-100">
-                {pendingPostsCount.toString().padStart(2, '0')}
+            {/* Calls for Service / Active Calls Quick Indicator */}
+            <button
+              id="header-calls-for-service-btn"
+              type="button"
+              onClick={() => setActiveMainTab('calls_for_service')}
+              className={`hover:opacity-95 transition-all cursor-pointer group px-2.5 py-1 rounded-lg border text-left ${
+                activeBoloCount > 0
+                  ? 'bg-rose-950/80 border-rose-500/80 ring-1 ring-rose-400/40'
+                  : 'bg-blue-900/60 dark:bg-slate-900/80 hover:bg-blue-800/80 border-blue-400/40 dark:border-slate-700'
+              }`}
+              title="Click to open Calls for Service & BOLOs Dispatch"
+            >
+              <p className={`text-[8px] sm:text-[9px] uppercase font-bold flex items-center gap-1 ${
+                activeBoloCount > 0 ? 'text-rose-300' : 'text-blue-300'
+              }`}>
+                {activeBoloCount > 0 ? (
+                  <ShieldAlert className="w-2.5 h-2.5 text-rose-400 fill-rose-300/40 animate-pulse" />
+                ) : (
+                  <PhoneCall className="w-2.5 h-2.5 text-blue-300" />
+                )}
+                Calls & BOLOs
               </p>
-            </div>
+              <p className={`text-xs sm:text-sm font-black font-mono ${
+                activeBoloCount > 0 ? 'text-rose-200 animate-pulse' : 'text-blue-200 group-hover:text-white'
+              }`}>
+                {activeCallsCount.toString().padStart(2, '0')}{' '}
+                <span className="text-[10px] font-normal font-sans">Active</span>
+              </p>
+            </button>
 
             {emergencyCount > 0 && (
               <div className="text-left bg-red-950/80 border border-red-500/50 px-2.5 py-1 rounded-lg">
@@ -281,6 +308,30 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
                 {pendingSwapsCount + pendingPostsCount}
               </span>
             )}
+          </button>
+
+          {/* Calls for Service & BOLOs Sub-Nav Tab */}
+          <button
+            id="tab-calls-for-service-btn"
+            type="button"
+            onClick={() => setActiveMainTab('calls_for_service')}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              activeMainTab === 'calls_for_service'
+                ? 'bg-rose-600 dark:bg-rose-600 text-white shadow-xs font-black'
+                : 'text-rose-300 hover:text-white hover:bg-rose-950/60 dark:hover:bg-slate-800'
+            }`}
+          >
+            <PhoneCall className="w-3.5 h-3.5" />
+            <span>Calls for Service & BOLOs</span>
+            <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${
+              activeBoloCount > 0
+                ? 'bg-white text-rose-700 animate-pulse'
+                : activeCallsCount > 0
+                ? 'bg-rose-500 text-white'
+                : 'bg-slate-700 text-slate-300'
+            }`}>
+              {activeCallsCount}
+            </span>
           </button>
 
           <button
@@ -499,6 +550,12 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
               </section>
             )}
           </div>
+        </div>
+      )}
+
+      {activeMainTab === 'calls_for_service' && (
+        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
+          <CallsForServicePanel />
         </div>
       )}
 

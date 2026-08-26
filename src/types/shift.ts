@@ -140,6 +140,11 @@ export type AdminActionType =
   | 'site_created'
   | 'site_updated'
   | 'site_deleted'
+  | 'call_dispatched'
+  | 'call_acknowledged'
+  | 'call_updated'
+  | 'call_cleared'
+  | 'call_cancelled'
   | 'system_reset';
 
 export interface AdminAction {
@@ -288,6 +293,151 @@ export interface SiteProfile {
   status: 'active' | 'inactive' | 'maintenance';
   createdAt?: string;
   notes?: string;
+}
+
+export type CallPriority = 'routine' | 'priority' | 'urgent_bolo';
+
+export type CallStatus = 'dispatched' | 'en_route' | 'on_scene' | 'cleared' | 'cancelled';
+
+export type CallType = 
+  | 'noise_complaint'
+  | 'suspicious_vehicle'
+  | 'suspicious_person'
+  | 'escort_request'
+  | 'trespass_warning'
+  | 'trespassing'
+  | 'maintenance_hazard'
+  | 'wellness_check'
+  | 'welfare_check'
+  | 'open_door_alarm'
+  | 'perimeter_alarm'
+  | 'access_assistance'
+  | 'bolo_alert'
+  | 'property_recovery'
+  | 'parking_violation'
+  | 'general_service'
+  | 'other';
+
+export type CallDisposition = 
+  | 'Resolved'
+  | 'Unfounded'
+  | 'Escalated'
+  | 'Assistance Rendered'
+  | 'Gone on Arrival (GOA)'
+  | 'Warning Issued'
+  | 'Referred to Emergency Services'
+  | 'Report Filed';
+
+export interface BoloSubjectInfo {
+  subjectType?: 'vehicle' | 'person' | 'property';
+  name?: string;
+  gender?: string;
+  race?: string;
+  approxAge?: string;
+  height?: string;
+  weight?: string;
+  armedAndDangerous?: boolean;
+  description?: string;
+  vehicleInfo?: string;
+  clothingDescription?: string;
+  licensePlate?: string;
+  makeModelColor?: string;
+  directionOfTravel?: string;
+  lastKnownDirection?: string;
+  lastSeenTime?: string;
+  identifyingMarks?: string;
+}
+
+export interface CallerInfo {
+  name?: string;
+  roleOrTitle?: string; // e.g. "Tenant Suite 400", "Dockmaster", "Anonymous"
+  phone?: string;
+  unitOrLocation?: string;
+}
+
+export interface CallReceiptRecord {
+  guardId: string;
+  guardName: string;
+  badgeNumber: string;
+  acknowledgedAt: string; // ISO timestamp
+  receiptChannel?: 'alert_modal' | 'queue_action' | 'bolo_banner';
+  notes?: string;
+}
+
+export interface CallReceiptNotification {
+  id: string;
+  callId: string;
+  callType?: CallType;
+  customTypeLabel?: string;
+  isBolo?: boolean;
+  priority: CallPriority;
+  siteName: string;
+  locationDetails: string;
+  summary: string;
+  callSummary?: string;
+  guardId: string;
+  guardName: string;
+  badgeNumber: string;
+  guardBadge?: string;
+  acknowledgedAt: string; // ISO timestamp
+  timeToAcknowledgeSec: number;
+  latencySeconds?: number;
+  receiptChannel?: 'alert_modal' | 'queue_action' | 'bolo_banner';
+  notes?: string;
+}
+
+export interface CallForService {
+  id: string; // e.g. "CFS-8041"
+  callType: CallType;
+  customTypeLabel?: string;
+  priority: CallPriority;
+  siteName: string; // Specific facility or "ALL SITES"
+  locationDetails: string; // Specific post/area e.g. "Gate 3 Loading Dock, Berth 4"
+  summary: string;
+  details?: string;
+  
+  // BOLO specifics
+  isBolo?: boolean;
+  boloSubject?: BoloSubjectInfo;
+
+  callerInfo?: CallerInfo;
+  officerInstructions?: string;
+  
+  dispatchedBy: {
+    name: string;
+    badge: string;
+  };
+  
+  createdAt: string; // ISO timestamp
+  status: CallStatus;
+  
+  // Guard response tracking
+  acknowledgedByGuard?: {
+    guardId: string;
+    guardName: string;
+    badgeNumber: string;
+    acknowledgedAt: string;
+    receiptChannel?: 'alert_modal' | 'queue_action' | 'bolo_banner';
+    notes?: string;
+  };
+  allReceipts?: CallReceiptRecord[];
+  timeToAcknowledgeSec?: number;
+  
+  onSceneAt?: string;
+  
+  // Clearance tracking
+  clearedAt?: string;
+  clearedByGuard?: {
+    guardId: string;
+    guardName: string;
+    badgeNumber: string;
+  };
+  disposition?: CallDisposition;
+  resolutionNote?: string;
+  
+  cancelledAt?: string;
+  cancelledBy?: string;
+  cancellationReason?: string;
 }
 
 

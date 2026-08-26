@@ -2,11 +2,14 @@ import React from 'react';
 import { Award, CheckCircle2, AlertTriangle, ShieldCheck } from 'lucide-react';
 
 interface SiteQualificationCircleProps {
-  qualifiedSitesCount: number;
-  totalSitesCount: number;
+  qualifiedSitesCount?: number;
+  totalSitesCount?: number;
+  ojtCount?: number;
+  totalSites?: number;
   trainingLevel?: 'trained' | 'needs_ojt' | 'lead_certified' | 'in_training';
   role?: 'guard' | 'lead' | 'supervisor';
-  size?: 'xs' | 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg' | number;
+  strokeWidth?: number;
   showLabel?: boolean;
   showFraction?: boolean;
   className?: string;
@@ -16,58 +19,107 @@ interface SiteQualificationCircleProps {
 export const SiteQualificationCircle: React.FC<SiteQualificationCircleProps> = ({
   qualifiedSitesCount,
   totalSitesCount,
+  ojtCount,
+  totalSites,
   trainingLevel,
   role,
   size = 'md',
+  strokeWidth: customStrokeWidth,
   showLabel = false,
   showFraction = false,
   className = '',
   id
 }) => {
-  const safeTotal = Math.max(1, totalSitesCount);
-  const percentage = Math.min(100, Math.max(0, Math.round((qualifiedSitesCount / safeTotal) * 100)));
+  // Extract number safely, guarding against NaN, null, undefined
+  const parseNum = (val: any, fallback: number): number => {
+    if (typeof val === 'number' && Number.isFinite(val) && !isNaN(val)) {
+      return val;
+    }
+    if (typeof val === 'string' && val.trim() !== '') {
+      const parsed = parseFloat(val);
+      if (Number.isFinite(parsed) && !isNaN(parsed)) return parsed;
+    }
+    return fallback;
+  };
+
+  const rawQualified = qualifiedSitesCount !== undefined 
+    ? parseNum(qualifiedSitesCount, 0) 
+    : parseNum(ojtCount, 0);
+
+  const rawTotal = totalSitesCount !== undefined 
+    ? parseNum(totalSitesCount, 8) 
+    : parseNum(totalSites, 8);
+
+  const safeTotal = Math.max(1, rawTotal);
+  const safeQualified = Math.max(0, rawQualified);
+  const rawRatio = safeTotal > 0 ? (safeQualified / safeTotal) * 100 : 0;
+  const percentage = Number.isFinite(rawRatio) && !isNaN(rawRatio) 
+    ? Math.min(100, Math.max(0, Math.round(rawRatio))) 
+    : 0;
 
   // Determine visual color scheme
   const isLead = trainingLevel === 'lead_certified' || role === 'lead' || role === 'supervisor';
-  const isTrained = trainingLevel === 'trained' || (!trainingLevel && qualifiedSitesCount >= 2) || percentage >= 50;
+  const isTrained = trainingLevel === 'trained' || (!trainingLevel && safeQualified >= 2) || percentage >= 50;
 
   let strokeColor = '#059669'; // Emerald
   let trackColor = '#d1fae5'; // Emerald 100
   let textColor = 'text-emerald-950 dark:text-emerald-300';
-  let badgeBg = 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-300';
   let tierLabel = 'Site Qualified';
 
   if (isLead) {
     strokeColor = '#7c3aed'; // Purple
     trackColor = '#ede9fe'; // Purple 100
     textColor = 'text-purple-950 dark:text-purple-300';
-    badgeBg = 'bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800 text-purple-900 dark:text-purple-300';
     tierLabel = 'Lead Certified';
   } else if (!isTrained || percentage < 35 || trainingLevel === 'needs_ojt') {
     strokeColor = '#d97706'; // Amber
     trackColor = '#fef3c7'; // Amber 100
     textColor = 'text-amber-950 dark:text-amber-300';
-    badgeBg = 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-300';
     tierLabel = 'Needs OJT';
   }
 
   // Size dimensions
   let dim = 54;
-  let strokeWidth = 4.5;
+  let strokeWidth = customStrokeWidth ?? 4.5;
   let radius = 22.5;
+  let sizeCategory: 'xs' | 'sm' | 'md' | 'lg' = 'md';
 
-  if (size === 'xs') {
-    dim = 28;
-    strokeWidth = 3;
-    radius = 11;
+  if (typeof size === 'number') {
+    dim = size;
+    if (size <= 28) {
+      sizeCategory = 'xs';
+      strokeWidth = customStrokeWidth ?? 2.5;
+    } else if (size <= 44) {
+      sizeCategory = 'sm';
+      strokeWidth = customStrokeWidth ?? 3.5;
+    } else if (size >= 64) {
+      sizeCategory = 'lg';
+      strokeWidth = customStrokeWidth ?? 6;
+    } else {
+      sizeCategory = 'md';
+      strokeWidth = customStrokeWidth ?? 4.5;
+    }
+    radius = Math.max(2, (dim - strokeWidth * 2) / 2);
+  } else if (size === 'xs') {
+    sizeCategory = 'xs';
+    dim = 26;
+    strokeWidth = customStrokeWidth ?? 2.5;
+    radius = 10.5;
   } else if (size === 'sm') {
+    sizeCategory = 'sm';
     dim = 40;
-    strokeWidth = 3.5;
+    strokeWidth = customStrokeWidth ?? 3.5;
     radius = 16.5;
   } else if (size === 'lg') {
+    sizeCategory = 'lg';
     dim = 76;
-    strokeWidth = 6;
+    strokeWidth = customStrokeWidth ?? 6;
     radius = 32;
+  } else {
+    sizeCategory = 'md';
+    dim = 54;
+    strokeWidth = customStrokeWidth ?? 4.5;
+    radius = 22.5;
   }
 
   const center = dim / 2;
@@ -78,9 +130,12 @@ export const SiteQualificationCircle: React.FC<SiteQualificationCircleProps> = (
     <div 
       id={id}
       className={`inline-flex items-center gap-2 select-none ${className}`}
-      title={`${tierLabel}: ${qualifiedSitesCount} of ${totalSitesCount} facilities cleared (${percentage}%)`}
+      title={`${tierLabel}: ${safeQualified} of ${safeTotal} facilities cleared (${percentage}%)`}
     >
-      <div className="relative flex items-center justify-center shrink-0" style={{ width: dim, height: dim }}>
+      <div 
+        className="relative flex items-center justify-center shrink-0 rounded-full bg-white/90 dark:bg-neutral-900/90 shadow-xs" 
+        style={{ width: dim, height: dim }}
+      >
         <svg
           width={dim}
           height={dim}
@@ -114,15 +169,15 @@ export const SiteQualificationCircle: React.FC<SiteQualificationCircleProps> = (
 
         {/* Center Percentage Display */}
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          {size === 'xs' ? (
-            <span className="text-[9px] font-black font-mono text-slate-800 dark:text-slate-200">
+          {sizeCategory === 'xs' ? (
+            <span className="text-[8px] font-black font-mono leading-none text-slate-800 dark:text-slate-100">
               {percentage}%
             </span>
-          ) : size === 'sm' ? (
+          ) : sizeCategory === 'sm' ? (
             <span className="text-[10px] font-black font-mono text-slate-800 dark:text-slate-100 tracking-tighter">
               {percentage}%
             </span>
-          ) : size === 'md' ? (
+          ) : sizeCategory === 'md' ? (
             <div className="flex flex-col items-center leading-none">
               <span className="text-xs font-black font-mono text-slate-900 dark:text-slate-100">
                 {percentage}%
@@ -154,7 +209,7 @@ export const SiteQualificationCircle: React.FC<SiteQualificationCircleProps> = (
           )}
           {showFraction && (
             <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
-              {qualifiedSitesCount}/{totalSitesCount} Facilities
+              {safeQualified}/{safeTotal} Facilities
             </span>
           )}
         </div>
