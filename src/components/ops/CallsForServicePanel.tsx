@@ -43,7 +43,11 @@ import {
   ExternalLink,
   RotateCcw
 } from 'lucide-react';
-import { playReceiptConfirmedSound } from '../../utils/audioAlert';
+import { 
+  playReceiptConfirmedSound,
+  playOnSceneAlertSound,
+  playAllClearAlertSound
+} from '../../utils/audioAlert';
 
 const ROUTINE_CALL_TYPES: { type: CallType; label: string; icon: string; defaultSummary: string }[] = [
   { type: 'noise_complaint', label: 'Noise Complaint', icon: '🔊', defaultSummary: 'Loud noise/music reported after quiet hours' },
@@ -1274,23 +1278,43 @@ export const CallsForServicePanel: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-                    Guard Acknowledgment Receipts Log
+                    Guard Activity & Receipts Log
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Real-time confirmation records verifying guards have opened and acknowledged dispatches & BOLOs.
+                    Real-time confirmation records verifying acknowledgments, on-scene arrivals, and call clearances.
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 <button
                   type="button"
                   onClick={() => playReceiptConfirmedSound()}
-                  className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-xs font-bold flex items-center gap-1 border border-slate-200 dark:border-slate-700 cursor-pointer"
-                  title="Test receipt confirmation chime"
+                  className="p-1.5 sm:p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-xs font-bold flex items-center gap-1 border border-slate-200 dark:border-slate-700 cursor-pointer"
+                  title="Test ACK chime"
                 >
-                  <Volume2 className="w-4 h-4 text-emerald-600" />
-                  <span className="hidden sm:inline">Test Chime</span>
+                  <Volume2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="hidden sm:inline">ACK Sound</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => playOnSceneAlertSound()}
+                  className="p-1.5 sm:p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-xs font-bold flex items-center gap-1 border border-slate-200 dark:border-slate-700 cursor-pointer"
+                  title="Test On Scene chime"
+                >
+                  <Volume2 className="w-3.5 h-3.5 text-purple-600" />
+                  <span className="hidden sm:inline">On Scene</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => playAllClearAlertSound()}
+                  className="p-1.5 sm:p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-xs font-bold flex items-center gap-1 border border-slate-200 dark:border-slate-700 cursor-pointer"
+                  title="Test All Clear chime"
+                >
+                  <Volume2 className="w-3.5 h-3.5 text-teal-600" />
+                  <span className="hidden sm:inline">All Clear</span>
                 </button>
 
                 <button
@@ -1308,75 +1332,90 @@ export const CallsForServicePanel: React.FC = () => {
               {callReceipts.length === 0 ? (
                 <div className="py-12 text-center text-slate-400 dark:text-slate-500">
                   <CheckCheck className="w-12 h-12 mx-auto mb-2 opacity-30 text-emerald-500" />
-                  <p className="text-sm font-bold">No Acknowledgment Receipts Logged Yet</p>
-                  <p className="text-xs mt-1">When guards click &ldquo;Acknowledge&rdquo; on their terminal alert popup or active queue, their timestamp and latency will be recorded here.</p>
+                  <p className="text-sm font-bold">No Activity Receipts Logged Yet</p>
+                  <p className="text-xs mt-1">When guards acknowledge, arrive on scene, or clear calls, real-time activity stamps are logged here.</p>
                 </div>
               ) : (
-                callReceipts.map(receipt => (
-                  <div
-                    key={receipt.id}
-                    className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:border-emerald-300 dark:hover:border-emerald-700 transition-colors"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className={`p-2 rounded-xl text-white shrink-0 mt-0.5 ${
-                        receipt.isBolo ? 'bg-rose-600' : 'bg-emerald-600'
-                      }`}>
-                        {receipt.isBolo ? <ShieldAlert className="w-4 h-4" /> : <CheckCheck className="w-4 h-4" />}
-                      </div>
+                callReceipts.map(receipt => {
+                  const evType = receipt.eventType || 'acknowledged';
+                  return (
+                    <div
+                      key={receipt.id}
+                      className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:border-emerald-300 dark:hover:border-emerald-700 transition-colors"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`p-2 rounded-xl text-white shrink-0 mt-0.5 ${
+                          evType === 'on_scene' ? 'bg-purple-600' :
+                          evType === 'cleared' ? 'bg-teal-600' :
+                          receipt.isBolo ? 'bg-rose-600' : 'bg-emerald-600'
+                        }`}>
+                          {evType === 'on_scene' ? <MapPin className="w-4 h-4" /> :
+                           evType === 'cleared' ? <CheckCircle2 className="w-4 h-4" /> :
+                           receipt.isBolo ? <ShieldAlert className="w-4 h-4" /> : <CheckCheck className="w-4 h-4" />}
+                        </div>
 
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono text-xs font-black text-slate-900 dark:text-white">
-                            {receipt.callId}
-                          </span>
-                          <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
-                            receipt.isBolo ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
-                          }`}>
-                            {receipt.isBolo ? '🚨 BOLO Broadcast' : receipt.callType.replace(/_/g, ' ').toUpperCase()}
-                          </span>
-                          {receipt.latencySeconds !== undefined && (
-                            <span className="bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300 font-mono text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                              <Zap className="w-3 h-3 text-amber-500" />
-                              {receipt.latencySeconds}s latency
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-xs font-black text-slate-900 dark:text-white">
+                              {receipt.callId}
                             </span>
+                            <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                              evType === 'on_scene' ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300' :
+                              evType === 'cleared' ? 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300' :
+                              receipt.isBolo ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                            }`}>
+                              {evType === 'on_scene' ? '📍 ON SCENE' :
+                               evType === 'cleared' ? `✅ ALL CLEAR [${receipt.disposition || 'RESOLVED'}]` :
+                               receipt.isBolo ? '🚨 BOLO Broadcast' : receipt.callType.replace(/_/g, ' ').toUpperCase()}
+                            </span>
+                            {evType === 'acknowledged' && receipt.latencySeconds !== undefined && (
+                              <span className="bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300 font-mono text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                                <Zap className="w-3 h-3 text-amber-500" />
+                                {receipt.latencySeconds}s latency
+                              </span>
+                            )}
+                          </div>
+
+                          <p className="text-xs font-bold text-slate-900 dark:text-slate-100 mt-1">
+                            {receipt.callSummary}
+                          </p>
+
+                          <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 mt-1 flex-wrap">
+                            <span>
+                              Officer: <strong className="text-slate-800 dark:text-slate-200">{receipt.guardName}</strong> ({receipt.guardBadge})
+                            </span>
+                            <span>•</span>
+                            <span>{receipt.siteName}</span>
+                            {evType === 'acknowledged' && (
+                              <>
+                                <span>•</span>
+                                <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                                  {receipt.receiptChannel === 'alert_modal' ? 'Terminal Alert Popup' : 'Active Queue Action'}
+                                </span>
+                              </>
+                            )}
+                          </div>
+
+                          {(receipt.resolutionNote || receipt.notes) && (
+                            <p className="text-xs text-slate-600 dark:text-slate-300 italic mt-1.5 bg-white/70 dark:bg-slate-900/60 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-800">
+                              &ldquo;{receipt.resolutionNote || receipt.notes}&rdquo;
+                            </p>
                           )}
                         </div>
+                      </div>
 
-                        <p className="text-xs font-bold text-slate-900 dark:text-slate-100 mt-1">
-                          {receipt.callSummary}
-                        </p>
-
-                        <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 mt-1">
-                          <span>
-                            Confirmed by: <strong className="text-slate-800 dark:text-slate-200">{receipt.guardName}</strong> ({receipt.guardBadge})
-                          </span>
-                          <span>•</span>
-                          <span>{receipt.siteName}</span>
-                          <span>•</span>
-                          <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
-                            {receipt.receiptChannel === 'alert_modal' ? 'Terminal Alert Popup' : 'Active Queue Action'}
-                          </span>
+                      <div className="text-right text-xs text-slate-500 dark:text-slate-400 font-mono shrink-0 sm:self-center">
+                        <div className="flex items-center sm:justify-end gap-1 font-bold text-slate-900 dark:text-slate-200">
+                          <Clock className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>{new Date(receipt.acknowledgedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                         </div>
-
-                        {receipt.notes && (
-                          <p className="text-xs text-slate-600 dark:text-slate-300 italic mt-1.5 bg-white/70 dark:bg-slate-900/60 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-800">
-                            &ldquo;{receipt.notes}&rdquo;
-                          </p>
-                        )}
+                        <span className="text-[10px] text-slate-400 block">
+                          {new Date(receipt.acknowledgedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </span>
                       </div>
                     </div>
-
-                    <div className="text-right text-xs text-slate-500 dark:text-slate-400 font-mono shrink-0 sm:self-center">
-                      <div className="flex items-center sm:justify-end gap-1 font-bold text-slate-900 dark:text-slate-200">
-                        <Clock className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>{new Date(receipt.acknowledgedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                      </div>
-                      <span className="text-[10px] text-slate-400 block">
-                        {new Date(receipt.acknowledgedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </span>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 

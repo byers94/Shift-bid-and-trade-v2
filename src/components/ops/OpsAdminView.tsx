@@ -12,6 +12,9 @@ import { AutoFillShiftsModal } from './AutoFillShiftsModal';
 import { TopPerformersWidget } from './TopPerformersWidget';
 import { SiteDirectory } from './SiteDirectory';
 import { CallsForServicePanel } from './CallsForServicePanel';
+import { LiveGuardRosterBoard } from './LiveGuardRosterBoard';
+import { ShiftSchedulingCalendar } from './ShiftSchedulingCalendar';
+import { LateShiftAlertModal } from './LateShiftAlertModal';
 import { 
   ShieldCheck, 
   Activity, 
@@ -37,7 +40,9 @@ import {
   Sparkles,
   Trophy,
   PhoneCall,
-  ShieldAlert
+  ShieldAlert,
+  Clock,
+  AlertTriangle
 } from 'lucide-react';
 
 interface OpsAdminViewProps {
@@ -53,18 +58,43 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   adminName = "Lt. Mark O'Connor", 
   adminBadge = "OPS-CMD-01" 
 }) => {
-  const { shifts, trades, bids, callsForService, recentAdminActions, adminUsers, guardsList, sitesList, activeBroadcast } = useShiftOps();
-  const [activeMainTab, setActiveMainTabState] = useState<'operations' | 'calls_for_service' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal'>(() => {
+  const { 
+    shifts, 
+    trades, 
+    bids, 
+    callsForService, 
+    recentAdminActions, 
+    adminUsers, 
+    guardsList, 
+    sitesList, 
+    activeBroadcast,
+    scheduledShifts,
+    getGuardsLiveTracking,
+    lateShiftAlerts 
+  } = useShiftOps();
+
+  const [activeMainTab, setActiveMainTabState] = useState<
+    'operations' | 'live_tracking' | 'calendar_schedule' | 'calls_for_service' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal'
+  >(() => {
     try {
       const saved = localStorage.getItem(STORAGE_OPS_MAIN_TAB_KEY);
-      if (saved === 'operations' || saved === 'calls_for_service' || saved === 'site_directory' || saved === 'guard_directory' || saved === 'top_performers' || saved === 'audit_terminal') {
-        return saved;
+      if (
+        saved === 'operations' || 
+        saved === 'live_tracking' || 
+        saved === 'calendar_schedule' || 
+        saved === 'calls_for_service' || 
+        saved === 'site_directory' || 
+        saved === 'guard_directory' || 
+        saved === 'top_performers' || 
+        saved === 'audit_terminal'
+      ) {
+        return saved as any;
       }
     } catch {}
     return 'operations';
   });
 
-  const setActiveMainTab = (tab: 'operations' | 'calls_for_service' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal') => {
+  const setActiveMainTab = (tab: 'operations' | 'live_tracking' | 'calendar_schedule' | 'calls_for_service' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal') => {
     setActiveMainTabState(tab);
     try {
       localStorage.setItem(STORAGE_OPS_MAIN_TAB_KEY, tab);
@@ -78,6 +108,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   const [selectedBidsShiftId, setSelectedBidsShiftId] = useState<string | null>(null);
   const [isAutoFillModalOpen, setIsAutoFillModalOpen] = useState(false);
   const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
+  const [calendarTargetGuardId, setCalendarTargetGuardId] = useState<string | null>(null);
 
   const activeShiftsCount = shifts.filter((s) => s.status === 'open').length;
   const pendingSwapsCount = trades.filter((t) => t.status === 'pending_swap').length;
@@ -86,6 +117,10 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   const activeBidsCount = bids.length;
   const activeCallsCount = callsForService.filter((c) => c.status !== 'cleared' && c.status !== 'cancelled').length;
   const activeBoloCount = callsForService.filter((c) => (c.isBolo || c.priority === 'urgent_bolo') && c.status !== 'cleared' && c.status !== 'cancelled').length;
+
+  const liveGuards = getGuardsLiveTracking();
+  const onDutyGuardsCount = liveGuards.filter((g) => g.currentStatus === 'on_duty' || g.currentStatus === 'on_break').length;
+  const lateGuardsCount = liveGuards.filter((g) => g.currentStatus === 'late' || g.activeShift?.isLate).length;
 
   return (
     <main 
@@ -154,6 +189,47 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         {/* Real-time Metric Indicators & Quick Actions Toolbar */}
         <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1 no-scrollbar border-t border-blue-800/60 dark:border-slate-800/80 pt-2.5">
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* Live on Duty Guards Quick Indicator */}
+            <button
+              id="header-live-tracking-btn"
+              type="button"
+              onClick={() => setActiveMainTab('live_tracking')}
+              className={`hover:opacity-95 transition-all cursor-pointer group px-2.5 py-1 rounded-lg border text-left ${
+                activeMainTab === 'live_tracking'
+                  ? 'bg-emerald-900/90 border-emerald-400 ring-2 ring-emerald-500/40'
+                  : 'bg-blue-900/60 dark:bg-slate-900/80 hover:bg-emerald-950/50 border-emerald-400/40 dark:border-emerald-800'
+              }`}
+              title="Click to view Live Guard Duty Roster & Post Locations"
+            >
+              <p className="text-[8px] sm:text-[9px] text-emerald-300 uppercase font-bold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                Live on Duty
+              </p>
+              <p className="text-xs sm:text-sm font-black font-mono text-emerald-200 group-hover:text-emerald-100">
+                {onDutyGuardsCount.toString().padStart(2, '0')}{' '}
+                <span className="text-[10px] font-normal font-sans">Guards</span>
+              </p>
+            </button>
+
+            {/* Overdue/Late Shift Warning Chip */}
+            {lateGuardsCount > 0 && (
+              <button
+                id="header-late-shifts-btn"
+                type="button"
+                onClick={() => setActiveMainTab('live_tracking')}
+                className="hover:opacity-95 transition-all cursor-pointer group px-2.5 py-1 rounded-lg border border-rose-400/80 bg-rose-950/90 text-left ring-2 ring-rose-500/40 animate-pulse"
+                title="Click to inspect overdue guards"
+              >
+                <p className="text-[8px] sm:text-[9px] text-rose-300 uppercase font-bold flex items-center gap-1">
+                  <AlertTriangle className="w-2.5 h-2.5 text-rose-400" />
+                  Late Clock-in
+                </p>
+                <p className="text-xs sm:text-sm font-black font-mono text-rose-100">
+                  {lateGuardsCount} Overdue
+                </p>
+              </button>
+            )}
+
             {/* Active Shifts Indicator / Auto-Fill Trigger */}
             <button
               id="header-active-shifts-autofill-btn"
@@ -301,13 +377,55 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
                 : 'text-slate-300 hover:text-white hover:bg-slate-700 dark:hover:bg-slate-800'
             }`}
           >
-            <Calendar className="w-3.5 h-3.5" />
+            <Layers className="w-3.5 h-3.5" />
             <span>Shift & Trade Operations</span>
             {pendingSwapsCount + pendingPostsCount > 0 && (
               <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
                 {pendingSwapsCount + pendingPostsCount}
               </span>
             )}
+          </button>
+
+          {/* Live Guard Duty Roster & Site Tracking Sub-Nav Tab */}
+          <button
+            id="tab-live-tracking-btn"
+            type="button"
+            onClick={() => setActiveMainTab('live_tracking')}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              activeMainTab === 'live_tracking'
+                ? 'bg-emerald-700 dark:bg-emerald-600 text-white shadow-xs font-black'
+                : 'text-emerald-300 hover:text-white hover:bg-emerald-950/60 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5" />
+            <span>Live Guard Roster & Tracking</span>
+            <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${
+              lateGuardsCount > 0
+                ? 'bg-rose-500 text-white animate-pulse'
+                : onDutyGuardsCount > 0
+                ? 'bg-emerald-500 text-slate-950'
+                : 'bg-slate-700 text-slate-300'
+            }`}>
+              {onDutyGuardsCount} On Duty {lateGuardsCount > 0 ? `(${lateGuardsCount} Late)` : ''}
+            </span>
+          </button>
+
+          {/* Master Shift Scheduling Calendar Sub-Nav Tab */}
+          <button
+            id="tab-calendar-schedule-btn"
+            type="button"
+            onClick={() => setActiveMainTab('calendar_schedule')}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              activeMainTab === 'calendar_schedule'
+                ? 'bg-[#1e3a8a] dark:bg-blue-600 text-white shadow-xs font-black'
+                : 'text-slate-300 hover:text-white hover:bg-slate-700 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Calendar className="w-3.5 h-3.5 text-blue-300" />
+            <span>Shift Calendar & Schedule</span>
+            <span className="bg-blue-900/80 border border-blue-400/40 text-blue-200 text-[10px] font-black px-1.5 py-0.2 rounded-full font-mono">
+              {scheduledShifts.length}
+            </span>
           </button>
 
           {/* Calls for Service & BOLOs Sub-Nav Tab */}
@@ -553,6 +671,25 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         </div>
       )}
 
+      {activeMainTab === 'live_tracking' && (
+        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
+          <LiveGuardRosterBoard 
+            onOpenCalendar={(guardId) => {
+              setCalendarTargetGuardId(guardId || null);
+              setActiveMainTab('calendar_schedule');
+            }}
+          />
+        </div>
+      )}
+
+      {activeMainTab === 'calendar_schedule' && (
+        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
+          <ShiftSchedulingCalendar 
+            initialGuardFilter={calendarTargetGuardId || undefined}
+          />
+        </div>
+      )}
+
       {activeMainTab === 'calls_for_service' && (
         <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
           <CallsForServicePanel />
@@ -621,6 +758,14 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
       <AutoFillShiftsModal
         isOpen={isAutoFillModalOpen}
         onClose={() => setIsAutoFillModalOpen(false)}
+      />
+
+      {/* Late Shift Clock-In Overdue Alert Banner / Modal (Audible Alert) */}
+      <LateShiftAlertModal
+        onReassignShift={(shiftId) => {
+          setCalendarTargetGuardId(null);
+          setActiveMainTab('calendar_schedule');
+        }}
       />
     </main>
   );

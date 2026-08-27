@@ -28,7 +28,12 @@ import {
   BoloSubjectInfo,
   CallerInfo,
   CallReceiptNotification,
-  CallReceiptRecord
+  CallReceiptRecord,
+  ScheduledShift,
+  ShiftDutyStatus,
+  ShiftBreakRecord,
+  LateShiftAlert,
+  GuardLiveTrackingItem
 } from '../types/shift';
 import { 
   INITIAL_SHIFTS, 
@@ -45,10 +50,21 @@ import {
   INITIAL_SITE_FEEDBACKS,
   GUARD_BASE_METRICS,
   INITIAL_SITES,
-  INITIAL_CALLS_FOR_SERVICE
+  INITIAL_CALLS_FOR_SERVICE,
+  INITIAL_SCHEDULED_SHIFTS
 } from '../data/mockData';
-import { calculateHours, generateSmsLink } from '../utils/time';
-import { playEmergencyAlertSound, playCallDispatchSound, playReceiptConfirmedSound } from '../utils/audioAlert';
+import { calculateHours, generateSmsLink, calculateShiftLateStatus, getShiftElapsedSeconds, formatElapsedTimer } from '../utils/time';
+import { 
+  playEmergencyAlertSound, 
+  playCallDispatchSound, 
+  playReceiptConfirmedSound,
+  playOnSceneAlertSound,
+  playAllClearAlertSound,
+  playClockInAlertSound,
+  playClockOutAlertSound,
+  playLateAlertSound,
+  playBreakAlertSound
+} from '../utils/audioAlert';
 
 interface NotificationToast {
   id: string;
@@ -116,7 +132,8 @@ interface ShiftOpsContextType {
     guard: GuardProfile,
     options?: { note?: string; channel?: 'alert_modal' | 'queue_action' | 'bolo_banner' }
   ) => void;
-  updateCallStatus: (callId: string, status: CallStatus, note?: string) => void;
+  markCallOnScene: (callId: string, guard: GuardProfile, note?: string) => void;
+  updateCallStatus: (callId: string, status: CallStatus, note?: string, guard?: GuardProfile) => void;
   clearCall: (
     callId: string,
     guard: GuardProfile,
@@ -257,6 +274,43 @@ interface ShiftOpsContextType {
   approveSwap: (tradeId: string, note?: string) => void;
   denySwap: (tradeId: string, reason: string) => void;
   
+  // Shift Attendance, Time Tracking, and Live Duty Board
+  scheduledShifts: ScheduledShift[];
+  activeClockedInShift: ScheduledShift | null;
+  lateShiftAlerts: LateShiftAlert[];
+  dismissedLateAlertIds: string[];
+  clockInGuard: (
+    guardId: string, 
+    siteName: string, 
+    options?: { 
+      scheduledShiftId?: string; 
+      postRole?: string; 
+      notes?: string; 
+      gpsVerified?: boolean; 
+      equipmentIssued?: string[] 
+    }
+  ) => ScheduledShift;
+  clockOutGuard: (
+    guardId: string, 
+    options?: { 
+      notes?: string; 
+      handoverSummary?: string; 
+      equipmentReturned?: boolean 
+    }
+  ) => void;
+  startGuardBreak: (guardId: string, breakType?: 'meal' | 'rest', note?: string) => void;
+  endGuardBreak: (guardId: string) => void;
+  scheduleNewShift: (
+    data: Omit<ScheduledShift, 'id' | 'createdAt' | 'status'> & { status?: ShiftDutyStatus }
+  ) => ScheduledShift;
+  updateScheduledShift: (id: string, data: Partial<ScheduledShift>) => void;
+  deleteScheduledShift: (id: string) => void;
+  reassignScheduledShift: (shiftId: string, newGuardId: string) => void;
+  acknowledgeLateAlert: (shiftId: string, note?: string) => void;
+  getGuardActiveShift: (guardId: string) => ScheduledShift | undefined;
+  getGuardUpcomingShifts: (guardId: string) => ScheduledShift[];
+  getGuardsLiveTracking: () => GuardLiveTrackingItem[];
+
   // System
   resetToDefaults: () => void;
 }
@@ -279,8 +333,28 @@ const STORAGE_KEY_SITE_FEEDBACKS = 'secureshift_site_feedbacks_v1';
 const STORAGE_KEY_SITES = 'secureshift_sites_v1';
 const STORAGE_KEY_CALLS_FOR_SERVICE = 'secureshift_calls_for_service_v1';
 const STORAGE_KEY_CALL_RECEIPTS = 'secureshift_call_receipts_v1';
+const STORAGE_KEY_SCHEDULED_SHIFTS = 'secureshift_scheduled_shifts_v1';
+const STORAGE_KEY_DISMISSED_LATE_ALERTS = 'secureshift_dismissed_late_alerts_v1';
 
 export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [scheduledShifts, setScheduledShifts] = useState<ScheduledShift[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_SCHEDULED_SHIFTS);
+      return saved ? JSON.parse(saved) : INITIAL_SCHEDULED_SHIFTS;
+    } catch {
+      return INITIAL_SCHEDULED_SHIFTS;
+    }
+  });
+
+  const [dismissedLateAlertIds, setDismissedLateAlertIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_DISMISSED_LATE_ALERTS);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
   const [callsForService, setCallsForService] = useState<CallForService[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_CALLS_FOR_SERVICE);
@@ -663,6 +737,22 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       console.warn('Storage save failed for callReceipts', e);
     }
   }, [callReceipts]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_SCHEDULED_SHIFTS, JSON.stringify(scheduledShifts));
+    } catch (e) {
+      console.warn('Storage save failed for scheduledShifts', e);
+    }
+  }, [scheduledShifts]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_DISMISSED_LATE_ALERTS, JSON.stringify(dismissedLateAlertIds));
+    } catch (e) {
+      console.warn('Storage save failed for dismissedLateAlertIds', e);
+    }
+  }, [dismissedLateAlertIds]);
 
   const dismissCallReceiptNotification = (id?: string) => {
     if (!id || latestCallReceipt?.id === id) {
@@ -2358,6 +2448,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const newReceiptNotification: CallReceiptNotification = {
       id: `receipt-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+      eventType: 'acknowledged',
       callId,
       callType,
       customTypeLabel: targetCall?.customTypeLabel,
@@ -2417,7 +2508,101 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     );
   };
 
-  const updateCallStatus = (callId: string, status: CallStatus, note?: string) => {
+  const markCallOnScene = (callId: string, guard: GuardProfile, note?: string) => {
+    const nowIso = new Date().toISOString();
+    let updatedTargetCall: CallForService | undefined;
+
+    setCallsForService((prev) =>
+      prev.map((c) => {
+        if (c.id === callId) {
+          const updated: CallForService = {
+            ...c,
+            status: 'on_scene',
+            onSceneAt: nowIso,
+            details: note ? (c.details ? `${c.details}\n[On Scene]: ${note}` : `[On Scene]: ${note}`) : c.details
+          };
+          updatedTargetCall = updated;
+          return updated;
+        }
+        return c;
+      })
+    );
+
+    const targetCall = updatedTargetCall || callsForService.find((c) => c.id === callId);
+    const callSummary = targetCall ? targetCall.summary : 'Call For Service';
+    const siteName = targetCall ? targetCall.siteName : 'Facility';
+    const locationDetails = targetCall ? targetCall.locationDetails : '';
+    const isBolo = targetCall ? (targetCall.isBolo || targetCall.priority === 'urgent_bolo') : false;
+    const priority = targetCall ? targetCall.priority : 'routine';
+    const callType = targetCall ? targetCall.callType : 'other';
+
+    const onSceneNotification: CallReceiptNotification = {
+      id: `onscene-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+      eventType: 'on_scene',
+      callId,
+      callType,
+      customTypeLabel: targetCall?.customTypeLabel,
+      isBolo,
+      priority,
+      siteName,
+      locationDetails,
+      summary: callSummary,
+      callSummary,
+      guardId: guard.id,
+      guardName: guard.name,
+      badgeNumber: guard.badgeNumber,
+      guardBadge: guard.badgeNumber,
+      acknowledgedAt: nowIso,
+      receiptChannel: 'queue_action',
+      notes: note
+    };
+
+    setLatestCallReceipt(onSceneNotification);
+    setCallReceipts((prev) => [onSceneNotification, ...prev.slice(0, 49)]);
+
+    // Trigger Ops-side on-scene arrival tone
+    try {
+      playOnSceneAlertSound();
+    } catch {}
+
+    const formattedTime = new Date(nowIso).toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit' 
+    });
+
+    addAuditLog(
+      'CALL_FOR_SERVICE_UPDATED',
+      'shift',
+      `[ON SCENE] Officer ${guard.name} (${guard.badgeNumber}) arrived ON SCENE for ${isBolo ? 'BOLO ' : ''}${callId} @ ${siteName} at ${formattedTime}${note ? ` (${note})` : ''}`,
+      `${guard.name} (${guard.badgeNumber})`,
+      'info'
+    );
+
+    logAdminAction({
+      type: 'call_updated',
+      title: `Officer On Scene: ${callId}`,
+      description: `Officer ${guard.name} (${guard.badgeNumber}) arrived on scene @ ${siteName}${note ? `: "${note}"` : ''}`,
+      adminName: guard.name,
+      adminBadge: guard.badgeNumber,
+      badgeVariant: 'purple',
+      metadata: { callId, guardId: guard.id, onSceneAt: nowIso, isBolo }
+    });
+
+    showToast(
+      '📍 Officer On Scene',
+      `Officer ${guard.name} is on scene for ${callId} @ ${siteName}`,
+      'info'
+    );
+  };
+
+  const updateCallStatus = (callId: string, status: CallStatus, note?: string, guard?: GuardProfile) => {
+    if (status === 'on_scene') {
+      const effectiveGuard = guard || activeGuard;
+      markCallOnScene(callId, effectiveGuard, note);
+      return;
+    }
+
     setCallsForService((prev) =>
       prev.map((c) => {
         if (c.id === callId) {
@@ -2449,10 +2634,12 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     resolutionNote?: string
   ) => {
     const nowIso = new Date().toISOString();
+    let updatedTargetCall: CallForService | undefined;
+
     setCallsForService((prev) =>
       prev.map((c) => {
         if (c.id === callId) {
-          return {
+          const updated: CallForService = {
             ...c,
             status: 'cleared',
             clearedAt: nowIso,
@@ -2464,16 +2651,62 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             disposition,
             resolutionNote: resolutionNote?.trim() || undefined
           };
+          updatedTargetCall = updated;
+          return updated;
         }
         return c;
       })
     );
 
+    const targetCall = updatedTargetCall || callsForService.find((c) => c.id === callId);
+    const callSummary = targetCall ? targetCall.summary : 'Call For Service';
+    const siteName = targetCall ? targetCall.siteName : 'Facility';
+    const locationDetails = targetCall ? targetCall.locationDetails : '';
+    const isBolo = targetCall ? (targetCall.isBolo || targetCall.priority === 'urgent_bolo') : false;
+    const priority = targetCall ? targetCall.priority : 'routine';
+    const callType = targetCall ? targetCall.callType : 'other';
+
+    const clearedNotification: CallReceiptNotification = {
+      id: `cleared-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+      eventType: 'cleared',
+      callId,
+      callType,
+      customTypeLabel: targetCall?.customTypeLabel,
+      isBolo,
+      priority,
+      siteName,
+      locationDetails,
+      summary: callSummary,
+      callSummary,
+      guardId: guard.id,
+      guardName: guard.name,
+      badgeNumber: guard.badgeNumber,
+      guardBadge: guard.badgeNumber,
+      acknowledgedAt: nowIso,
+      disposition,
+      resolutionNote: resolutionNote?.trim() || undefined,
+      notes: resolutionNote?.trim() || undefined
+    };
+
+    setLatestCallReceipt(clearedNotification);
+    setCallReceipts((prev) => [clearedNotification, ...prev.slice(0, 49)]);
+
+    // Trigger Ops-side all clear harmonic chime
+    try {
+      playAllClearAlertSound();
+    } catch {}
+
+    const formattedTime = new Date(nowIso).toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit' 
+    });
+
     const noteText = resolutionNote?.trim() ? ` — Note: "${resolutionNote.trim()}"` : '';
     addAuditLog(
       'CALL_FOR_SERVICE_CLEARED',
       'shift',
-      `Call ${callId} marked [${disposition}] by Officer ${guard.name} (${guard.badgeNumber})${noteText}`,
+      `[ALL CLEAR] Call ${callId} marked [${disposition}] by Officer ${guard.name} (${guard.badgeNumber}) at ${formattedTime}${noteText}`,
       `${guard.name} (${guard.badgeNumber})`,
       'success'
     );
@@ -2489,8 +2722,8 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     });
 
     showToast(
-      'Call Resolved & Logged',
-      `${callId} cleared [${disposition}] and logged to Ops Dashboard records.`,
+      '✅ Call Resolved & Cleared',
+      `${callId} marked [${disposition}] by Officer ${guard.name} and logged to Ops Dashboard records.`,
       'success'
     );
   };
@@ -2554,6 +2787,548 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     showToast('Call Log Removed', `Record ${callId} deleted from database.`, 'info');
   };
 
+  // Shift Attendance & Live Guard Duty Tracking
+  const activeClockedInShift = React.useMemo(() => {
+    return scheduledShifts.find(
+      (s) => s.guardId === activeGuard.id && (s.status === 'on_duty' || s.status === 'on_break')
+    ) || null;
+  }, [scheduledShifts, activeGuard.id]);
+
+  const lateShiftAlerts: LateShiftAlert[] = React.useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const alerts: LateShiftAlert[] = [];
+
+    scheduledShifts.forEach((shift) => {
+      if (shift.status === 'completed') return;
+      if (shift.status === 'on_duty' || shift.status === 'on_break') return;
+
+      const lateStatus = calculateShiftLateStatus(shift.date, shift.startTime, shift.clockInTime);
+      const isLateOverdue = (shift.status === 'late') || (shift.date === todayStr && lateStatus.isLate && lateStatus.minutesLate >= 15);
+
+      if (isLateOverdue) {
+        alerts.push({
+          id: `LATE-ALERT-${shift.id}`,
+          shiftId: shift.id,
+          guardId: shift.guardId,
+          guardName: shift.guardName,
+          guardBadge: shift.guardBadge,
+          guardPhone: shift.guardPhone,
+          siteId: shift.siteId,
+          siteName: shift.siteName,
+          scheduledDate: shift.date,
+          scheduledStartTime: shift.startTime,
+          minutesLate: shift.lateMinutes || lateStatus.minutesLate || 15,
+          acknowledged: shift.lateAcknowledgedByOps || dismissedLateAlertIds.includes(shift.id),
+          createdAt: shift.createdAt || new Date().toISOString()
+        });
+      }
+    });
+
+    return alerts;
+  }, [scheduledShifts, dismissedLateAlertIds]);
+
+  // Periodic automatic check for late shifts (>15m)
+  useEffect(() => {
+    const checkLateOverdues = () => {
+      const todayStr = new Date().toISOString().split('T')[0];
+      setScheduledShifts((prev) => {
+        let changed = false;
+        const updated = prev.map((s) => {
+          if (s.status === 'scheduled' && s.date === todayStr) {
+            const check = calculateShiftLateStatus(s.date, s.startTime, s.clockInTime);
+            if (check.isLate && check.minutesLate >= 15) {
+              changed = true;
+              return {
+                ...s,
+                status: 'late' as ShiftDutyStatus,
+                isLate: true,
+                lateMinutes: check.minutesLate
+              };
+            }
+          }
+          return s;
+        });
+        return changed ? updated : prev;
+      });
+    };
+
+    const intervalId = setInterval(checkLateOverdues, 30000);
+    return () => clearInterval(intervalId);
+  }, []);
+
+  const clockInGuard = (
+    guardId: string, 
+    siteName: string, 
+    options?: { 
+      scheduledShiftId?: string; 
+      postRole?: string; 
+      notes?: string; 
+      gpsVerified?: boolean; 
+      equipmentIssued?: string[] 
+    }
+  ): ScheduledShift => {
+    const guard = guardsList.find((g) => g.id === guardId) || activeGuard;
+    const nowIso = new Date().toISOString();
+    const todayStr = nowIso.split('T')[0];
+
+    // Look for matching scheduled shift
+    let targetShift = scheduledShifts.find((s) => {
+      if (options?.scheduledShiftId && s.id === options.scheduledShiftId) return true;
+      return s.guardId === guard.id && s.siteName === siteName && (s.status === 'scheduled' || s.status === 'late');
+    });
+
+    if (!targetShift) {
+      targetShift = scheduledShifts.find((s) => s.guardId === guard.id && (s.status === 'scheduled' || s.status === 'late'));
+    }
+
+    let updatedOrCreatedShift: ScheduledShift;
+
+    if (targetShift) {
+      const lateCheck = calculateShiftLateStatus(targetShift.date, targetShift.startTime, nowIso);
+      updatedOrCreatedShift = {
+        ...targetShift,
+        status: 'on_duty',
+        clockInTime: nowIso,
+        clockInNotes: options?.notes || 'Clocked in via Guard Duty Terminal',
+        postRole: options?.postRole || targetShift.postRole || 'On-Duty Security Post',
+        gpsVerified: options?.gpsVerified ?? true,
+        siteProximityMeters: Math.floor(Math.random() * 15) + 3,
+        equipmentIssued: options?.equipmentIssued || targetShift.equipmentIssued || ['Radio CH-1', 'Bodycam #07', 'Site Master Key'],
+        isLate: lateCheck.isLate,
+        lateMinutes: lateCheck.minutesLate
+      };
+
+      setScheduledShifts((prev) => prev.map((s) => s.id === targetShift!.id ? updatedOrCreatedShift : s));
+    } else {
+      const currentHours = new Date().getHours().toString().padStart(2, '0');
+      const currentMins = new Date().getMinutes().toString().padStart(2, '0');
+      const startHHMM = `${currentHours}:${currentMins}`;
+      const endHHMM = `${((new Date().getHours() + 8) % 24).toString().padStart(2, '0')}:${currentMins}`;
+
+      const siteProfile = sitesList.find((s) => s.name === siteName);
+      updatedOrCreatedShift = {
+        id: `SCHED-ADHOC-${Date.now()}`,
+        guardId: guard.id,
+        guardName: guard.name,
+        guardBadge: guard.badgeNumber,
+        guardPhone: guard.phone,
+        siteId: siteProfile?.id || 'site-adhoc',
+        siteName: siteName,
+        siteAddress: siteProfile?.address || 'Designated Security Post',
+        date: todayStr,
+        startTime: startHHMM,
+        endTime: endHHMM,
+        hours: 8,
+        postRole: options?.postRole || 'On-Demand Site Security & Mobile Patrol',
+        status: 'on_duty',
+        clockInTime: nowIso,
+        clockInNotes: options?.notes || 'On-Demand Shift Clock-in',
+        gpsVerified: options?.gpsVerified ?? true,
+        siteProximityMeters: 6,
+        equipmentIssued: options?.equipmentIssued || ['Radio CH-1', 'Bodycam #12', 'Site Access Badge'],
+        isLate: false,
+        createdAt: nowIso
+      };
+
+      setScheduledShifts((prev) => [updatedOrCreatedShift, ...prev]);
+    }
+
+    playClockInAlertSound();
+
+    logAdminAction({
+      type: 'guard_clocked_in',
+      adminName: guard.name,
+      adminBadge: guard.badgeNumber,
+      badgeVariant: 'emerald',
+      title: `Officer Clocked In: ${guard.name}`,
+      description: `${guard.name} (${guard.badgeNumber}) clocked in at ${siteName} [${updatedOrCreatedShift.postRole}]`,
+      metadata: {
+        siteName,
+        postRole: updatedOrCreatedShift.postRole,
+        clockInTime: nowIso
+      }
+    });
+
+    addAuditLog(
+      'SHIFT_DUTY_CLOCK_IN',
+      guard.id,
+      `${guard.name} (${guard.badgeNumber}) reported on duty at ${siteName}. Post: ${updatedOrCreatedShift.postRole}. GPS Verified: Yes.`,
+      guard.name,
+      'success'
+    );
+
+    showToast(
+      'Clocked In Successfully',
+      `Officer ${guard.name} is now ON DUTY at ${siteName} (${updatedOrCreatedShift.postRole}).`,
+      'success'
+    );
+
+    return updatedOrCreatedShift;
+  };
+
+  const clockOutGuard = (
+    guardId: string, 
+    options?: { 
+      notes?: string; 
+      handoverSummary?: string; 
+      equipmentReturned?: boolean 
+    }
+  ) => {
+    const activeShift = scheduledShifts.find(
+      (s) => s.guardId === guardId && (s.status === 'on_duty' || s.status === 'on_break')
+    );
+
+    if (!activeShift) {
+      showToast('No Active Shift', 'No active clocked-in shift found for this officer.', 'warning');
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const guard = guardsList.find((g) => g.id === guardId) || activeGuard;
+
+    // Close any open breaks
+    const updatedBreaks = (activeShift.breaks || []).map((b) => {
+      if (!b.endedAt) {
+        const breakDuration = Math.round((new Date(nowIso).getTime() - new Date(b.startedAt).getTime()) / 60000);
+        return { ...b, endedAt: nowIso, durationMinutes: Math.max(1, breakDuration) };
+      }
+      return b;
+    });
+
+    const elapsedSeconds = getShiftElapsedSeconds(activeShift.clockInTime, nowIso, updatedBreaks);
+    const actualHoursWorked = Math.round((elapsedSeconds / 3600) * 10) / 10;
+
+    const updatedShift: ScheduledShift = {
+      ...activeShift,
+      status: 'completed',
+      clockOutTime: nowIso,
+      clockOutNotes: options?.notes || 'Shift completed and clocked out via Guard Terminal.',
+      handoverSummary: options?.handoverSummary || 'Handover completed to relief officer. All posts secure.',
+      actualHoursWorked: Math.max(0.1, actualHoursWorked),
+      breaks: updatedBreaks
+    };
+
+    setScheduledShifts((prev) => prev.map((s) => s.id === activeShift.id ? updatedShift : s));
+
+    playClockOutAlertSound();
+
+    logAdminAction({
+      type: 'guard_clocked_out',
+      adminName: guard.name,
+      adminBadge: guard.badgeNumber,
+      badgeVariant: 'slate',
+      title: `Officer Clocked Out: ${guard.name}`,
+      description: `${guard.name} (${guard.badgeNumber}) completed shift at ${activeShift.siteName}. Hours logged: ${actualHoursWorked}h.`,
+      metadata: {
+        siteName: activeShift.siteName,
+        actualHoursWorked,
+        clockOutTime: nowIso
+      }
+    });
+
+    addAuditLog(
+      'SHIFT_DUTY_CLOCK_OUT',
+      guard.id,
+      `${guard.name} completed duty at ${activeShift.siteName}. Logged ${actualHoursWorked} hours. Handover: ${options?.handoverSummary || 'Completed'}.`,
+      guard.name,
+      'info'
+    );
+
+    showToast(
+      'Shift Complete & Clocked Out',
+      `Officer ${guard.name} clocked out from ${activeShift.siteName}. Logged: ${actualHoursWorked} hrs.`,
+      'info'
+    );
+  };
+
+  const startGuardBreak = (guardId: string, breakType: 'meal' | 'rest' = 'meal', note?: string) => {
+    const activeShift = scheduledShifts.find(
+      (s) => s.guardId === guardId && s.status === 'on_duty'
+    );
+
+    if (!activeShift) {
+      showToast('Cannot Start Break', 'Officer is not currently on active duty.', 'warning');
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const newBreak: ShiftBreakRecord = {
+      id: `brk-${Date.now()}`,
+      type: breakType,
+      startedAt: nowIso,
+      note: note || (breakType === 'meal' ? '30-minute meal break' : '15-minute rest break')
+    };
+
+    const updatedShift: ScheduledShift = {
+      ...activeShift,
+      status: 'on_break',
+      breaks: [...(activeShift.breaks || []), newBreak]
+    };
+
+    setScheduledShifts((prev) => prev.map((s) => s.id === activeShift.id ? updatedShift : s));
+    playBreakAlertSound();
+
+    const guard = guardsList.find((g) => g.id === guardId) || activeGuard;
+    logAdminAction({
+      type: 'guard_break_started',
+      adminName: guard.name,
+      adminBadge: guard.badgeNumber,
+      badgeVariant: 'amber',
+      title: `Officer on Break: ${guard.name}`,
+      description: `${guard.name} started a ${breakType} break at ${activeShift.siteName}.`
+    });
+
+    showToast(
+      'Break Started',
+      `Officer ${guard.name} is now on ${breakType} break at ${activeShift.siteName}.`,
+      'info'
+    );
+  };
+
+  const endGuardBreak = (guardId: string) => {
+    const activeShift = scheduledShifts.find(
+      (s) => s.guardId === guardId && s.status === 'on_break'
+    );
+
+    if (!activeShift) {
+      showToast('Cannot End Break', 'Officer is not currently on break.', 'warning');
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const updatedBreaks = (activeShift.breaks || []).map((b) => {
+      if (!b.endedAt) {
+        const breakDuration = Math.round((new Date(nowIso).getTime() - new Date(b.startedAt).getTime()) / 60000);
+        return { ...b, endedAt: nowIso, durationMinutes: Math.max(1, breakDuration) };
+      }
+      return b;
+    });
+
+    const updatedShift: ScheduledShift = {
+      ...activeShift,
+      status: 'on_duty',
+      breaks: updatedBreaks
+    };
+
+    setScheduledShifts((prev) => prev.map((s) => s.id === activeShift.id ? updatedShift : s));
+    playBreakAlertSound();
+
+    const guard = guardsList.find((g) => g.id === guardId) || activeGuard;
+    logAdminAction({
+      type: 'guard_break_ended',
+      adminName: guard.name,
+      adminBadge: guard.badgeNumber,
+      badgeVariant: 'emerald',
+      title: `Officer Resumed Duty: ${guard.name}`,
+      description: `${guard.name} resumed active duty post at ${activeShift.siteName}.`
+    });
+
+    showToast(
+      'Break Finished',
+      `Officer ${guard.name} returned to ON DUTY status at ${activeShift.siteName}.`,
+      'success'
+    );
+  };
+
+  const scheduleNewShift = (
+    data: Omit<ScheduledShift, 'id' | 'createdAt' | 'status'> & { status?: ShiftDutyStatus }
+  ): ScheduledShift => {
+    const nowIso = new Date().toISOString();
+    const id = `SCHED-${data.date.replace(/-/g, '')}-${Date.now().toString().slice(-4)}`;
+    
+    const newShift: ScheduledShift = {
+      ...data,
+      id,
+      status: data.status || 'scheduled',
+      createdAt: nowIso
+    };
+
+    setScheduledShifts((prev) => [newShift, ...prev]);
+
+    logAdminAction({
+      type: 'shift_scheduled',
+      adminName: "Lt. Mark O'Connor",
+      adminBadge: 'OPS-LEAD-01',
+      badgeVariant: 'blue',
+      title: `New Shift Scheduled: ${data.siteName}`,
+      description: `Assigned ${data.guardName} (${data.guardBadge}) on ${data.date} (${data.startTime} - ${data.endTime}, ${data.hours}h).`,
+      metadata: {
+        guardName: data.guardName,
+        siteName: data.siteName,
+        date: data.date,
+        startTime: data.startTime,
+        endTime: data.endTime
+      }
+    });
+
+    addAuditLog(
+      'SHIFT_SCHEDULE_CREATED',
+      'system',
+      `Shift scheduled for ${data.guardName} at ${data.siteName} on ${data.date} (${data.startTime}-${data.endTime}).`,
+      "Lt. Mark O'Connor",
+      'info'
+    );
+
+    showToast('Shift Scheduled', `Assigned ${data.guardName} to ${data.siteName} on ${data.date}.`, 'success');
+    return newShift;
+  };
+
+  const updateScheduledShift = (id: string, data: Partial<ScheduledShift>) => {
+    setScheduledShifts((prev) => prev.map((s) => s.id === id ? { ...s, ...data } : s));
+    showToast('Shift Updated', 'Scheduled shift record updated successfully.', 'info');
+  };
+
+  const deleteScheduledShift = (id: string) => {
+    const target = scheduledShifts.find((s) => s.id === id);
+    setScheduledShifts((prev) => prev.filter((s) => s.id !== id));
+    if (target) {
+      addAuditLog(
+        'SHIFT_SCHEDULE_DELETED',
+        'system',
+        `Scheduled shift ${id} (${target.guardName} @ ${target.siteName}) removed from roster.`,
+        "Lt. Mark O'Connor",
+        'warning'
+      );
+      showToast('Shift Removed', `Removed scheduled shift for ${target.guardName}.`, 'info');
+    }
+  };
+
+  const reassignScheduledShift = (shiftId: string, newGuardId: string) => {
+    const target = scheduledShifts.find((s) => s.id === shiftId);
+    const newGuard = guardsList.find((g) => g.id === newGuardId);
+    if (!target || !newGuard) return;
+
+    const updatedShift: ScheduledShift = {
+      ...target,
+      guardId: newGuard.id,
+      guardName: newGuard.name,
+      guardBadge: newGuard.badgeNumber,
+      guardPhone: newGuard.phone,
+      status: 'scheduled',
+      isLate: false,
+      lateMinutes: undefined,
+      lateAcknowledgedByOps: true
+    };
+
+    setScheduledShifts((prev) => prev.map((s) => s.id === shiftId ? updatedShift : s));
+    setDismissedLateAlertIds((prev) => [...prev, shiftId]);
+
+    logAdminAction({
+      type: 'shift_reassigned',
+      adminName: "Lt. Mark O'Connor",
+      adminBadge: 'OPS-LEAD-01',
+      badgeVariant: 'purple',
+      title: `Shift Reassigned: ${target.siteName}`,
+      description: `Reassigned from ${target.guardName} to ${newGuard.name} (${newGuard.badgeNumber}) for ${target.date}.`
+    });
+
+    addAuditLog(
+      'SHIFT_REASSIGNED',
+      'system',
+      `Shift at ${target.siteName} on ${target.date} reassigned to ${newGuard.name}.`,
+      "Lt. Mark O'Connor",
+      'warning'
+    );
+
+    showToast('Shift Reassigned', `Assigned ${newGuard.name} as relief for ${target.siteName}.`, 'success');
+  };
+
+  const acknowledgeLateAlert = (shiftId: string, note?: string) => {
+    setScheduledShifts((prev) => prev.map((s) => {
+      if (s.id === shiftId) {
+        return {
+          ...s,
+          lateAcknowledgedByOps: true,
+          notes: note ? `${s.notes ? s.notes + ' | ' : ''}Ops Acknowledged: ${note}` : s.notes
+        };
+      }
+      return s;
+    }));
+
+    setDismissedLateAlertIds((prev) => prev.includes(shiftId) ? prev : [...prev, shiftId]);
+
+    const target = scheduledShifts.find((s) => s.id === shiftId);
+    if (target) {
+      logAdminAction({
+        type: 'late_shift_alert_acknowledged',
+        adminName: "Lt. Mark O'Connor",
+        adminBadge: 'OPS-LEAD-01',
+        badgeVariant: 'amber',
+        title: `Late Shift Acknowledged: ${target.guardName}`,
+        description: `Ops acknowledged overdue arrival for ${target.guardName} at ${target.siteName}. ${note || ''}`
+      });
+      showToast('Late Alert Acknowledged', `Noted late arrival status for ${target.guardName}.`, 'info');
+    }
+  };
+
+  const getGuardActiveShift = (guardId: string) => {
+    return scheduledShifts.find((s) => s.guardId === guardId && (s.status === 'on_duty' || s.status === 'on_break'));
+  };
+
+  const getGuardUpcomingShifts = (guardId: string) => {
+    return scheduledShifts
+      .filter((s) => s.guardId === guardId && s.status === 'scheduled')
+      .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+  };
+
+  const getGuardsLiveTracking = (): GuardLiveTrackingItem[] => {
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    return guardsList.map((guard) => {
+      // Find current active shift
+      const activeShift = scheduledShifts.find(
+        (s) => s.guardId === guard.id && (s.status === 'on_duty' || s.status === 'on_break')
+      );
+
+      // Find today's scheduled shift if not currently clocked in
+      const todayShift = scheduledShifts.find(
+        (s) => s.guardId === guard.id && s.date === todayStr && s.status !== 'completed'
+      );
+
+      const anyTodayCompleted = scheduledShifts.find(
+        (s) => s.guardId === guard.id && s.date === todayStr && s.status === 'completed'
+      );
+
+      let dutyStatus: ShiftDutyStatus = 'off_duty';
+      let currentShift: ScheduledShift | undefined = undefined;
+
+      if (activeShift) {
+        dutyStatus = activeShift.status;
+        currentShift = activeShift;
+      } else if (todayShift) {
+        dutyStatus = todayShift.status;
+        currentShift = todayShift;
+      } else if (anyTodayCompleted) {
+        dutyStatus = 'completed';
+        currentShift = anyTodayCompleted;
+      }
+
+      // Calculate elapsed time if on duty or on break
+      let elapsedSeconds = 0;
+      if (activeShift && activeShift.clockInTime) {
+        elapsedSeconds = getShiftElapsedSeconds(activeShift.clockInTime, undefined, activeShift.breaks);
+      }
+
+      return {
+        guardId: guard.id,
+        guardName: guard.name,
+        guardBadge: guard.badgeNumber,
+        guardPhone: guard.phone,
+        role: guard.role,
+        currentStatus: dutyStatus,
+        activeShift: currentShift,
+        currentSiteName: currentShift?.siteName,
+        postRole: currentShift?.postRole,
+        clockInTime: activeShift?.clockInTime,
+        elapsedSeconds,
+        isOnBreak: activeShift?.status === 'on_break',
+        currentBreakType: activeShift?.breaks?.slice(-1)[0]?.endedAt ? undefined : activeShift?.breaks?.slice(-1)[0]?.type,
+        breakStartedAt: activeShift?.breaks?.slice(-1)[0]?.endedAt ? undefined : activeShift?.breaks?.slice(-1)[0]?.startedAt,
+        equipmentList: currentShift?.equipmentIssued
+      };
+    });
+  };
+
   // Reset to Defaults
   const resetToDefaults = () => {
     setShifts(INITIAL_SHIFTS);
@@ -2570,6 +3345,8 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setCallsForService(INITIAL_CALLS_FOR_SERVICE);
     setLatestDispatchedCall(null);
     setIsCallAlertOpen(false);
+    setScheduledShifts(INITIAL_SCHEDULED_SHIFTS);
+    setDismissedLateAlertIds([]);
     localStorage.removeItem(STORAGE_KEY_SHIFTS);
     localStorage.removeItem(STORAGE_KEY_TRADES);
     localStorage.removeItem(STORAGE_KEY_LOGS);
@@ -2585,12 +3362,14 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     localStorage.removeItem(STORAGE_KEY_SITES);
     localStorage.removeItem(STORAGE_KEY_CALLS_FOR_SERVICE);
     localStorage.removeItem(STORAGE_KEY_CALL_RECEIPTS);
+    localStorage.removeItem(STORAGE_KEY_SCHEDULED_SHIFTS);
+    localStorage.removeItem(STORAGE_KEY_DISMISSED_LATE_ALERTS);
     setCallReceipts([]);
     setLatestCallReceipt(null);
     setAlertPreferencesState(DEFAULT_ALERT_PREFERENCES);
     setSiteFeedbacks(INITIAL_SITE_FEEDBACKS);
     setSitesList(INITIAL_SITES);
-    showToast('System Reset', 'Demo shift, trade, user, site directory, CFS calls, feedback, and alert data restored to initial state.', 'info');
+    showToast('System Reset', 'Demo shift, trade, schedule, time tracking, CFS calls, and alert data restored to initial state.', 'info');
   };
 
   return (
@@ -2620,6 +3399,22 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         isCallAlertOpen,
         latestCallReceipt,
         callReceipts,
+        scheduledShifts,
+        activeClockedInShift,
+        lateShiftAlerts,
+        dismissedLateAlertIds,
+        clockInGuard,
+        clockOutGuard,
+        startGuardBreak,
+        endGuardBreak,
+        scheduleNewShift,
+        updateScheduledShift,
+        deleteScheduledShift,
+        reassignScheduledShift,
+        acknowledgeLateAlert,
+        getGuardActiveShift,
+        getGuardUpcomingShifts,
+        getGuardsLiveTracking,
         setActiveView,
         setActiveGuard,
         setTheme,
@@ -2632,6 +3427,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         clearAllCallReceipts,
         dispatchCall,
         acknowledgeCall,
+        markCallOnScene,
         updateCallStatus,
         clearCall,
         cancelCall,

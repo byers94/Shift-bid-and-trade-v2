@@ -145,6 +145,13 @@ export type AdminActionType =
   | 'call_updated'
   | 'call_cleared'
   | 'call_cancelled'
+  | 'guard_clocked_in'
+  | 'guard_clocked_out'
+  | 'guard_break_started'
+  | 'guard_break_ended'
+  | 'shift_scheduled'
+  | 'shift_reassigned'
+  | 'late_shift_alert_acknowledged'
   | 'system_reset';
 
 export interface AdminAction {
@@ -366,6 +373,7 @@ export interface CallReceiptRecord {
 
 export interface CallReceiptNotification {
   id: string;
+  eventType?: 'acknowledged' | 'on_scene' | 'cleared';
   callId: string;
   callType?: CallType;
   customTypeLabel?: string;
@@ -380,10 +388,12 @@ export interface CallReceiptNotification {
   badgeNumber: string;
   guardBadge?: string;
   acknowledgedAt: string; // ISO timestamp
-  timeToAcknowledgeSec: number;
+  timeToAcknowledgeSec?: number;
   latencySeconds?: number;
   receiptChannel?: 'alert_modal' | 'queue_action' | 'bolo_banner';
   notes?: string;
+  disposition?: CallDisposition;
+  resolutionNote?: string;
 }
 
 export interface CallForService {
@@ -438,6 +448,111 @@ export interface CallForService {
   cancelledAt?: string;
   cancelledBy?: string;
   cancellationReason?: string;
+}
+
+// ----------------------------------------------------
+// Shift Attendance, Time Clocking, and Live Tracking
+// ----------------------------------------------------
+
+export type ShiftDutyStatus = 
+  | 'scheduled'    // Assigned and waiting for start time
+  | 'on_duty'      // Guard has clocked in and actively working
+  | 'on_break'     // Guard clocked in but currently on meal or rest break
+  | 'completed'    // Guard completed shift and clocked out
+  | 'late'         // Overdue for clock-in (> 15 min past scheduled start time)
+  | 'missed'       // Shift was missed or unfulfilled
+  | 'off_duty'     // Not currently on active shift
+  | 'cancelled';
+
+export interface ShiftBreakRecord {
+  id: string;
+  type: 'meal' | 'rest';
+  startedAt: string; // ISO timestamp
+  endedAt?: string;  // ISO timestamp
+  durationMinutes?: number;
+  note?: string;
+}
+
+export interface ScheduledShift {
+  id: string;
+  guardId: string;
+  guardName: string;
+  guardBadge: string;
+  guardPhone?: string;
+  siteId?: string;
+  siteName: string;
+  siteAddress?: string;
+  date: string; // YYYY-MM-DD
+  startTime: string; // HH:mm (24h) e.g. "08:00"
+  endTime: string; // HH:mm (24h) e.g. "16:00"
+  hours: number;
+  postRole: string; // e.g. "Access Control & Lobby", "Perimeter Patrol", "Gate 4 Checkpoint"
+  postInstructions?: string;
+  requiredCertifications?: string[];
+  status: ShiftDutyStatus;
+  
+  // Clock in/out tracking
+  clockInTime?: string; // ISO timestamp
+  clockOutTime?: string; // ISO timestamp
+  actualHoursWorked?: number;
+  breaks?: ShiftBreakRecord[];
+  
+  // Late tracking
+  isLate?: boolean;
+  lateMinutes?: number;
+  lateAcknowledgedByOps?: boolean;
+  
+  // Notes & Handover
+  notes?: string;
+  clockInNotes?: string;
+  clockOutNotes?: string;
+  handoverSummary?: string;
+  equipmentIssued?: string[]; // e.g. ["Radio Ch-3", "Bodycam #08", "Gate Fob #4"]
+  
+  // Location & Verification
+  gpsVerified?: boolean;
+  siteProximityMeters?: number;
+  
+  createdAt?: string;
+}
+
+export interface LateShiftAlert {
+  id?: string;
+  shiftId: string;
+  guardId: string;
+  guardName: string;
+  guardBadge?: string;
+  guardPhone?: string;
+  badgeNumber?: string;
+  siteId?: string;
+  siteName: string;
+  postRole?: string;
+  scheduledDate: string;
+  scheduledStartTime: string;
+  minutesLate: number;
+  alertTriggeredAt?: string;
+  acknowledged?: boolean;
+  acknowledgedByAdmin?: boolean;
+  createdAt?: string;
+}
+
+export interface GuardLiveTrackingItem {
+  guardId: string;
+  guardName: string;
+  guardBadge: string;
+  guardPhone: string;
+  role: 'guard' | 'lead' | 'supervisor';
+  currentStatus: ShiftDutyStatus;
+  activeShift?: ScheduledShift;
+  currentSiteName?: string;
+  postRole?: string;
+  clockInTime?: string;
+  elapsedSeconds?: number;
+  isOnBreak?: boolean;
+  currentBreakType?: 'meal' | 'rest';
+  breakStartedAt?: string;
+  lastKnownActivity?: string;
+  equipmentList?: string[];
 }
 
 

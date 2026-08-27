@@ -91,6 +91,7 @@ export const ActiveCallsPanel: React.FC = () => {
     callsForService, 
     activeGuard, 
     acknowledgeCall, 
+    markCallOnScene,
     updateCallStatus, 
     clearCall 
   } = useShiftOps();
@@ -469,7 +470,7 @@ export const ActiveCallsPanel: React.FC = () => {
                         {isEnRoute && (
                           <button
                             id={`onscene-call-btn-${call.id}`}
-                            onClick={() => updateCallStatus(call.id, 'on_scene', `Officer ${activeGuard.name} on scene`)}
+                            onClick={() => markCallOnScene(call.id, activeGuard)}
                             className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-black text-xs shadow-xs flex items-center gap-1.5 cursor-pointer transition-all hover:scale-102"
                           >
                             <MapPin className="w-3.5 h-3.5" />

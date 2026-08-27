@@ -3,6 +3,7 @@ import { useShiftOps } from '../../context/ShiftOpsContext';
 import { OpenShiftBoard } from './OpenShiftBoard';
 import { TradeBoard } from './TradeBoard';
 import { ActiveCallsPanel } from './ActiveCallsPanel';
+import { GuardDutyTerminal } from './GuardDutyTerminal';
 import { CallAlertModal } from './CallAlertModal';
 import { EmergencyAlertOverlay } from './EmergencyAlertOverlay';
 import { ShiftAlertPreferencesModal } from './ShiftAlertPreferencesModal';
@@ -19,7 +20,10 @@ import {
   SlidersHorizontal,
   AlertTriangle,
   Zap,
-  RefreshCw
+  RefreshCw,
+  Clock,
+  CheckCircle2,
+  MapPin
 } from 'lucide-react';
 
 interface GuardViewProps {
@@ -34,12 +38,13 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
     shifts, 
     trades, 
     callsForService,
+    activeClockedInShift,
     opsPhone, 
     theme, 
     toggleTheme,
     alertPreferences 
   } = useShiftOps();
-  const [activeTab, setActiveTab] = useState<'open_board' | 'trade_board' | 'active_calls'>('open_board');
+  const [activeTab, setActiveTab] = useState<'duty_post' | 'open_board' | 'trade_board' | 'active_calls'>('duty_post');
   const [showGuardMenu, setShowGuardMenu] = useState(false);
   const [isAlertPrefsOpen, setIsAlertPrefsOpen] = useState(false);
 
@@ -222,14 +227,52 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
         </div>
       </header>
 
+      {/* Active Shift Duty Banner if Clocked In */}
+      {activeClockedInShift && (
+        <div 
+          onClick={() => setActiveTab('duty_post')}
+          className={`px-3 py-2 text-white flex items-center justify-between text-xs cursor-pointer border-b transition-colors ${
+            activeClockedInShift.status === 'on_break'
+              ? 'bg-amber-700 dark:bg-amber-900 border-amber-500'
+              : 'bg-emerald-700 dark:bg-emerald-900 border-emerald-500'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full ${
+              activeClockedInShift.status === 'on_break' ? 'bg-amber-300' : 'bg-emerald-300 animate-ping'
+            }`} />
+            <span className="font-extrabold uppercase font-mono text-[11px]">
+              {activeClockedInShift.status === 'on_break' ? '☕ On Break' : '● On Duty'}: {activeClockedInShift.siteName}
+            </span>
+          </div>
+          <span className="text-[10px] font-mono underline underline-offset-2">Terminal →</span>
+        </div>
+      )}
+
       {/* Navigation Tabs */}
       <nav className="flex border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
         <button
+          id="guard-tab-duty-post"
+          onClick={() => setActiveTab('duty_post')}
+          className={`flex-1 py-3 text-[10px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
+            activeTab === 'duty_post'
+              ? 'border-b-2 border-[#1e3a8a] dark:border-blue-400 text-[#1e3a8a] dark:text-blue-400 bg-blue-50/40 dark:bg-blue-950/30 font-black'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+          }`}
+        >
+          <Clock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+          <span>MY DUTY</span>
+          {activeClockedInShift && (
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          )}
+        </button>
+
+        <button
           id="guard-tab-open-board"
           onClick={() => setActiveTab('open_board')}
-          className={`flex-1 py-3 text-[11px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
+          className={`flex-1 py-3 text-[10px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
             activeTab === 'open_board'
-              ? 'border-b-2 border-[#1e3a8a] dark:border-blue-400 text-[#1e3a8a] dark:text-blue-400 bg-blue-50/40 dark:bg-blue-950/30'
+              ? 'border-b-2 border-[#1e3a8a] dark:border-blue-400 text-[#1e3a8a] dark:text-blue-400 bg-blue-50/40 dark:bg-blue-950/30 font-black'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
           }`}
         >
@@ -246,13 +289,13 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
         <button
           id="guard-tab-trade-board"
           onClick={() => setActiveTab('trade_board')}
-          className={`flex-1 py-3 text-[11px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
+          className={`flex-1 py-3 text-[10px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
             activeTab === 'trade_board'
-              ? 'border-b-2 border-[#1e3a8a] dark:border-blue-400 text-[#1e3a8a] dark:text-blue-400 bg-blue-50/40 dark:bg-blue-950/30'
+              ? 'border-b-2 border-[#1e3a8a] dark:border-blue-400 text-[#1e3a8a] dark:text-blue-400 bg-blue-50/40 dark:bg-blue-950/30 font-black'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
           }`}
         >
-          <span>TRADE BOARD</span>
+          <span>TRADES</span>
           <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
             activeTab === 'trade_board' 
               ? 'bg-[#1e3a8a] dark:bg-blue-600 text-white' 
@@ -265,14 +308,14 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
         <button
           id="guard-tab-active-calls"
           onClick={() => setActiveTab('active_calls')}
-          className={`flex-1 py-3 text-[11px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
+          className={`flex-1 py-3 text-[10px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
             activeTab === 'active_calls'
-              ? 'border-b-2 border-rose-600 text-rose-700 dark:text-rose-400 bg-rose-50/40 dark:bg-rose-950/30'
+              ? 'border-b-2 border-rose-600 text-rose-700 dark:text-rose-400 bg-rose-50/40 dark:bg-rose-950/30 font-black'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
           }`}
         >
           <PhoneCall className="w-3 h-3 text-rose-500" />
-          <span>ACTIVE CALLS</span>
+          <span>CALLS</span>
           <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-black ${
             boloCount > 0
               ? 'bg-rose-600 text-white animate-pulse'
@@ -287,6 +330,7 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
 
       {/* Board Content */}
       <div className="flex-1 flex flex-col overflow-y-auto min-h-0 bg-slate-50 dark:bg-slate-900 p-2 sm:p-3">
+        {activeTab === 'duty_post' && <GuardDutyTerminal onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
         {activeTab === 'open_board' && <OpenShiftBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
         {activeTab === 'trade_board' && <TradeBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
         {activeTab === 'active_calls' && <ActiveCallsPanel />}

@@ -134,3 +134,107 @@ export function compareShiftsByDateFurthest(
 ): number {
   return compareShiftsByDateSoonest(b, a);
 }
+
+/**
+ * Calculate elapsed seconds for an active shift (subtracting completed breaks)
+ */
+export function getShiftElapsedSeconds(
+  clockInIso?: string, 
+  clockOutIso?: string, 
+  breaks?: Array<{ startedAt: string; endedAt?: string; durationMinutes?: number }>
+): number {
+  if (!clockInIso) return 0;
+  const startMs = new Date(clockInIso).getTime();
+  if (isNaN(startMs)) return 0;
+  
+  const endMs = clockOutIso ? new Date(clockOutIso).getTime() : Date.now();
+  if (isNaN(endMs)) return 0;
+  let totalElapsedMs = Math.max(0, endMs - startMs);
+
+  // If there are breaks, deduct completed break time
+  if (breaks && breaks.length > 0) {
+    breaks.forEach((b) => {
+      if (b.durationMinutes) {
+        totalElapsedMs -= b.durationMinutes * 60 * 1000;
+      } else if (b.startedAt && b.endedAt) {
+        const breakStart = new Date(b.startedAt).getTime();
+        const breakEnd = new Date(b.endedAt).getTime();
+        if (!isNaN(breakStart) && !isNaN(breakEnd) && breakEnd > breakStart) {
+          totalElapsedMs -= (breakEnd - breakStart);
+        }
+      }
+    });
+  }
+
+  return Math.max(0, Math.floor(totalElapsedMs / 1000));
+}
+
+/**
+ * Format total seconds into HH:MM:SS or HHh MMm
+ */
+export function formatElapsedTimer(totalSeconds: number): string {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Check if a scheduled shift is currently overdue / late for clock-in
+ * Late if currentTime > (scheduledDate + scheduledStartTime)
+ * Flagged as late alert if minutesLate >= 15
+ */
+export function calculateShiftLateStatus(
+  scheduledDate: string,
+  scheduledStartTime: string,
+  clockInTime?: string,
+  referenceDate: Date = new Date()
+): { isLate: boolean; minutesLate: number; isOverdue15m: boolean; scheduledDateTimeStr: string } {
+  const time = scheduledStartTime.length === 5 ? scheduledStartTime : '08:00';
+  const scheduledTimeMs = new Date(`${scheduledDate}T${time}:00`).getTime();
+  
+  if (isNaN(scheduledTimeMs)) {
+    return { isLate: false, minutesLate: 0, isOverdue15m: false, scheduledDateTimeStr: '' };
+  }
+
+  const scheduledDateTimeStr = `${scheduledDate} ${scheduledStartTime}`;
+
+  // If guard already clocked in, calculate if they were late upon clocking in
+  if (clockInTime) {
+    const clockInMs = new Date(clockInTime).getTime();
+    if (!isNaN(clockInMs)) {
+      const diffMs = clockInMs - scheduledTimeMs;
+      const diffMinutes = Math.floor(diffMs / 60000);
+      const isLate = diffMinutes > 0;
+      return {
+        isLate,
+        minutesLate: isLate ? diffMinutes : 0,
+        isOverdue15m: diffMinutes >= 15,
+        scheduledDateTimeStr
+      };
+    }
+  }
+
+  // If not yet clocked in, compare against reference/current time
+  const nowMs = referenceDate.getTime();
+  const diffMs = nowMs - scheduledTimeMs;
+  const minutesLate = Math.floor(diffMs / 60000);
+
+  if (minutesLate > 0) {
+    return {
+      isLate: true,
+      minutesLate,
+      isOverdue15m: minutesLate >= 15,
+      scheduledDateTimeStr
+    };
+  }
+
+  return {
+    isLate: false,
+    minutesLate: 0,
+    isOverdue15m: false,
+    scheduledDateTimeStr
+  };
+}
+
