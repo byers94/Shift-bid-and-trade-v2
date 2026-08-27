@@ -39,7 +39,13 @@ import {
   BookOpen,
   Info,
   TrendingUp,
-  Trophy
+  Trophy,
+  Fingerprint,
+  Key,
+  Lock,
+  Smartphone,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 interface GuardDirectoryProps {
@@ -92,6 +98,13 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
   const [newSiteInput, setNewSiteInput] = useState('');
   const [newCertInput, setNewCertInput] = useState('');
   const [formNotes, setFormNotes] = useState('');
+
+  // Credentials & Biometrics Form State
+  const [formUsername, setFormUsername] = useState('');
+  const [formPassword, setFormPassword] = useState('guard2026!');
+  const [formPin, setFormPin] = useState('1234');
+  const [formBiometricsEnabled, setFormBiometricsEnabled] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Delete Confirmation state
   const [deleteConfirmGuard, setDeleteConfirmGuard] = useState<GuardProfile | null>(null);
@@ -206,6 +219,11 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
     setFormNotes('');
     setNewSiteInput('');
     setNewCertInput('');
+    setFormUsername(`guard${randomNum}`);
+    setFormPassword('guard2026!');
+    setFormPin(String(Math.floor(1000 + Math.random() * 9000)));
+    setFormBiometricsEnabled(true);
+    setShowPassword(false);
     setIsEditModalOpen(true);
   };
 
@@ -223,6 +241,12 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
     setFormNotes(guard.notes || '');
     setNewSiteInput('');
     setNewCertInput('');
+    const defaultUser = guard.name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || `guard${guard.id.slice(-4)}`;
+    setFormUsername(guard.username || defaultUser);
+    setFormPassword(guard.password || 'guard2026!');
+    setFormPin(guard.pin || '1234');
+    setFormBiometricsEnabled(guard.biometricsEnabled ?? false);
+    setShowPassword(false);
     setIsEditModalOpen(true);
   };
 
@@ -241,7 +265,11 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
         trainingLevel: formTrainingLevel,
         ojtSites: formOjtSites,
         certifications: formCertifications,
-        notes: formNotes.trim() || undefined
+        notes: formNotes.trim() || undefined,
+        username: formUsername.trim(),
+        password: formPassword,
+        pin: formPin.trim(),
+        biometricsEnabled: formBiometricsEnabled
       });
     } else {
       addGuard({
@@ -253,7 +281,11 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
         trainingLevel: formTrainingLevel,
         ojtSites: formOjtSites,
         certifications: formCertifications,
-        notes: formNotes.trim() || undefined
+        notes: formNotes.trim() || undefined,
+        username: formUsername.trim(),
+        password: formPassword,
+        pin: formPin.trim(),
+        biometricsEnabled: formBiometricsEnabled
       });
     }
 
@@ -857,6 +889,23 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
                         </a>
                       </div>
                     )}
+                    <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/60 text-[11px]">
+                      <div className="flex items-center gap-1 font-mono text-slate-600">
+                        <Key className="w-3 h-3 text-[#1e3a8a]" />
+                        <span className="font-bold">@{guard.username || guard.name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10)}</span>
+                      </div>
+                      {guard.biometricsEnabled !== false ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                          <Fingerprint className="w-3 h-3 text-emerald-600" />
+                          <span>Biometrics Active</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-slate-400 font-medium">
+                          <Lock className="w-3 h-3" />
+                          <span>PIN Only</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Certified / OJT Sites List */}
@@ -1682,6 +1731,93 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
                     );
                   })}
                 </div>
+              </div>
+
+              {/* Guard Mobile App Credentials & Biometric Access */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-bold text-slate-800 text-[11px] uppercase tracking-wide">
+                    <Smartphone className="w-3.5 h-3.5 text-[#1e3a8a]" />
+                    <span>Guard Mobile App Credentials</span>
+                  </div>
+                  <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded font-mono">
+                    Self-Service Auth
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                      Username / Handle *
+                    </label>
+                    <input
+                      id="guard-form-username"
+                      type="text"
+                      required
+                      value={formUsername}
+                      onChange={(e) => setFormUsername(e.target.value)}
+                      placeholder="e.g. mwright"
+                      className="w-full text-xs border border-slate-300 rounded-lg p-2 font-mono bg-white focus:ring-2 focus:ring-[#1e3a8a]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                      Password *
+                    </label>
+                    <div className="relative">
+                      <input
+                        id="guard-form-password"
+                        type={showPassword ? 'text' : 'password'}
+                        required
+                        value={formPassword}
+                        onChange={(e) => setFormPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full text-xs border border-slate-300 rounded-lg p-2 pr-8 font-mono bg-white focus:ring-2 focus:ring-[#1e3a8a]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                      >
+                        {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                      Quick PIN (4 Digits) *
+                    </label>
+                    <input
+                      id="guard-form-pin"
+                      type="text"
+                      maxLength={6}
+                      required
+                      value={formPin}
+                      onChange={(e) => setFormPin(e.target.value.replace(/[^0-9]/g, ''))}
+                      placeholder="1234"
+                      className="w-full text-xs border border-slate-300 rounded-lg p-2 font-mono font-bold tracking-widest text-center bg-white focus:ring-2 focus:ring-[#1e3a8a]"
+                    />
+                  </div>
+                </div>
+
+                {/* Biometrics Toggle */}
+                <label className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors">
+                  <div className="flex items-center gap-2">
+                    <Fingerprint className="w-4 h-4 text-emerald-600" />
+                    <div>
+                      <span className="font-bold text-[11px] text-slate-900 block">Allow Biometric Fast-Login</span>
+                      <span className="text-[10px] text-slate-500 block">Guard can use FaceID / Fingerprint after initial device login</span>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={formBiometricsEnabled}
+                    onChange={(e) => setFormBiometricsEnabled(e.target.checked)}
+                    className="rounded text-[#1e3a8a] focus:ring-[#1e3a8a] w-4 h-4"
+                  />
+                </label>
               </div>
 
               {/* Guard Notes */}

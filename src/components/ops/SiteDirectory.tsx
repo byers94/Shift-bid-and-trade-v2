@@ -106,6 +106,11 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
   const [formAccessGateNotes, setFormAccessGateNotes] = useState('');
   const [formStatus, setFormStatus] = useState<'active' | 'inactive' | 'maintenance'>('active');
   const [formNotes, setFormNotes] = useState('');
+  const [formLatitude, setFormLatitude] = useState<number | ''>(47.6062);
+  const [formLongitude, setFormLongitude] = useState<number | ''>(-122.3321);
+  const [formGeofenceRadiusMeters, setFormGeofenceRadiusMeters] = useState<number>(150);
+  const [formRequireGeofence, setFormRequireGeofence] = useState<boolean>(true);
+  const [formGeofenceStrictEnforce, setFormGeofenceStrictEnforce] = useState<boolean>(false);
   const [newCertInput, setNewCertInput] = useState('');
   const [customCertificationsList, setCustomCertificationsList] = useState<string[]>([]);
 
@@ -275,6 +280,11 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
     setFormAccessGateNotes('');
     setFormStatus('active');
     setFormNotes('');
+    setFormLatitude(47.6062);
+    setFormLongitude(-122.3321);
+    setFormGeofenceRadiusMeters(150);
+    setFormRequireGeofence(true);
+    setFormGeofenceStrictEnforce(false);
     setIsEditModalOpen(true);
   };
 
@@ -302,6 +312,11 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
     setFormAccessGateNotes(site.accessGateNotes || '');
     setFormStatus(site.status);
     setFormNotes(site.notes || '');
+    setFormLatitude(site.latitude ?? 47.6062);
+    setFormLongitude(site.longitude ?? -122.3321);
+    setFormGeofenceRadiusMeters(site.geofenceRadiusMeters ?? 150);
+    setFormRequireGeofence(site.requireGeofence ?? true);
+    setFormGeofenceStrictEnforce(site.geofenceStrictEnforce ?? false);
     setIsEditModalOpen(true);
   };
 
@@ -334,7 +349,12 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
       operatingHours: formOperatingHours.trim() || '24/7 Continuous Ops',
       accessGateNotes: formAccessGateNotes.trim() || undefined,
       status: formStatus,
-      notes: formNotes.trim() || undefined
+      notes: formNotes.trim() || undefined,
+      latitude: typeof formLatitude === 'number' ? formLatitude : 47.6062,
+      longitude: typeof formLongitude === 'number' ? formLongitude : -122.3321,
+      geofenceRadiusMeters: Number(formGeofenceRadiusMeters) || 150,
+      requireGeofence: formRequireGeofence,
+      geofenceStrictEnforce: formGeofenceStrictEnforce
     };
 
     if (editingSiteId) {
@@ -1874,6 +1894,94 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                         );
                       })}
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 5: GPS Coordinates & Geofencing Perimeter */}
+              <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <Compass className="w-3.5 h-3.5 text-blue-500" />
+                    <span>5. GPS Geofencing & Clock-In Verification</span>
+                  </h4>
+                  <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-800">
+                    On-Site Guard Validation
+                  </span>
+                </div>
+
+                <div className="p-3 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/70 dark:border-blue-900/40 rounded-xl space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-slate-700 dark:text-slate-300 font-medium mb-1">
+                        Site Latitude (GPS)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.0001"
+                        value={formLatitude}
+                        onChange={(e) => setFormLatitude(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                        placeholder="47.6062"
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white font-mono text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 dark:text-slate-300 font-medium mb-1">
+                        Site Longitude (GPS)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.0001"
+                        value={formLongitude}
+                        onChange={(e) => setFormLongitude(e.target.value === '' ? '' : parseFloat(e.target.value))}
+                        placeholder="-122.3321"
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white font-mono text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 dark:text-slate-300 font-medium mb-1">
+                        Geofence Radius (Meters)
+                      </label>
+                      <select
+                        value={formGeofenceRadiusMeters}
+                        onChange={(e) => setFormGeofenceRadiusMeters(Number(e.target.value))}
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-xs font-semibold"
+                      >
+                        <option value={50}>50 meters (Tight Perimeter / Checkpoint)</option>
+                        <option value={100}>100 meters (Standard Building)</option>
+                        <option value={150}>150 meters (Default Facility Campus)</option>
+                        <option value={250}>250 meters (Large Terminal / Pier)</option>
+                        <option value={500}>500 meters (Industrial Yard / Airport)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    <label className="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 text-xs cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formRequireGeofence}
+                        onChange={(e) => setFormRequireGeofence(e.target.checked)}
+                        className="rounded text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        Require GPS Location at Clock-In
+                      </span>
+                    </label>
+
+                    <label className="flex items-center gap-2 p-2 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 text-xs cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formGeofenceStrictEnforce}
+                        onChange={(e) => setFormGeofenceStrictEnforce(e.target.checked)}
+                        className="rounded text-rose-600 focus:ring-rose-500"
+                      />
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        Strict Enforce (Block out-of-perimeter clock-in)
+                      </span>
+                    </label>
                   </div>
                 </div>
               </div>

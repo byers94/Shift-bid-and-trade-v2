@@ -288,6 +288,104 @@ export const ShiftAlertPreferencesModal: React.FC<ShiftAlertPreferencesModalProp
               </div>
             </div>
 
+            {/* 3. Next 24-Hour Priority Push Alerts & Rest Buffer Compliance */}
+            <div 
+              id="alert-pref-card-priority-24h"
+              className={`p-3.5 rounded-xl border transition-all ${
+                alertPreferences.priorityNext24hPush 
+                  ? 'bg-amber-50/90 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700 shadow-xs' 
+                  : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/60 opacity-85'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className={`p-2 rounded-lg shrink-0 ${
+                    alertPreferences.priorityNext24hPush
+                      ? 'bg-amber-500 text-slate-950 font-black'
+                      : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
+                  }`}>
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-extrabold text-slate-900 dark:text-slate-100 text-xs">
+                        Next 24h Priority Push Alerts
+                      </h3>
+                      <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.2 bg-amber-500 text-slate-950 rounded font-mono">
+                        Fast-Fill 24h
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed">
+                      Instant high-priority push banner for unfilled shifts starting within 24 hours. Automatically verifies that the shift will <strong>never overlap</strong> with your schedule and guarantees at least <strong>6 hours of mandatory rest</strong> before and after adjacent posts.
+                    </p>
+
+                    {/* Rest Buffer Selector */}
+                    <div className="mt-3 p-2.5 rounded-lg bg-white dark:bg-slate-900/90 border border-amber-200 dark:border-slate-700 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                          Mandatory Rest Gap Threshold:
+                        </span>
+                        <span className="text-[11px] font-mono font-extrabold text-emerald-600 dark:text-emerald-400">
+                          {alertPreferences.minRestBufferHours || 6} Hours Min
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 pt-0.5">
+                        {[6, 8, 10, 12].map((hours) => (
+                          <button
+                            key={hours}
+                            type="button"
+                            onClick={() => {
+                              updateAlertPreferences({ minRestBufferHours: hours });
+                              triggerFeedback();
+                            }}
+                            className={`flex-1 py-1 text-[10px] font-mono font-bold rounded border transition-colors cursor-pointer ${
+                              (alertPreferences.minRestBufferHours || 6) === hours
+                                ? 'bg-emerald-600 border-emerald-600 text-white shadow-2xs'
+                                : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100'
+                            }`}
+                          >
+                            {hours}h {hours === 6 ? '(Standard)' : ''}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 mt-2.5">
+                      <button
+                        id="test-priority-24h-btn"
+                        onClick={() => testAlertNotification('priority_next_24h')}
+                        className="text-[10px] font-bold text-amber-800 dark:text-amber-300 hover:text-amber-950 flex items-center gap-1 bg-amber-100 dark:bg-amber-900/60 border border-amber-300 dark:border-amber-700 px-2.5 py-1 rounded shadow-2xs cursor-pointer"
+                      >
+                        <Play className="w-2.5 h-2.5 fill-current" /> Test 24h Priority Chime
+                      </button>
+                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                        <Check className="w-3 h-3" /> Overlap Protection Active
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Toggle Switch */}
+                <button
+                  id="toggle-priority-24h-btn"
+                  role="switch"
+                  aria-checked={alertPreferences.priorityNext24hPush}
+                  onClick={() => handleToggle('priorityNext24hPush')}
+                  className={`w-11 h-6 shrink-0 rounded-full transition-colors relative cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400 ${
+                    alertPreferences.priorityNext24hPush ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-700'
+                  }`}
+                  aria-label="Toggle Next 24h Priority Push Alerts"
+                >
+                  <span
+                    className={`block w-4 h-4 rounded-full bg-white shadow-md transform transition-transform absolute top-1 ${
+                      alertPreferences.priorityNext24hPush ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+
             {/* 3. Trade Matches */}
             <div 
               id="alert-pref-card-trades"

@@ -6,6 +6,7 @@ import { ShiftBidsModal } from './ShiftBidsModal';
 import { AutoFillShiftsModal } from './AutoFillShiftsModal';
 import { SiteSelectDropdown } from '../common/SiteSelectDropdown';
 import { calculateHours, formatDateLabel, compareShiftsByDateSoonest, compareShiftsByDateFurthest } from '../../utils/time';
+import { isShiftOccurringInNext24Hours } from '../../utils/scheduling';
 import { SAMPLE_JSON_SHIFTS } from '../../data/mockData';
 import { 
   Plus, 
@@ -50,6 +51,7 @@ export const ShiftManager: React.FC = () => {
     deleteShift,
     hideFilledShifts,
     setHideFilledShifts,
+    broadcastPriorityPushToGuards,
     showToast
   } = useShiftOps();
 
@@ -907,7 +909,20 @@ export const ShiftManager: React.FC = () => {
                       )}
                     </div>
 
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                      {!isFilled && isShiftOccurringInNext24Hours(shift).inWindow && (
+                        <button
+                          type="button"
+                          id={`mobile-broadcast-24h-${shift.id}`}
+                          onClick={() => broadcastPriorityPushToGuards(shift.id)}
+                          className="px-2 py-1 text-xs font-black text-amber-950 dark:text-amber-100 bg-amber-400 hover:bg-amber-300 dark:bg-amber-500 rounded-md cursor-pointer flex items-center gap-1 shadow-xs"
+                          title="Broadcast 24h priority push notification to eligible guards"
+                        >
+                          <Zap className="w-3 h-3 fill-amber-950 dark:fill-amber-100" />
+                          <span>24h Push</span>
+                        </button>
+                      )}
+
                       {!isFilled && (
                         <button
                           type="button"
@@ -1173,6 +1188,20 @@ export const ShiftManager: React.FC = () => {
                       {/* Action buttons */}
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          {/* Priority 24h Broadcast Button */}
+                          {!isFilled && isShiftOccurringInNext24Hours(shift).inWindow && (
+                            <button
+                              id={`action-broadcast-24h-${shift.id}`}
+                              type="button"
+                              onClick={() => broadcastPriorityPushToGuards(shift.id)}
+                              className="text-amber-950 dark:text-amber-100 bg-amber-400 hover:bg-amber-300 dark:bg-amber-500 dark:hover:bg-amber-400 border border-amber-500 px-2 py-1 rounded text-xs font-black flex items-center gap-1 cursor-pointer transition-all shadow-xs"
+                              title="Broadcast priority push alert to all guards with 0 schedule overlap and ≥6h rest gap"
+                            >
+                              <Zap className="w-3 h-3 fill-amber-950 dark:fill-amber-100 shrink-0" />
+                              <span>24h Push</span>
+                            </button>
+                          )}
+
                           {/* Auto-Fill Shift via Heuristic Engine */}
                           {!isFilled && (
                             <button

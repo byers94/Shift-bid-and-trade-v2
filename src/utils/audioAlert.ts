@@ -350,7 +350,7 @@ export function playLateAlertSound() {
 }
 
 /**
- * Break toggle chime (soft two-tone)
+ * Break Status Alert Sound
  */
 export function playBreakAlertSound() {
   try {
@@ -358,27 +358,61 @@ export function playBreakAlertSound() {
     if (!ctx) return;
 
     const now = ctx.currentTime;
-    const notes = [587.33, 739.99]; // D5 -> F#5
+    const notes = [440.0, 554.37, 659.25]; // A4, C#5, E5
     notes.forEach((freq, i) => {
-      const offset = i * 0.09;
+      const offset = i * 0.12;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
       osc.type = 'sine';
       osc.frequency.setValueAtTime(freq, now + offset);
-      gain.gain.setValueAtTime(0.14, now + offset);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.20);
+      gain.gain.setValueAtTime(0.15, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.25);
 
       osc.connect(gain);
       gain.connect(ctx.destination);
 
       osc.start(now + offset);
-      osc.stop(now + offset + 0.20);
+      osc.stop(now + offset + 0.25);
     });
   } catch (e) {
-    console.warn('Break sound could not be played:', e);
+    console.warn('Break alert audio could not be played:', e);
   }
 }
+
+/**
+ * Priority 24-Hour Shift Push Notification Chime
+ * Upbeat 3-tone rising alert (C5 -> E5 -> G5 -> C6) for high-priority open post broadcasts
+ */
+export function playPriorityShiftAlertSound() {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    // Fast 4-note ascending chord
+    const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+    notes.forEach((freq, i) => {
+      const offset = i * 0.08;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, now + offset);
+      gain.gain.setValueAtTime(0.20, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.28);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.28);
+    });
+  } catch (e) {
+    console.warn('Priority shift audio could not be played:', e);
+  }
+}
+
 
 
 

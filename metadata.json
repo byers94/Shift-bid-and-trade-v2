@@ -1,6 +1,9 @@
 {
   "name": "SecureShift - Shift Bidding & Trading",
   "description": "Dual-sided shift bidding and trading platform for security operations with Guard and Ops Admin command centers, featuring intelligent heuristic auto-fill shift assignment, real-time emergency broadcasts, and live guard compliance tracking.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

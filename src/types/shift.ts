@@ -50,6 +50,14 @@ export interface GuardProfile {
   certifications?: string[];
   notes?: string;
   hireDate?: string;
+  
+  // Guard Credentials & Biometrics Authentication
+  username?: string;
+  password?: string;
+  pin?: string;
+  biometricsEnabled?: boolean;
+  biometricCredentialId?: string;
+  lastLogin?: string;
 }
 
 export interface SwapProposal {
@@ -151,6 +159,8 @@ export type AdminActionType =
   | 'guard_break_ended'
   | 'shift_scheduled'
   | 'shift_reassigned'
+  | 'priority_broadcast_sent'
+  | 'priority_shift_claimed'
   | 'late_shift_alert_acknowledged'
   | 'system_reset';
 
@@ -217,11 +227,13 @@ export interface ShiftTemplate {
   createdAt?: string;
 }
 
-export type AlertNotificationCategory = 'emergency_alerts' | 'urgent_open_shifts' | 'trade_matches';
+export type AlertNotificationCategory = 'emergency_alerts' | 'urgent_open_shifts' | 'priority_next_24h' | 'trade_matches';
 
 export interface ShiftAlertPreferences {
   emergencyAlerts: boolean; // Critical broadcasts, lockdown & active threat notifications
   urgentOpenShifts: boolean; // Same-day / urgent unfilled shifts & priority open posts
+  priorityNext24hPush: boolean; // Priority push notification for unfilled shifts occurring in next 24h
+  minRestBufferHours: number; // Minimum rest buffer between shifts in hours (default: 6)
   tradeMatches: boolean; // Shift giveaways & swap proposals matching guard's sites or schedule
   siteQualifiedOnly: boolean; // Filter shift notifications to only sites guard is OJT-cleared for
   soundEnabled: boolean; // Play alert audio chime/siren for incoming notifications
@@ -229,6 +241,36 @@ export interface ShiftAlertPreferences {
   quietHoursStart: string; // "22:00"
   quietHoursEnd: string; // "06:00"
   notifyViaSms: boolean; // Dispatch fallback SMS dispatch alert
+}
+
+export interface PriorityShiftMatch {
+  shift: Shift;
+  startsInHours: number;
+  startsInMinutes: number;
+  isEligible: boolean;
+  hasOverlap: boolean;
+  overlappingShift?: ScheduledShift | Shift;
+  hasInsufficientRest: boolean;
+  restHoursBefore?: number;
+  restHoursAfter?: number;
+  adjacentShiftBefore?: ScheduledShift | Shift;
+  adjacentShiftAfter?: ScheduledShift | Shift;
+  conflictReason?: string;
+  isSiteQualified: boolean;
+  surgeBonusRate?: number; // e.g. +$3.50/hr urgency fill premium
+  startsAtIso: string;
+  endsAtIso: string;
+}
+
+export interface PriorityPushNotification {
+  id: string;
+  shiftId: string;
+  shift: Shift;
+  match: PriorityShiftMatch;
+  broadcastAt: string;
+  dismissed: boolean;
+  isSnoozed?: boolean;
+  snoozedUntil?: string;
 }
 
 export interface SiteFeedbackEntry {
@@ -300,6 +342,13 @@ export interface SiteProfile {
   status: 'active' | 'inactive' | 'maintenance';
   createdAt?: string;
   notes?: string;
+
+  // GPS Coordinates & Geofencing Configuration
+  latitude?: number;
+  longitude?: number;
+  geofenceRadiusMeters?: number; // Allowed clock-in perimeter (e.g. 50, 100, 200m)
+  requireGeofence?: boolean; // Whether GPS validation is mandatory
+  geofenceStrictEnforce?: boolean; // Whether out-of-bounds clock-ins are blocked vs logged
 }
 
 export type CallPriority = 'routine' | 'priority' | 'urgent_bolo';
@@ -509,9 +558,20 @@ export interface ScheduledShift {
   handoverSummary?: string;
   equipmentIssued?: string[]; // e.g. ["Radio Ch-3", "Bodycam #08", "Gate Fob #4"]
   
-  // Location & Verification
+  // Location, Geofence & Photo Verification
   gpsVerified?: boolean;
   siteProximityMeters?: number;
+  gpsCoordinates?: {
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+  };
+  geofencePassed?: boolean;
+  geofenceDistanceMeters?: number;
+  selfiePhotoUrl?: string; // Uniform verification selfie
+  equipmentPhotoUrl?: string; // Equipment verification photo
+  clockInVerifiedAt?: string;
+  verifiedByMethod?: 'biometrics' | 'credentials' | 'pin' | 'camera_gps';
   
   createdAt?: string;
 }
@@ -553,6 +613,10 @@ export interface GuardLiveTrackingItem {
   breakStartedAt?: string;
   lastKnownActivity?: string;
   equipmentList?: string[];
+  selfiePhotoUrl?: string;
+  equipmentPhotoUrl?: string;
+  geofencePassed?: boolean;
+  geofenceDistanceMeters?: number;
 }
 
 

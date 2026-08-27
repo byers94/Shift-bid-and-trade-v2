@@ -42,7 +42,12 @@ export const INITIAL_SITES: SiteProfile[] = [
     accessGateNotes: 'Gate B badge scanner with biometric backup. Truck scale lane requires manual visitor log.',
     status: 'active',
     createdAt: '2025-01-10T08:00:00Z',
-    notes: 'Primary maritime facility. High security perimeter with international shipping cargo.'
+    notes: 'Primary maritime facility. High security perimeter with international shipping cargo.',
+    latitude: 47.6117,
+    longitude: -122.3533,
+    geofenceRadiusMeters: 100,
+    requireGeofence: true,
+    geofenceStrictEnforce: false
   },
   {
     id: 'site-2',
@@ -68,7 +73,12 @@ export const INITIAL_SITES: SiteProfile[] = [
     accessGateNotes: 'Underground garage executive parking requires Level 3 gate key fob.',
     status: 'active',
     createdAt: '2025-01-15T08:00:00Z',
-    notes: 'Multi-tenant commercial high-rise with C-suite executive suites.'
+    notes: 'Multi-tenant commercial high-rise with C-suite executive suites.',
+    latitude: 47.6150,
+    longitude: -122.1950,
+    geofenceRadiusMeters: 120,
+    requireGeofence: true,
+    geofenceStrictEnforce: false
   },
   {
     id: 'site-3',
@@ -94,7 +104,12 @@ export const INITIAL_SITES: SiteProfile[] = [
     accessGateNotes: 'Ambulance bay overhead door code: #4092. Direct radio channel: MED-SEC 3.',
     status: 'active',
     createdAt: '2025-02-01T08:00:00Z',
-    notes: 'Level 1 Trauma center triage. Strict de-escalation credentials mandatory.'
+    notes: 'Level 1 Trauma center triage. Strict de-escalation credentials mandatory.',
+    latitude: 47.6075,
+    longitude: -122.3250,
+    geofenceRadiusMeters: 150,
+    requireGeofence: true,
+    geofenceStrictEnforce: false
   },
   {
     id: 'site-4',
@@ -120,7 +135,12 @@ export const INITIAL_SITES: SiteProfile[] = [
     accessGateNotes: 'TSA compliance strict checkpoint. Immediate report of unbadged individuals to Dispatch.',
     status: 'active',
     createdAt: '2025-02-15T08:00:00Z',
-    notes: 'Federal aviation security zone. Requires active SIDA clearance.'
+    notes: 'Federal aviation security zone. Requires active SIDA clearance.',
+    latitude: 47.4502,
+    longitude: -122.3088,
+    geofenceRadiusMeters: 200,
+    requireGeofence: true,
+    geofenceStrictEnforce: true
   },
   {
     id: 'site-5',
@@ -146,7 +166,12 @@ export const INITIAL_SITES: SiteProfile[] = [
     accessGateNotes: 'Service elevator key stored in Security Office Lockbox B.',
     status: 'active',
     createdAt: '2025-03-01T08:00:00Z',
-    notes: 'High-foot-traffic urban shopping center with direct transit connection.'
+    notes: 'High-foot-traffic urban shopping center with direct transit connection.',
+    latitude: 47.6125,
+    longitude: -122.3340,
+    geofenceRadiusMeters: 100,
+    requireGeofence: true,
+    geofenceStrictEnforce: false
   },
   {
     id: 'site-6',
@@ -172,7 +197,12 @@ export const INITIAL_SITES: SiteProfile[] = [
     accessGateNotes: 'Mantrap door 101 interlocking sequence. Two-person rule enforced in vault.',
     status: 'active',
     createdAt: '2025-03-10T08:00:00Z',
-    notes: 'Mission critical tier 4 server facility. Strict visitor logging.'
+    notes: 'Mission critical tier 4 server facility. Strict visitor logging.',
+    latitude: 47.6110,
+    longitude: -122.3380,
+    geofenceRadiusMeters: 75,
+    requireGeofence: true,
+    geofenceStrictEnforce: true
   },
   {
     id: 'site-7',
@@ -198,7 +228,12 @@ export const INITIAL_SITES: SiteProfile[] = [
     accessGateNotes: 'Loading dock requires advance dispatch manifest call-in.',
     status: 'active',
     createdAt: '2025-03-15T08:00:00Z',
-    notes: 'Financial services banking headquarters.'
+    notes: 'Financial services banking headquarters.',
+    latitude: 47.6045,
+    longitude: -122.3325,
+    geofenceRadiusMeters: 100,
+    requireGeofence: true,
+    geofenceStrictEnforce: false
   },
   {
     id: 'site-8',
@@ -224,7 +259,12 @@ export const INITIAL_SITES: SiteProfile[] = [
     accessGateNotes: 'South yard gate combination changed bi-weekly (check clipboard).',
     status: 'active',
     createdAt: '2025-03-20T08:00:00Z',
-    notes: 'Distribution center and multimodal shipping depot.'
+    notes: 'Distribution center and multimodal shipping depot.',
+    latitude: 47.5620,
+    longitude: -122.3410,
+    geofenceRadiusMeters: 250,
+    requireGeofence: true,
+    geofenceStrictEnforce: false
   },
   {
     id: 'site-9',
@@ -250,7 +290,12 @@ export const INITIAL_SITES: SiteProfile[] = [
     accessGateNotes: 'Valet bay dispatch channel: CH-4.',
     status: 'active',
     createdAt: '2025-04-01T08:00:00Z',
-    notes: 'Luxury hotel and convention ballroom facility.'
+    notes: 'Luxury hotel and convention ballroom facility.',
+    latitude: 47.6170,
+    longitude: -122.3210,
+    geofenceRadiusMeters: 80,
+    requireGeofence: true,
+    geofenceStrictEnforce: false
   },
   {
     id: 'site-10',
@@ -276,7 +321,12 @@ export const INITIAL_SITES: SiteProfile[] = [
     accessGateNotes: 'Platform tunnel access keys in station dispatch lockbox.',
     status: 'active',
     createdAt: '2025-04-10T08:00:00Z',
-    notes: 'Central urban light rail passenger terminal.'
+    notes: 'Central urban light rail passenger terminal.',
+    latitude: 47.5990,
+    longitude: -122.3300,
+    geofenceRadiusMeters: 100,
+    requireGeofence: true,
+    geofenceStrictEnforce: false
   },
   {
     id: 'site-11',
@@ -302,7 +352,12 @@ export const INITIAL_SITES: SiteProfile[] = [
     accessGateNotes: 'HAZMAT safety shower & windsock inspection checklist daily.',
     status: 'active',
     createdAt: '2025-04-15T08:00:00Z',
-    notes: 'Chemical refinery terminal. Armed response and HAZMAT clearance.'
+    notes: 'Chemical refinery terminal. Armed response and HAZMAT clearance.',
+    latitude: 47.5750,
+    longitude: -122.3520,
+    geofenceRadiusMeters: 150,
+    requireGeofence: true,
+    geofenceStrictEnforce: true
   },
   {
     id: 'site-12',
@@ -328,7 +383,12 @@ export const INITIAL_SITES: SiteProfile[] = [
     accessGateNotes: 'Curator vault door requires dual biometric sign-in.',
     status: 'active',
     createdAt: '2025-05-01T08:00:00Z',
-    notes: 'High-value art museum and exhibition galleries.'
+    notes: 'High-value art museum and exhibition galleries.',
+    latitude: 47.6070,
+    longitude: -122.3385,
+    geofenceRadiusMeters: 90,
+    requireGeofence: true,
+    geofenceStrictEnforce: false
   },
   {
     id: 'site-13',
@@ -354,7 +414,12 @@ export const INITIAL_SITES: SiteProfile[] = [
     accessGateNotes: 'Combination padlocks on north gate perimeter.',
     status: 'active',
     createdAt: '2026-08-10T08:00:00Z',
-    notes: 'Pending updated client emergency liaison contact details.'
+    notes: 'Pending updated client emergency liaison contact details.',
+    latitude: 47.5780,
+    longitude: -122.3130,
+    geofenceRadiusMeters: 150,
+    requireGeofence: true,
+    geofenceStrictEnforce: false
   },
   {
     id: 'site-14',
@@ -380,7 +445,12 @@ export const INITIAL_SITES: SiteProfile[] = [
     accessGateNotes: 'Keycard reader on security fence.',
     status: 'active',
     createdAt: '2026-08-18T08:00:00Z',
-    notes: 'Awaiting comprehensive post orders and facility directive documentation.'
+    notes: 'Awaiting comprehensive post orders and facility directive documentation.',
+    latitude: 47.5690,
+    longitude: -122.3480,
+    geofenceRadiusMeters: 100,
+    requireGeofence: true,
+    geofenceStrictEnforce: true
   }
 ];
 
@@ -435,6 +505,12 @@ export const CURRENT_GUARD: GuardProfile = {
   hireDate: '2024-03-15',
   notes: 'Senior patrol guard, reliable on maritime and commercial facilities.',
   ojtSites: ['Port Authority - Pier 7', 'Corporate HQ', 'Retail Plaza', 'West Medical Center'],
+  username: 'alex.mercer',
+  password: 'password123',
+  pin: '8842',
+  biometricsEnabled: true,
+  biometricCredentialId: 'bio-cred-8842',
+  lastLogin: '2026-08-27T06:30:00Z'
 };
 
 export const GUARDS_LIST: GuardProfile[] = [
@@ -451,6 +527,12 @@ export const GUARDS_LIST: GuardProfile[] = [
     hireDate: '2024-06-10',
     notes: 'Specialist in front-desk concierge and corporate patrol.',
     ojtSites: ['Hotel Lobby', 'Corporate HQ', 'Downtown Financial Center'],
+    username: 'sarah.jenkins',
+    password: 'password123',
+    pin: '7721',
+    biometricsEnabled: true,
+    biometricCredentialId: 'bio-cred-7721',
+    lastLogin: '2026-08-26T22:15:00Z'
   },
   {
     id: 'guard-102',
@@ -464,6 +546,11 @@ export const GUARDS_LIST: GuardProfile[] = [
     hireDate: '2026-01-08',
     notes: 'Recently onboarded; pending OJT clearance on Port Authority and Tech Campus.',
     ojtSites: ['Industrial Warehouse', 'Retail Plaza'], // Note: Not trained on Port Authority!
+    username: 'mike.chen',
+    password: 'password123',
+    pin: '9104',
+    biometricsEnabled: false,
+    lastLogin: '2026-08-25T18:00:00Z'
   },
   {
     id: 'guard-103',
@@ -477,6 +564,12 @@ export const GUARDS_LIST: GuardProfile[] = [
     hireDate: '2023-08-20',
     notes: 'Field Lead with TSA screener and aviation security credentials.',
     ojtSites: ['City Airport Gate 4', 'West Medical Center', 'Corporate HQ', 'Port Authority - Pier 7'],
+    username: 'marcus.wright',
+    password: 'password123',
+    pin: '6340',
+    biometricsEnabled: true,
+    biometricCredentialId: 'bio-cred-6340',
+    lastLogin: '2026-08-27T05:00:00Z'
   },
   {
     id: 'guard-104',
@@ -490,6 +583,12 @@ export const GUARDS_LIST: GuardProfile[] = [
     hireDate: '2024-11-04',
     notes: 'High-security facility clearance with biometric server room access.',
     ojtSites: ['Tech Campus North', 'City Airport Gate 4', 'Corporate HQ'],
+    username: 'elena.rostova',
+    password: 'password123',
+    pin: '4199',
+    biometricsEnabled: true,
+    biometricCredentialId: 'bio-cred-4199',
+    lastLogin: '2026-08-26T14:45:00Z'
   },
   {
     id: 'guard-105',
@@ -503,6 +602,11 @@ export const GUARDS_LIST: GuardProfile[] = [
     hireDate: '2025-02-17',
     notes: 'Experienced in port logistics and night industrial coverage.',
     ojtSites: ['Port Authority - Pier 7', 'Industrial Warehouse', 'Retail Plaza'],
+    username: 'david.silva',
+    password: 'password123',
+    pin: '5510',
+    biometricsEnabled: false,
+    lastLogin: '2026-08-24T19:20:00Z'
   },
   {
     id: 'guard-106',
@@ -516,6 +620,11 @@ export const GUARDS_LIST: GuardProfile[] = [
     hireDate: '2026-06-01',
     notes: 'New guard. Needs supervisor orientation before medical or airport postings.',
     ojtSites: ['Retail Plaza'],
+    username: 'jamar.vance',
+    password: 'password123',
+    pin: '3820',
+    biometricsEnabled: false,
+    lastLogin: '2026-08-23T08:10:00Z'
   },
   {
     id: 'guard-107',
@@ -538,16 +647,76 @@ export const GUARDS_LIST: GuardProfile[] = [
       'Hotel Lobby',
       'Industrial Warehouse'
     ],
+    username: 'chloe.bennett',
+    password: 'password123',
+    pin: '1102',
+    biometricsEnabled: true,
+    biometricCredentialId: 'bio-cred-1102',
+    lastLogin: '2026-08-27T04:15:00Z'
   }
 ];
 
+const getTodayDateStr = (offsetDays: number = 0): string => {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return d.toISOString().split('T')[0];
+};
+
 export const INITIAL_SHIFTS: Shift[] = [
+  {
+    id: 'shift-urg-24h-01',
+    siteName: 'West Medical Center - Emergency Dept',
+    address: '400 Healing Way, Gate 2, Seattle, WA 98104',
+    location: 'Triage ER Security Desk & Ambulance Bay',
+    date: getTodayDateStr(0),
+    startTime: '16:00',
+    endTime: '00:00',
+    hours: 8,
+    urgency: 'emergency',
+    status: 'open',
+    requiredCertifications: ['De-escalation', 'Crisis Prevention', 'CPR/AED'],
+    notes: 'Urgent unfilled vacancy: ER evening triage post. Rapid response required.',
+    createdAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+    bidsCount: 0,
+  },
+  {
+    id: 'shift-urg-24h-02',
+    siteName: 'Retail Plaza - Patrol',
+    address: '800 Pine St, Downtown Seattle, WA 98101',
+    location: 'North Galleria Outer Perimeter',
+    date: getTodayDateStr(0),
+    startTime: '18:00',
+    endTime: '02:00',
+    hours: 8,
+    urgency: 'emergency',
+    status: 'open',
+    requiredCertifications: ['Foot Patrol License', 'Guard Card'],
+    notes: 'Priority surge fill: Concourse closing security and safe escort.',
+    createdAt: new Date(Date.now() - 90 * 60 * 1000).toISOString(),
+    bidsCount: 1,
+  },
+  {
+    id: 'shift-urg-24h-03',
+    siteName: 'Port Authority - Pier 7',
+    address: '2200 Alaskan Way, Pier 7, Seattle, WA 98121',
+    location: 'Docklands Gate B, Berth 4 Cargo Scale',
+    date: getTodayDateStr(1),
+    startTime: '07:00',
+    endTime: '15:00',
+    hours: 8,
+    urgency: 'emergency',
+    status: 'open',
+    requiredCertifications: ['TWIC Card', 'Armed Endorsement'],
+    notes: 'Priority morning maritime convoy scale post. TWIC required.',
+    createdAt: new Date(Date.now() - 120 * 60 * 1000).toISOString(),
+    bidsCount: 0,
+  },
   {
     id: 'shift-101',
     siteName: 'Port Authority - Pier 7',
     address: '2200 Alaskan Way, Pier 7, Seattle, WA 98121',
     location: 'Docklands Gate B, Berth 4',
-    date: '2026-08-22',
+    date: getTodayDateStr(1),
     startTime: '19:00',
     endTime: '07:00',
     hours: 12,
@@ -563,7 +732,7 @@ export const INITIAL_SHIFTS: Shift[] = [
     siteName: 'Corporate HQ - Night Patrol',
     address: '500 Executive Blvd, Main Tower, Bellevue, WA 98004',
     location: 'Main Executive Tower & Perimeter',
-    date: '2026-08-23',
+    date: getTodayDateStr(2),
     startTime: '22:00',
     endTime: '06:00',
     hours: 8,
@@ -579,7 +748,7 @@ export const INITIAL_SHIFTS: Shift[] = [
     siteName: 'West Medical Center - Emergency Dept',
     address: '400 Healing Way, Gate 2, Seattle, WA 98104',
     location: 'Triage ER Security Desk',
-    date: '2026-08-21',
+    date: getTodayDateStr(2),
     startTime: '08:00',
     endTime: '16:00',
     hours: 8,
@@ -595,7 +764,7 @@ export const INITIAL_SHIFTS: Shift[] = [
     siteName: 'City Airport Gate 4',
     address: '17801 International Blvd, Seattle, WA 98158',
     location: 'Terminal B Security Checkpoint',
-    date: '2026-08-21',
+    date: getTodayDateStr(1),
     startTime: '12:00',
     endTime: '20:00',
     hours: 8,
@@ -613,7 +782,7 @@ export const INITIAL_SHIFTS: Shift[] = [
     siteName: 'Retail Plaza - Patrol',
     address: '800 Pine St, Downtown Seattle, WA 98101',
     location: 'North Galleria Outer Perimeter',
-    date: '2026-08-24',
+    date: getTodayDateStr(3),
     startTime: '14:00',
     endTime: '00:00',
     hours: 10,
@@ -629,7 +798,7 @@ export const INITIAL_SHIFTS: Shift[] = [
     siteName: 'Tech Campus North - Data Center',
     address: '1501 4th Ave, Tech District, Seattle, WA 98101',
     location: 'Building 4 Vault Facility',
-    date: '2026-08-25',
+    date: getTodayDateStr(3),
     startTime: '00:00',
     endTime: '08:00',
     hours: 8,
@@ -1115,6 +1284,8 @@ export const INITIAL_BIDS: BidRecord[] = [
 export const DEFAULT_ALERT_PREFERENCES: ShiftAlertPreferences = {
   emergencyAlerts: true,
   urgentOpenShifts: true,
+  priorityNext24hPush: true,
+  minRestBufferHours: 6,
   tradeMatches: true,
   siteQualifiedOnly: false,
   soundEnabled: true,

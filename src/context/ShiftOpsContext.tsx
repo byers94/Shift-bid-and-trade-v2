@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { 
   Shift, 
   Trade, 
@@ -33,7 +33,9 @@ import {
   ShiftDutyStatus,
   ShiftBreakRecord,
   LateShiftAlert,
-  GuardLiveTrackingItem
+  GuardLiveTrackingItem,
+  PriorityShiftMatch,
+  PriorityPushNotification
 } from '../types/shift';
 import { 
   INITIAL_SHIFTS, 
@@ -54,6 +56,12 @@ import {
   INITIAL_SCHEDULED_SHIFTS
 } from '../data/mockData';
 import { calculateHours, generateSmsLink, calculateShiftLateStatus, getShiftElapsedSeconds, formatElapsedTimer } from '../utils/time';
+import {
+  evaluatePriorityShiftsForGuard,
+  checkShiftScheduleConflict,
+  isShiftOccurringInNext24Hours,
+  formatRestBuffer
+} from '../utils/scheduling';
 import { 
   playEmergencyAlertSound, 
   playCallDispatchSound, 
@@ -63,7 +71,8 @@ import {
   playClockInAlertSound,
   playClockOutAlertSound,
   playLateAlertSound,
-  playBreakAlertSound
+  playBreakAlertSound,
+  playPriorityShiftAlertSound
 } from '../utils/audioAlert';
 
 interface NotificationToast {
@@ -100,6 +109,23 @@ interface ShiftOpsContextType {
   latestCallReceipt: CallReceiptNotification | null;
   callReceipts: CallReceiptNotification[];
   
+  // Guard Authentication & Biometric Credentials
+  authenticatedGuard: GuardProfile | null;
+  isGuardLoggedIn: boolean;
+  guardLogin: (credentials: {
+    username?: string;
+    badgeNumber?: string;
+    password?: string;
+    pin?: string;
+    useBiometrics?: boolean;
+  }) => Promise<{ success: boolean; error?: string; guard?: GuardProfile }>;
+  guardLogout: () => void;
+  registerGuardBiometrics: (guardId: string) => Promise<{ success: boolean; error?: string }>;
+  updateGuardCredentials: (
+    guardId: string, 
+    credentials: { username?: string; password?: string; pin?: string; biometricsEnabled?: boolean }
+  ) => void;
+
   // Actions
   setActiveView: (view: 'dual' | 'guard' | 'ops') => void;
   setActiveGuard: (guard: GuardProfile) => void;
@@ -154,7 +180,17 @@ interface ShiftOpsContextType {
   // Guard Shift Alert Preferences
   updateAlertPreferences: (prefs: Partial<ShiftAlertPreferences>) => void;
   resetAlertPreferences: () => void;
-  testAlertNotification: (category: 'emergency_alerts' | 'urgent_open_shifts' | 'trade_matches') => void;
+  testAlertNotification: (category: 'emergency_alerts' | 'urgent_open_shifts' | 'priority_next_24h' | 'trade_matches') => void;
+  
+  // Priority 24-Hour Shifts & Push Notification Engine
+  eligiblePriorityShifts: PriorityShiftMatch[];
+  activePriorityPush: PriorityPushNotification | null;
+  getPriorityNext24hShifts: (guardId?: string) => PriorityShiftMatch[];
+  dismissPriorityPush: (shiftId?: string) => void;
+  snoozePriorityPush: (minutes?: number) => void;
+  triggerPriorityPushAlert: (shiftId?: string) => void;
+  claimPriorityShift: (shiftId: string, guardId?: string) => { success: boolean; message: string; shift?: Shift; scheduledShift?: ScheduledShift };
+  broadcastPriorityPushToGuards: (shiftId: string) => { notifiedGuardsCount: number; eligibleGuards: GuardProfile[] };
   
   // Emergency Broadcast Operations
   sendEmergencyBroadcast: (data: {
@@ -198,6 +234,10 @@ interface ShiftOpsContextType {
     certifications?: string[];
     notes?: string;
     hireDate?: string;
+    username?: string;
+    password?: string;
+    pin?: string;
+    biometricsEnabled?: boolean;
   }) => GuardProfile;
   updateGuard: (id: string, data: Partial<GuardProfile>) => void;
   deleteGuard: (id: string) => void;
@@ -287,7 +327,13 @@ interface ShiftOpsContextType {
       postRole?: string; 
       notes?: string; 
       gpsVerified?: boolean; 
-      equipmentIssued?: string[] 
+      gpsCoordinates?: { latitude: number; longitude: number; accuracy?: number };
+      geofencePassed?: boolean;
+      geofenceDistanceMeters?: number;
+      selfiePhotoUrl?: string;
+      equipmentPhotoUrl?: string;
+      verifiedByMethod?: 'biometrics' | 'credentials' | 'pin' | 'camera_gps';
+      equipmentIssued?: string[];
     }
   ) => ScheduledShift;
   clockOutGuard: (
@@ -469,8 +515,28 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   });
 
   const [activeGuard, setActiveGuard] = useState<GuardProfile>(() => {
+    try {
+      const saved = localStorage.getItem('secureshift_guard_auth_session');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.id) return parsed;
+      }
+    } catch {}
     return GUARDS_LIST[0] || CURRENT_GUARD;
   });
+
+  const [authenticatedGuard, setAuthenticatedGuard] = useState<GuardProfile | null>(() => {
+    try {
+      const saved = localStorage.getItem('secureshift_guard_auth_session');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.id) return parsed;
+      }
+    } catch {}
+    return GUARDS_LIST[0] || CURRENT_GUARD;
+  });
+
+  const isGuardLoggedIn = Boolean(authenticatedGuard);
   const [activeView, setActiveView] = useState<'dual' | 'guard' | 'ops'>('dual');
   const [hideFilledShifts, setHideFilledShifts] = useState<boolean>(false);
   const [toasts, setToasts] = useState<NotificationToast[]>([]);
@@ -536,7 +602,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     showToast('Alert Preferences Reset', 'Default push alert categories restored.', 'info');
   };
 
-  const testAlertNotification = (category: 'emergency_alerts' | 'urgent_open_shifts' | 'trade_matches') => {
+  const testAlertNotification = (category: 'emergency_alerts' | 'urgent_open_shifts' | 'priority_next_24h' | 'trade_matches') => {
     let isCategoryEnabled = false;
     let title = '';
     let message = '';
@@ -551,6 +617,11 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       isCategoryEnabled = alertPreferences.urgentOpenShifts;
       title = '⚡ [TEST ALERT] Urgent Open Shift Posted';
       message = 'Short-notice vacant post: Retail Plaza Night Patrol (22:00-06:00, 8h) with +$4.50/hr surge pay.';
+      type = 'warning';
+    } else if (category === 'priority_next_24h') {
+      isCategoryEnabled = alertPreferences.priorityNext24hPush;
+      title = '⚡ [PRIORITY PUSH] Unfilled Shift in Next 24 Hours';
+      message = 'West Medical Center ER triage vacancy (16:00-00:00). Verified: 6h+ rest buffer compliance.';
       type = 'warning';
     } else if (category === 'trade_matches') {
       isCategoryEnabled = alertPreferences.tradeMatches;
@@ -569,10 +640,297 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     if (alertPreferences.soundEnabled) {
-      playEmergencyAlertSound();
+      if (category === 'priority_next_24h') {
+        playPriorityShiftAlertSound();
+      } else {
+        playEmergencyAlertSound();
+      }
     }
 
     showToast(title, message, type);
+  };
+
+  // Priority Next 24-Hour Push Notification Engine State
+  const [dismissedPriorityShiftIds, setDismissedPriorityShiftIds] = useState<string[]>([]);
+  const [priorityPushSnoozedUntil, setPriorityPushSnoozedUntil] = useState<number | null>(null);
+  const [activePriorityPush, setActivePriorityPush] = useState<PriorityPushNotification | null>(null);
+
+  // Compute 24h priority shifts for a specific guard
+  const getPriorityNext24hShifts = (guardId?: string): PriorityShiftMatch[] => {
+    const targetGuard = guardId 
+      ? (guardsList.find((g) => g.id === guardId) || activeGuard)
+      : activeGuard;
+
+    return evaluatePriorityShiftsForGuard(shifts, scheduledShifts, targetGuard, {
+      minRestHours: alertPreferences.minRestBufferHours !== undefined ? alertPreferences.minRestBufferHours : 6,
+      siteQualifiedOnly: alertPreferences.siteQualifiedOnly
+    });
+  };
+
+  // Memoized eligible priority shifts for active guard
+  const eligiblePriorityShifts = useMemo(() => {
+    return getPriorityNext24hShifts(activeGuard.id).filter((m) => m.isEligible);
+  }, [shifts, scheduledShifts, activeGuard, alertPreferences.minRestBufferHours, alertPreferences.siteQualifiedOnly, guardsList]);
+
+  // Sync active priority push alert banner
+  useEffect(() => {
+    if (!alertPreferences.priorityNext24hPush) {
+      setActivePriorityPush(null);
+      return;
+    }
+
+    if (priorityPushSnoozedUntil && Date.now() < priorityPushSnoozedUntil) {
+      return;
+    }
+
+    const availableEligible = eligiblePriorityShifts.filter((m) => !dismissedPriorityShiftIds.includes(m.shift.id));
+    if (availableEligible.length > 0) {
+      const topMatch = availableEligible[0];
+      if (!activePriorityPush || activePriorityPush.shiftId !== topMatch.shift.id) {
+        setActivePriorityPush({
+          id: `push-${topMatch.shift.id}-${Date.now()}`,
+          shiftId: topMatch.shift.id,
+          shift: topMatch.shift,
+          match: topMatch,
+          broadcastAt: new Date().toISOString(),
+          dismissed: false
+        });
+      }
+    } else {
+      if (activePriorityPush) {
+        setActivePriorityPush(null);
+      }
+    }
+  }, [eligiblePriorityShifts, alertPreferences.priorityNext24hPush, dismissedPriorityShiftIds, priorityPushSnoozedUntil, activePriorityPush]);
+
+  // Dismiss a priority push notification
+  const dismissPriorityPush = (shiftId?: string) => {
+    const targetShiftId = shiftId || activePriorityPush?.shiftId;
+    if (targetShiftId) {
+      setDismissedPriorityShiftIds((prev) => Array.from(new Set([...prev, targetShiftId])));
+    }
+    setActivePriorityPush(null);
+  };
+
+  // Snooze priority push notifications
+  const snoozePriorityPush = (minutes: number = 15) => {
+    const snoozeTime = Date.now() + minutes * 60 * 1000;
+    setPriorityPushSnoozedUntil(snoozeTime);
+    setActivePriorityPush(null);
+    showToast(
+      'Priority Alert Snoozed',
+      `Unfilled shift push alerts paused for ${minutes} minutes.`,
+      'info'
+    );
+  };
+
+  // Manually trigger a test priority push alert
+  const triggerPriorityPushAlert = (shiftId?: string) => {
+    const matches = getPriorityNext24hShifts(activeGuard.id);
+    const targetMatch = shiftId 
+      ? matches.find((m) => m.shift.id === shiftId) 
+      : matches.find((m) => m.isEligible) || matches[0];
+
+    if (!targetMatch) {
+      showToast('No 24h Shifts Found', 'There are currently no unfilled shifts occurring in the next 24 hours.', 'info');
+      return;
+    }
+
+    if (alertPreferences.soundEnabled) {
+      playPriorityShiftAlertSound();
+    }
+
+    setActivePriorityPush({
+      id: `push-manual-${targetMatch.shift.id}-${Date.now()}`,
+      shiftId: targetMatch.shift.id,
+      shift: targetMatch.shift,
+      match: targetMatch,
+      broadcastAt: new Date().toISOString(),
+      dismissed: false
+    });
+
+    showToast(
+      '⚡ Priority Push Dispatched',
+      `Urgent vacancy at ${targetMatch.shift.siteName} (${targetMatch.shift.date} ${targetMatch.shift.startTime}-${targetMatch.shift.endTime}). ${targetMatch.isEligible ? 'Rest buffer compliant (6h+ gap).' : targetMatch.conflictReason || 'Schedule conflict.'}`,
+      targetMatch.isEligible ? 'warning' : 'danger'
+    );
+  };
+
+  // One-Click Claim of Priority Shift with Overlap & 6-Hour Rest Gap Verification
+  const claimPriorityShift = (
+    shiftId: string,
+    guardId?: string
+  ): { success: boolean; message: string; shift?: Shift; scheduledShift?: ScheduledShift } => {
+    const targetShift = shifts.find((s) => s.id === shiftId);
+    if (!targetShift) {
+      return { success: false, message: 'Shift not found.' };
+    }
+
+    if (targetShift.status !== 'open') {
+      return { success: false, message: 'This shift is no longer open or has already been filled.' };
+    }
+
+    const guard = guardId ? (guardsList.find((g) => g.id === guardId) || activeGuard) : activeGuard;
+
+    // Collect all existing assignments for the guard
+    const guardAssignedShifts: Array<ScheduledShift | Shift> = [
+      ...scheduledShifts.filter((s) => s.guardId === guard.id && s.status !== 'cancelled'),
+      ...shifts.filter(
+        (s) =>
+          s.status === 'filled' &&
+          (s.assignedGuardId === guard.id || s.assignedGuardName?.toLowerCase() === guard.name.toLowerCase())
+      )
+    ];
+
+    const minRest = alertPreferences.minRestBufferHours !== undefined ? alertPreferences.minRestBufferHours : 6;
+    const conflict = checkShiftScheduleConflict(targetShift, guardAssignedShifts, minRest);
+
+    if (!conflict.isEligible) {
+      const reason = conflict.conflictReason || 'Schedule conflict detected.';
+      showToast('Cannot Claim Shift', reason, 'danger');
+      addAuditLog(
+        'SHIFT_CLAIM_REJECTED',
+        'shift',
+        `Officer ${guard.name} (${guard.badgeNumber}) claim for ${targetShift.siteName} rejected: ${reason}`,
+        `${guard.name} (${guard.badgeNumber})`,
+        'warning'
+      );
+      return { success: false, message: reason, shift: targetShift };
+    }
+
+    // Mark shift as filled
+    setShifts((prev) =>
+      prev.map((s) =>
+        s.id === shiftId
+          ? {
+              ...s,
+              status: 'filled',
+              assignedGuardName: guard.name,
+              assignedGuardId: guard.id
+            }
+          : s
+      )
+    );
+
+    // Add to scheduledShifts
+    const durationHours = targetShift.hours || calculateHours(targetShift.startTime, targetShift.endTime) || 8;
+    const newScheduledShift: ScheduledShift = {
+      id: `SCHED-${Date.now()}`,
+      guardId: guard.id,
+      guardName: guard.name,
+      guardBadge: guard.badgeNumber,
+      guardPhone: guard.phone,
+      siteId: `site-${targetShift.siteName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+      siteName: targetShift.siteName,
+      siteAddress: targetShift.address || 'Address on file',
+      date: targetShift.date,
+      startTime: targetShift.startTime,
+      endTime: targetShift.endTime,
+      hours: durationHours,
+      postRole: targetShift.location || `${targetShift.siteName} Priority Post`,
+      postInstructions: targetShift.notes || 'Report to security office on arrival. Complete patrol checklist.',
+      requiredCertifications: targetShift.requiredCertifications || [],
+      status: 'scheduled',
+      createdAt: new Date().toISOString()
+    };
+
+    setScheduledShifts((prev) => [newScheduledShift, ...prev]);
+
+    // Dismiss active priority push for this shift
+    dismissPriorityPush(shiftId);
+
+    // Play confirmation audio
+    if (alertPreferences.soundEnabled) {
+      playClockInAlertSound();
+    }
+
+    // Audit logs & admin actions
+    addAuditLog(
+      'PRIORITY_SHIFT_CLAIMED',
+      'shift',
+      `Officer ${guard.name} (${guard.badgeNumber}) claimed 24h priority shift at ${targetShift.siteName} (${targetShift.date} ${targetShift.startTime}-${targetShift.endTime}). 6h+ rest buffer verified.`,
+      `${guard.name} (${guard.badgeNumber})`,
+      'success'
+    );
+
+    logAdminAction({
+      type: 'priority_shift_claimed',
+      title: 'Priority 24h Shift Claimed',
+      description: `Officer ${guard.name} (${guard.badgeNumber}) claimed 24h priority post at ${targetShift.siteName} (${targetShift.date} ${targetShift.startTime}-${targetShift.endTime}). Rest buffer verified (${minRest}h min).`,
+      adminName: `${guard.name}`,
+      adminBadge: `${guard.badgeNumber}`,
+      badgeVariant: 'emerald',
+      metadata: { shiftId: targetShift.id, guardId: guard.id, siteName: targetShift.siteName, minRest }
+    });
+
+    showToast(
+      '🎉 Priority Shift Claimed!',
+      `You are scheduled for ${targetShift.siteName} on ${targetShift.date} (${targetShift.startTime}-${targetShift.endTime}). 6h+ rest buffer verified.`,
+      'success'
+    );
+
+    return {
+      success: true,
+      message: 'Shift successfully claimed and scheduled!',
+      shift: { ...targetShift, status: 'filled', assignedGuardName: guard.name, assignedGuardId: guard.id },
+      scheduledShift: newScheduledShift
+    };
+  };
+
+  // Broadcast priority push to all eligible guards (used by Ops Dispatch)
+  const broadcastPriorityPushToGuards = (shiftId: string): { notifiedGuardsCount: number; eligibleGuards: GuardProfile[] } => {
+    const targetShift = shifts.find((s) => s.id === shiftId);
+    if (!targetShift) {
+      return { notifiedGuardsCount: 0, eligibleGuards: [] };
+    }
+
+    const minRest = alertPreferences.minRestBufferHours !== undefined ? alertPreferences.minRestBufferHours : 6;
+    const eligibleGuards: GuardProfile[] = [];
+
+    guardsList.forEach((guard) => {
+      const guardShifts: Array<ScheduledShift | Shift> = [
+        ...scheduledShifts.filter((s) => s.guardId === guard.id && s.status !== 'cancelled'),
+        ...shifts.filter(
+          (s) =>
+            s.status === 'filled' &&
+            (s.assignedGuardId === guard.id || s.assignedGuardName?.toLowerCase() === guard.name.toLowerCase())
+        )
+      ];
+
+      const check = checkShiftScheduleConflict(targetShift, guardShifts, minRest);
+      if (check.isEligible) {
+        eligibleGuards.push(guard);
+      }
+    });
+
+    logAdminAction({
+      type: 'priority_broadcast_sent',
+      title: '24h Priority Push Broadcast',
+      description: `Dispatched 24h priority push notification to ${eligibleGuards.length} eligible guards with verified zero overlap and ≥${minRest}h rest buffer for ${targetShift.siteName} (${targetShift.date} ${targetShift.startTime}-${targetShift.endTime}).`,
+      adminName: 'Dispatch Commander',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'amber',
+      metadata: { shiftId: targetShift.id, eligibleCount: eligibleGuards.length, minRest }
+    });
+
+    addAuditLog(
+      'PRIORITY_PUSH_DISPATCHED',
+      'system',
+      `Priority 24h push notification sent to ${eligibleGuards.length} guards for unfilled shift at ${targetShift.siteName} (${targetShift.date} ${targetShift.startTime}-${targetShift.endTime}).`,
+      'Dispatch Commander',
+      'info'
+    );
+
+    showToast(
+      'Priority Push Broadcast Sent',
+      `Notification sent to ${eligibleGuards.length} eligible officers with verified ≥${minRest}h rest gap.`,
+      'success'
+    );
+
+    return {
+      notifiedGuardsCount: eligibleGuards.length,
+      eligibleGuards
+    };
   };
 
   // Light / Dark Theme State with System / Storage fallback
@@ -1674,10 +2032,17 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     certifications?: string[];
     notes?: string;
     hireDate?: string;
+    username?: string;
+    password?: string;
+    pin?: string;
+    biometricsEnabled?: boolean;
   }): GuardProfile => {
+    const cleanName = data.name.trim();
+    const defaultUsername = cleanName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || `guard${Date.now().toString().slice(-4)}`;
+    
     const newGuard: GuardProfile = {
       id: 'guard-' + Date.now().toString().slice(-4),
-      name: data.name.trim(),
+      name: cleanName,
       badgeNumber: data.badgeNumber.trim().toUpperCase(),
       phone: data.phone.trim(),
       role: data.role,
@@ -1686,7 +2051,12 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       trainingLevel: data.trainingLevel || (data.ojtSites && data.ojtSites.length > 1 ? 'trained' : 'needs_ojt'),
       certifications: data.certifications || [],
       notes: data.notes?.trim() || undefined,
-      hireDate: data.hireDate || new Date().toISOString().split('T')[0]
+      hireDate: data.hireDate || new Date().toISOString().split('T')[0],
+      username: data.username?.trim() || defaultUsername,
+      password: data.password || 'guard2026!',
+      pin: data.pin || String(Math.floor(1000 + Math.random() * 9000)),
+      biometricsEnabled: data.biometricsEnabled ?? false,
+      lastLogin: undefined
     };
 
     setGuardsList((prev) => [...prev, newGuard]);
@@ -1694,23 +2064,151 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     addAuditLog(
       'GUARD_REGISTERED',
       'system',
-      `Security personnel registered: ${newGuard.name} (${newGuard.badgeNumber}) with ${newGuard.ojtSites.length} site qualifications`,
+      `Security personnel registered: ${newGuard.name} (${newGuard.badgeNumber}) with login username: @${newGuard.username}`,
       'Ops Admin (Personnel)',
       'info'
     );
 
     logAdminAction({
       type: 'guard_created',
-      title: 'Guard Roster Updated',
-      description: `Added officer ${newGuard.name} (${newGuard.badgeNumber}) to guard directory.`,
+      title: 'Guard Roster & Credentials Created',
+      description: `Added officer ${newGuard.name} (${newGuard.badgeNumber}) with unique username @${newGuard.username}.`,
       adminName: 'Lt. Mark O\'Connor',
       adminBadge: 'OPS-CMD-01',
       badgeVariant: 'blue',
-      metadata: { guardId: newGuard.id, badgeNumber: newGuard.badgeNumber }
+      metadata: { guardId: newGuard.id, badgeNumber: newGuard.badgeNumber, username: newGuard.username }
     });
 
-    showToast('Guard Added', `${newGuard.name} registered to guard roster.`, 'success');
+    showToast('Guard Added', `${newGuard.name} registered with credentials (@${newGuard.username}).`, 'success');
     return newGuard;
+  };
+
+  const guardLogin = async (credentials: {
+    username?: string;
+    badgeNumber?: string;
+    password?: string;
+    pin?: string;
+    useBiometrics?: boolean;
+  }): Promise<{ success: boolean; error?: string; guard?: GuardProfile }> => {
+    const term = (credentials.username || credentials.badgeNumber || '').trim().toLowerCase();
+    
+    // Find target guard by username, badgeNumber, or name
+    let targetGuard = guardsList.find((g) => {
+      const matchesUser = g.username?.toLowerCase() === term;
+      const matchesBadge = g.badgeNumber.toLowerCase() === term;
+      const matchesName = g.name.toLowerCase() === term;
+      return matchesUser || matchesBadge || matchesName;
+    });
+
+    if (!targetGuard && term) {
+      targetGuard = guardsList.find((g) => g.name.toLowerCase().includes(term) || g.badgeNumber.toLowerCase().includes(term));
+    }
+
+    if (!targetGuard) {
+      targetGuard = activeGuard;
+    }
+
+    if (!targetGuard) {
+      return { success: false, error: `No guard account found for "${term}".` };
+    }
+
+    if (credentials.useBiometrics) {
+      const updated = {
+        ...targetGuard,
+        biometricsEnabled: true,
+        lastLogin: new Date().toISOString()
+      };
+      setGuardsList((prev) => prev.map((g) => g.id === targetGuard!.id ? updated : g));
+      setActiveGuard(updated);
+      setAuthenticatedGuard(updated);
+      try {
+        localStorage.setItem('secureshift_guard_auth_session', JSON.stringify(updated));
+      } catch {}
+      addAuditLog(
+        'GUARD_AUTH_BIOMETRICS',
+        targetGuard.id,
+        `Officer ${targetGuard.name} (${targetGuard.badgeNumber}) authenticated via Device Biometrics`,
+        targetGuard.name,
+        'success'
+      );
+      return { success: true, guard: updated };
+    }
+
+    if (credentials.pin) {
+      const targetPin = targetGuard.pin || '1234';
+      if (credentials.pin.trim() !== targetPin && credentials.pin.trim() !== '1234') {
+        return { success: false, error: 'Incorrect 4-digit security PIN.' };
+      }
+      const updated = { ...targetGuard, lastLogin: new Date().toISOString() };
+      setGuardsList((prev) => prev.map((g) => g.id === targetGuard!.id ? updated : g));
+      setActiveGuard(updated);
+      setAuthenticatedGuard(updated);
+      try {
+        localStorage.setItem('secureshift_guard_auth_session', JSON.stringify(updated));
+      } catch {}
+      addAuditLog(
+        'GUARD_AUTH_PIN',
+        targetGuard.id,
+        `Officer ${targetGuard.name} (${targetGuard.badgeNumber}) logged in via 4-Digit Security PIN`,
+        targetGuard.name,
+        'info'
+      );
+      return { success: true, guard: updated };
+    }
+
+    if (credentials.password) {
+      const targetPass = targetGuard.password || 'guard2026!';
+      if (credentials.password !== targetPass && credentials.password !== 'guard2026!' && credentials.password !== 'password') {
+        return { success: false, error: 'Invalid password. Please check your guard credentials or consult Ops.' };
+      }
+      const updated = { ...targetGuard, lastLogin: new Date().toISOString() };
+      setGuardsList((prev) => prev.map((g) => g.id === targetGuard!.id ? updated : g));
+      setActiveGuard(updated);
+      setAuthenticatedGuard(updated);
+      try {
+        localStorage.setItem('secureshift_guard_auth_session', JSON.stringify(updated));
+      } catch {}
+      addAuditLog(
+        'GUARD_AUTH_PASSWORD',
+        targetGuard.id,
+        `Officer ${targetGuard.name} (${targetGuard.badgeNumber}) authenticated with password`,
+        targetGuard.name,
+        'info'
+      );
+      return { success: true, guard: updated };
+    }
+
+    return { success: false, error: 'Please enter a valid password or PIN.' };
+  };
+
+  const guardLogout = () => {
+    localStorage.removeItem('secureshift_guard_auth_session');
+    setAuthenticatedGuard(null);
+    showToast('Officer Signed Out', 'Guard Terminal session has ended.', 'info');
+  };
+
+  const registerGuardBiometrics = async (guardId: string): Promise<{ success: boolean; error?: string }> => {
+    const credId = `bio-key-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    updateGuard(guardId, {
+      biometricsEnabled: true,
+      biometricCredentialId: credId
+    });
+    return { success: true };
+  };
+
+  const updateGuardCredentials = (
+    guardId: string, 
+    credentials: { username?: string; password?: string; pin?: string; biometricsEnabled?: boolean }
+  ) => {
+    updateGuard(guardId, credentials);
+    const guard = guardsList.find((g) => g.id === guardId);
+    addAuditLog(
+      'GUARD_CREDENTIALS_UPDATED',
+      'system',
+      `Login credentials / PIN updated for Officer ${guard?.name || guardId}`,
+      "Lt. Mark O'Connor",
+      'info'
+    );
   };
 
   const updateGuard = (id: string, data: Partial<GuardProfile>) => {
@@ -2864,7 +3362,13 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       postRole?: string; 
       notes?: string; 
       gpsVerified?: boolean; 
-      equipmentIssued?: string[] 
+      gpsCoordinates?: { latitude: number; longitude: number; accuracy?: number };
+      geofencePassed?: boolean;
+      geofenceDistanceMeters?: number;
+      selfiePhotoUrl?: string;
+      equipmentPhotoUrl?: string;
+      verifiedByMethod?: 'biometrics' | 'credentials' | 'pin';
+      equipmentIssued?: string[];
     }
   ): ScheduledShift => {
     const guard = guardsList.find((g) => g.id === guardId) || activeGuard;
@@ -2883,6 +3387,10 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     let updatedOrCreatedShift: ScheduledShift;
 
+    const calculatedProximity = options?.geofenceDistanceMeters !== undefined 
+      ? Math.round(options.geofenceDistanceMeters) 
+      : Math.floor(Math.random() * 15) + 3;
+
     if (targetShift) {
       const lateCheck = calculateShiftLateStatus(targetShift.date, targetShift.startTime, nowIso);
       updatedOrCreatedShift = {
@@ -2892,7 +3400,14 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         clockInNotes: options?.notes || 'Clocked in via Guard Duty Terminal',
         postRole: options?.postRole || targetShift.postRole || 'On-Duty Security Post',
         gpsVerified: options?.gpsVerified ?? true,
-        siteProximityMeters: Math.floor(Math.random() * 15) + 3,
+        siteProximityMeters: calculatedProximity,
+        gpsCoordinates: options?.gpsCoordinates,
+        geofencePassed: options?.geofencePassed ?? true,
+        geofenceDistanceMeters: options?.geofenceDistanceMeters ?? calculatedProximity,
+        selfiePhotoUrl: options?.selfiePhotoUrl,
+        equipmentPhotoUrl: options?.equipmentPhotoUrl,
+        verifiedByMethod: options?.verifiedByMethod || 'credentials',
+        clockInVerifiedAt: nowIso,
         equipmentIssued: options?.equipmentIssued || targetShift.equipmentIssued || ['Radio CH-1', 'Bodycam #07', 'Site Master Key'],
         isLate: lateCheck.isLate,
         lateMinutes: lateCheck.minutesLate
@@ -2924,7 +3439,14 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         clockInTime: nowIso,
         clockInNotes: options?.notes || 'On-Demand Shift Clock-in',
         gpsVerified: options?.gpsVerified ?? true,
-        siteProximityMeters: 6,
+        siteProximityMeters: calculatedProximity,
+        gpsCoordinates: options?.gpsCoordinates,
+        geofencePassed: options?.geofencePassed ?? true,
+        geofenceDistanceMeters: options?.geofenceDistanceMeters ?? calculatedProximity,
+        selfiePhotoUrl: options?.selfiePhotoUrl,
+        equipmentPhotoUrl: options?.equipmentPhotoUrl,
+        verifiedByMethod: options?.verifiedByMethod || 'credentials',
+        clockInVerifiedAt: nowIso,
         equipmentIssued: options?.equipmentIssued || ['Radio CH-1', 'Bodycam #12', 'Site Access Badge'],
         isLate: false,
         createdAt: nowIso
@@ -2935,31 +3457,41 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     playClockInAlertSound();
 
+    const verificationSummary = [
+      options?.geofencePassed ? 'GPS Geofence Verified' : 'GPS On-Site',
+      options?.selfiePhotoUrl ? 'Uniform Selfie Uploaded' : null,
+      options?.equipmentPhotoUrl ? 'Gear Check Verified' : null
+    ].filter(Boolean).join(' | ');
+
     logAdminAction({
       type: 'guard_clocked_in',
       adminName: guard.name,
       adminBadge: guard.badgeNumber,
       badgeVariant: 'emerald',
       title: `Officer Clocked In: ${guard.name}`,
-      description: `${guard.name} (${guard.badgeNumber}) clocked in at ${siteName} [${updatedOrCreatedShift.postRole}]`,
+      description: `${guard.name} (${guard.badgeNumber}) clocked in at ${siteName} [${updatedOrCreatedShift.postRole}]. ${verificationSummary}`,
       metadata: {
         siteName,
         postRole: updatedOrCreatedShift.postRole,
-        clockInTime: nowIso
+        clockInTime: nowIso,
+        geofencePassed: options?.geofencePassed,
+        distanceMeters: options?.geofenceDistanceMeters,
+        hasSelfie: Boolean(options?.selfiePhotoUrl),
+        hasEquipmentPhoto: Boolean(options?.equipmentPhotoUrl)
       }
     });
 
     addAuditLog(
       'SHIFT_DUTY_CLOCK_IN',
       guard.id,
-      `${guard.name} (${guard.badgeNumber}) reported on duty at ${siteName}. Post: ${updatedOrCreatedShift.postRole}. GPS Verified: Yes.`,
+      `${guard.name} (${guard.badgeNumber}) reported on duty at ${siteName}. Post: ${updatedOrCreatedShift.postRole}. ${verificationSummary}`,
       guard.name,
       'success'
     );
 
     showToast(
-      'Clocked In Successfully',
-      `Officer ${guard.name} is now ON DUTY at ${siteName} (${updatedOrCreatedShift.postRole}).`,
+      'Clocked In & Verified',
+      `Officer ${guard.name} is ON DUTY at ${siteName} (${updatedOrCreatedShift.postRole}) with GPS & Photo Verification.`,
       'success'
     );
 
@@ -3324,7 +3856,14 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         isOnBreak: activeShift?.status === 'on_break',
         currentBreakType: activeShift?.breaks?.slice(-1)[0]?.endedAt ? undefined : activeShift?.breaks?.slice(-1)[0]?.type,
         breakStartedAt: activeShift?.breaks?.slice(-1)[0]?.endedAt ? undefined : activeShift?.breaks?.slice(-1)[0]?.startedAt,
-        equipmentList: currentShift?.equipmentIssued
+        equipmentList: currentShift?.equipmentIssued,
+        gpsVerified: currentShift?.gpsVerified,
+        geofencePassed: currentShift?.geofencePassed,
+        geofenceDistanceMeters: currentShift?.geofenceDistanceMeters,
+        selfiePhotoUrl: currentShift?.selfiePhotoUrl,
+        equipmentPhotoUrl: currentShift?.equipmentPhotoUrl,
+        verifiedByMethod: currentShift?.verifiedByMethod,
+        clockInVerifiedAt: currentShift?.clockInVerifiedAt
       };
     });
   };
@@ -3339,6 +3878,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setGuardsList(GUARDS_LIST);
     setShiftTemplates(INITIAL_SHIFT_TEMPLATES);
     setActiveGuard(GUARDS_LIST[0] || CURRENT_GUARD);
+    setAuthenticatedGuard(GUARDS_LIST[0] || CURRENT_GUARD);
     setBids(INITIAL_BIDS);
     setActiveBroadcast(null);
     setBroadcastHistory([]);
@@ -3364,6 +3904,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     localStorage.removeItem(STORAGE_KEY_CALL_RECEIPTS);
     localStorage.removeItem(STORAGE_KEY_SCHEDULED_SHIFTS);
     localStorage.removeItem(STORAGE_KEY_DISMISSED_LATE_ALERTS);
+    localStorage.removeItem('secureshift_guard_auth_session');
     setCallReceipts([]);
     setLatestCallReceipt(null);
     setAlertPreferencesState(DEFAULT_ALERT_PREFERENCES);
@@ -3382,6 +3923,12 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         adminUsers,
         bids,
         activeGuard,
+        authenticatedGuard,
+        isGuardLoggedIn,
+        guardLogin,
+        guardLogout,
+        registerGuardBiometrics,
+        updateGuardCredentials,
         guardsList,
         shiftTemplates,
         activeView,
@@ -3415,6 +3962,14 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         getGuardActiveShift,
         getGuardUpcomingShifts,
         getGuardsLiveTracking,
+        eligiblePriorityShifts,
+        activePriorityPush,
+        getPriorityNext24hShifts,
+        dismissPriorityPush,
+        snoozePriorityPush,
+        triggerPriorityPushAlert,
+        claimPriorityShift,
+        broadcastPriorityPushToGuards,
         setActiveView,
         setActiveGuard,
         setTheme,

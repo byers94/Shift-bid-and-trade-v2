@@ -7,6 +7,8 @@ import { GuardDutyTerminal } from './GuardDutyTerminal';
 import { CallAlertModal } from './CallAlertModal';
 import { EmergencyAlertOverlay } from './EmergencyAlertOverlay';
 import { ShiftAlertPreferencesModal } from './ShiftAlertPreferencesModal';
+import { GuardLoginModal } from './GuardLoginModal';
+import { PriorityShiftPushBanner } from './PriorityShiftPushBanner';
 import { 
   Shield, 
   UserCheck, 
@@ -23,7 +25,11 @@ import {
   RefreshCw,
   Clock,
   CheckCircle2,
-  MapPin
+  MapPin,
+  Fingerprint,
+  KeyRound,
+  LogOut,
+  UserPlus
 } from 'lucide-react';
 
 interface GuardViewProps {
@@ -33,6 +39,9 @@ interface GuardViewProps {
 export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) => {
   const { 
     activeGuard, 
+    authenticatedGuard,
+    isGuardLoggedIn,
+    guardLogout,
     guardsList, 
     setActiveGuard, 
     shifts, 
@@ -42,11 +51,13 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
     opsPhone, 
     theme, 
     toggleTheme,
-    alertPreferences 
+    alertPreferences,
+    eligiblePriorityShifts
   } = useShiftOps();
   const [activeTab, setActiveTab] = useState<'duty_post' | 'open_board' | 'trade_board' | 'active_calls'>('duty_post');
   const [showGuardMenu, setShowGuardMenu] = useState(false);
   const [isAlertPrefsOpen, setIsAlertPrefsOpen] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
   const openShiftsCount = shifts.filter((s) => s.status === 'open').length;
   const activeTradesCount = trades.filter((t) => t.status === 'active' || t.status === 'pending_swap').length;
@@ -76,6 +87,16 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
       <ShiftAlertPreferencesModal 
         isOpen={isAlertPrefsOpen} 
         onClose={() => setIsAlertPrefsOpen(false)} 
+      />
+
+      {/* Guard Authentication & Biometrics Modal */}
+      <GuardLoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        onSuccess={(guard) => {
+          setActiveGuard(guard);
+          setIsLoginModalOpen(false);
+        }}
       />
 
       {/* Navy Blue Header matching High Density theme */}
@@ -129,39 +150,70 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
           </div>
         </div>
 
-        {/* Guard Profile Switcher Selector */}
+        {/* Guard Profile & Authentication Selector */}
         <div className="relative">
-          <button
-            id="guard-profile-switcher-btn"
-            onClick={() => setShowGuardMenu(!showGuardMenu)}
-            className="w-full bg-blue-900/80 dark:bg-slate-900/90 hover:bg-blue-900 dark:hover:bg-slate-800 border border-blue-700/60 dark:border-slate-700 rounded-lg px-3 py-2 text-left flex items-center justify-between transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center border border-blue-400">
-                {activeGuard.name.split(' ').map(n => n[0]).join('')}
-              </div>
-              <div>
-                <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <span>{activeGuard.name}</span>
-                  <span className="text-[9px] px-1.5 py-0.2 bg-blue-700 rounded text-blue-200 font-mono">
-                    {activeGuard.badgeNumber}
-                  </span>
+          <div className="flex gap-1.5">
+            <button
+              id="guard-profile-switcher-btn"
+              onClick={() => setShowGuardMenu(!showGuardMenu)}
+              className="flex-1 bg-blue-900/80 dark:bg-slate-900/90 hover:bg-blue-900 dark:hover:bg-slate-800 border border-blue-700/60 dark:border-slate-700 rounded-lg px-3 py-2 text-left flex items-center justify-between transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center border border-blue-400 shrink-0">
+                  {activeGuard.name.split(' ').map(n => n[0]).join('')}
                 </div>
-                <div className="text-[10px] text-blue-300 truncate max-w-[200px]">
-                  {activeGuard.ojtSites.length} Verified Sites
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                    <span>{activeGuard.name}</span>
+                    <span className="text-[9px] px-1.5 py-0.2 bg-blue-700 rounded text-blue-200 font-mono">
+                      {activeGuard.badgeNumber}
+                    </span>
+                    {activeGuard.biometricsEnabled && (
+                      <span title="Biometrics Enrolled on this Device" className="text-[9px] bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 px-1 py-0.2 rounded font-mono font-bold flex items-center gap-0.5">
+                        <Fingerprint className="w-2.5 h-2.5 text-emerald-300" /> Bio
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[10px] text-blue-300 truncate max-w-[200px]">
+                    @{activeGuard.username || activeGuard.badgeNumber.toLowerCase()} • {activeGuard.ojtSites.length} Sites Authorized
+                  </div>
                 </div>
               </div>
-            </div>
-            <ChevronDown className="w-4 h-4 text-blue-300" />
-          </button>
+              <ChevronDown className="w-4 h-4 text-blue-300 shrink-0" />
+            </button>
+
+            {/* Quick Login / Biometric Auth Button */}
+            <button
+              id="guard-open-login-btn"
+              onClick={() => setIsLoginModalOpen(true)}
+              className="px-2.5 py-2 bg-blue-800 hover:bg-blue-700 border border-blue-500/50 rounded-lg text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-xs"
+              title="Guard Authentication & Biometric Sign-In"
+            >
+              <Fingerprint className="w-4 h-4 text-blue-200" />
+              <span className="hidden sm:inline text-[11px]">Auth</span>
+            </button>
+          </div>
 
           {/* Guard Dropdown */}
           {showGuardMenu && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-900 rounded-lg shadow-xl border border-slate-200 dark:border-slate-800 z-50 overflow-hidden text-slate-800 dark:text-slate-100 animate-in fade-in duration-100">
-              <div className="p-2 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
-                Simulate Logged-In Security Guard:
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 z-50 overflow-hidden text-slate-800 dark:text-slate-100 animate-in fade-in duration-100">
+              <div className="p-2.5 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                  Active Guard Profile Roster
+                </span>
+                <button
+                  onClick={() => {
+                    setShowGuardMenu(false);
+                    setIsLoginModalOpen(true);
+                  }}
+                  className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <KeyRound className="w-3 h-3" />
+                  <span>Full Sign In / Bio</span>
+                </button>
               </div>
-              <div className="max-h-56 overflow-y-auto">
+
+              <div className="max-h-60 overflow-y-auto p-1 divide-y divide-slate-100 dark:divide-slate-800">
                 {guardsList.map((guard) => (
                   <button
                     key={guard.id}
@@ -169,13 +221,27 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
                       setActiveGuard(guard);
                       setShowGuardMenu(false);
                     }}
-                    className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors ${
+                    className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between rounded-lg hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors ${
                       guard.id === activeGuard.id ? 'bg-blue-50 dark:bg-blue-950/50 font-bold text-[#1e3a8a] dark:text-blue-300' : ''
                     }`}
                   >
-                    <div>
-                      <div className="font-semibold text-slate-800 dark:text-slate-200">{guard.name}</div>
-                      <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{guard.badgeNumber} • {guard.phone}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-blue-600 text-white font-bold text-[10px] flex items-center justify-center shrink-0">
+                        {guard.name.split(' ').map(n => n[0]).join('')}
+                      </div>
+                      <div>
+                        <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                          <span>{guard.name}</span>
+                          {guard.biometricsEnabled && (
+                            <span className="text-[8px] bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 px-1 py-0.2 rounded font-mono font-bold flex items-center gap-0.5">
+                              <Fingerprint className="w-2.5 h-2.5" /> Bio
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
+                          @{guard.username || guard.badgeNumber.toLowerCase()} • {guard.badgeNumber} • PIN: {guard.pin || '1234'}
+                        </div>
+                      </div>
                     </div>
                     {guard.id === activeGuard.id && (
                       <span className="text-[10px] font-bold text-[#1e3a8a] dark:text-blue-300 bg-blue-100 dark:bg-blue-900/60 px-1.5 py-0.5 rounded">
@@ -184,6 +250,19 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
                     )}
                   </button>
                 ))}
+              </div>
+
+              <div className="p-2 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <button
+                  onClick={() => {
+                    setShowGuardMenu(false);
+                    setIsLoginModalOpen(true);
+                  }}
+                  className="w-full py-1.5 bg-[#1e3a8a] hover:bg-blue-800 text-white rounded-lg font-bold text-[11px] uppercase flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Fingerprint className="w-3.5 h-3.5" />
+                  <span>Authenticate with Password / PIN / Bio</span>
+                </button>
               </div>
             </div>
           )}
@@ -195,6 +274,11 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
             <BellRing className="w-3.5 h-3.5 text-amber-300 shrink-0" />
             <span className="text-[10px] text-blue-200 font-semibold uppercase tracking-wider shrink-0">Alerts:</span>
             <div className="flex items-center gap-1 truncate">
+              {alertPreferences.priorityNext24hPush && (
+                <span className="text-[9px] bg-amber-500 text-slate-950 px-1.5 py-0.2 rounded font-mono font-black flex items-center gap-0.5">
+                  <Zap className="w-2.5 h-2.5 fill-current" /> 24h Push
+                </span>
+              )}
               {alertPreferences.emergencyAlerts && (
                 <span className="text-[9px] bg-rose-900/70 text-rose-200 border border-rose-700/50 px-1.5 py-0.2 rounded font-mono font-bold">
                   Emergency
@@ -210,7 +294,7 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
                   Trades
                 </span>
               )}
-              {!alertPreferences.emergencyAlerts && !alertPreferences.urgentOpenShifts && !alertPreferences.tradeMatches && (
+              {!alertPreferences.emergencyAlerts && !alertPreferences.urgentOpenShifts && !alertPreferences.tradeMatches && !alertPreferences.priorityNext24hPush && (
                 <span className="text-[9px] text-slate-400 italic">Muted</span>
               )}
             </div>
@@ -284,6 +368,14 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
           }`}>
             {openShiftsCount}
           </span>
+          {eligiblePriorityShifts.length > 0 && (
+            <span 
+              title={`${eligiblePriorityShifts.length} urgent unfilled shifts in next 24h`}
+              className="text-[9px] bg-amber-500 text-slate-950 px-1 rounded-full font-black animate-pulse flex items-center gap-0.5"
+            >
+              ⚡{eligiblePriorityShifts.length}
+            </span>
+          )}
         </button>
 
         <button
@@ -330,6 +422,9 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
 
       {/* Board Content */}
       <div className="flex-1 flex flex-col overflow-y-auto min-h-0 bg-slate-50 dark:bg-slate-900 p-2 sm:p-3">
+        {/* Priority 24h Push Alert Banner */}
+        <PriorityShiftPushBanner onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />
+
         {activeTab === 'duty_post' && <GuardDutyTerminal onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
         {activeTab === 'open_board' && <OpenShiftBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
         {activeTab === 'trade_board' && <TradeBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
