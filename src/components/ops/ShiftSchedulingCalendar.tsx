@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
-import { ScheduledShift, ShiftDutyStatus } from '../../types/shift';
+import { ScheduledShift, ShiftDutyStatus, RovingGroup, ROVING_GROUPS, ROVING_GROUP_CONFIGS } from '../../types/shift';
 import { 
   Calendar as CalendarIcon, 
   ChevronLeft, 
@@ -21,7 +21,12 @@ import {
   Sparkles,
   Layers,
   MapPin,
-  FileText
+  FileText,
+  Car,
+  Navigation,
+  Zap,
+  ShieldCheck,
+  Check
 } from 'lucide-react';
 
 interface ShiftSchedulingCalendarProps {
@@ -33,6 +38,7 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
     scheduledShifts, 
     guardsList, 
     sitesList, 
+    rovers,
     scheduleNewShift, 
     updateScheduledShift, 
     deleteScheduledShift, 
@@ -50,6 +56,8 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
   const [selectedSiteFilter, setSelectedSiteFilter] = useState<string>('all');
   const [selectedGuardFilter, setSelectedGuardFilter] = useState<string>(initialGuardId || 'all');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
+  const [selectedShiftTypeFilter, setSelectedShiftTypeFilter] = useState<'all' | 'static' | 'roving'>('all');
+  const [selectedRovingGroupFilter, setSelectedRovingGroupFilter] = useState<string>('all');
 
   // Sync initialGuardId if passed dynamically
   React.useEffect(() => {
@@ -65,6 +73,11 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
   const [reassignTargetGuardId, setReassignTargetGuardId] = useState<string>('');
 
   // Form State for creating new scheduled shift
+  const [formShiftType, setFormShiftType] = useState<'static' | 'roving'>('static');
+  const formIsRoving = formShiftType === 'roving';
+  const setFormIsRoving = (isRov: boolean) => setFormShiftType(isRov ? 'roving' : 'static');
+  const [formRovingGroup, setFormRovingGroup] = useState<RovingGroup>('Alpha Group');
+  const [formAssignedRoverUnit, setFormAssignedRoverUnit] = useState<string>('Rover 1 (Interceptor)');
   const [formGuardId, setFormGuardId] = useState<string>(guardsList[0]?.id || '');
   const [formSiteName, setFormSiteName] = useState<string>(sitesList[0]?.name || '');
   const [formDate, setFormDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -112,7 +125,16 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
     const matchesSite = selectedSiteFilter === 'all' || shift.siteName === selectedSiteFilter;
     const matchesGuard = selectedGuardFilter === 'all' || shift.guardId === selectedGuardFilter;
     const matchesStatus = selectedStatusFilter === 'all' || shift.status === selectedStatusFilter;
-    return matchesSite && matchesGuard && matchesStatus;
+    const matchesShiftType = 
+      selectedShiftTypeFilter === 'all'
+        ? true
+        : selectedShiftTypeFilter === 'roving'
+          ? !!shift.isRovingShift
+          : !shift.isRovingShift;
+    const matchesRovingGroup =
+      selectedRovingGroupFilter === 'all' || shift.rovingGroup === selectedRovingGroupFilter;
+
+    return matchesSite && matchesGuard && matchesStatus && matchesShiftType && matchesRovingGroup;
   });
 
   // Calculate Month Days Matrix
@@ -176,29 +198,70 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
   const handleCreateShiftSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const guard = guardsList.find((g) => g.id === formGuardId);
-    const site = sitesList.find((s) => s.name === formSiteName);
-
-    if (!guard || !site) {
-      showToast('Validation Error', 'Please select both an officer and a facility.', 'warning');
+    if (!guard) {
+      showToast('Validation Error', 'Please select an officer.', 'warning');
       return;
     }
 
-    scheduleNewShift({
-      guardId: guard.id,
-      guardName: guard.name,
-      guardBadge: guard.badgeNumber,
-      guardPhone: guard.phone,
-      siteId: site.id,
-      siteName: site.name,
-      siteAddress: site.address,
-      date: formDate,
-      startTime: formStartTime,
-      endTime: formEndTime,
-      hours: formHours,
-      postRole: formPostRole,
-      postInstructions: formPostInstructions,
-      status: 'scheduled'
-    });
+    if (formShiftType === 'roving') {
+      const groupConfig = ROVING_GROUP_CONFIGS[formRovingGroup];
+      const associatedRover = rovers.find(r => r.rovingGroup === formRovingGroup) || rovers[0];
+      const groupSites = sitesList.filter(s => s.rovingGroup === formRovingGroup);
+
+      scheduleNewShift({
+        guardId: guard.id,
+        guardName: guard.name,
+        guardBadge: guard.badgeNumber,
+        guardPhone: guard.phone,
+        siteId: `ROVER-${formRovingGroup.replace(/\s+/g, '-').toUpperCase()}`,
+        siteName: `${formRovingGroup} Mobile Patrol Circuit`,
+        siteAddress: groupConfig?.zone || 'Mobile Patrol Territory',
+        date: formDate,
+        startTime: formStartTime,
+        endTime: formEndTime,
+        hours: formHours,
+        postRole: `🚗 Mobile Patrol Driver • ${associatedRover?.unitNumber || 'Rover'} (${formRovingGroup})`,
+        postInstructions: formPostInstructions || `Execute optimized ${formRovingGroup} property patrol circuit (${groupSites.length} customer properties). Maintain SLA compliance and respond to priority intercepts.`,
+        isRovingShift: true,
+        rovingGroup: formRovingGroup,
+        assignedRoverUnit: associatedRover?.unitNumber || 'Unit R-101',
+        assignedRoverId: associatedRover?.id || 'rover-1',
+        circuitStopsCount: groupSites.length || 6,
+        status: 'scheduled'
+      });
+
+      showToast(
+        'Roving Patrol Shift Scheduled',
+        `Assigned ${guard.name} to ${formRovingGroup} (${associatedRover?.unitNumber || 'Rover'}). Dynamic Route Circuit synchronized!`,
+        'success'
+      );
+    } else {
+      const site = sitesList.find((s) => s.name === formSiteName);
+      if (!site) {
+        showToast('Validation Error', 'Please select a facility.', 'warning');
+        return;
+      }
+
+      scheduleNewShift({
+        guardId: guard.id,
+        guardName: guard.name,
+        guardBadge: guard.badgeNumber,
+        guardPhone: guard.phone,
+        siteId: site.id,
+        siteName: site.name,
+        siteAddress: site.address,
+        date: formDate,
+        startTime: formStartTime,
+        endTime: formEndTime,
+        hours: formHours,
+        postRole: formPostRole,
+        postInstructions: formPostInstructions,
+        isRovingShift: false,
+        status: 'scheduled'
+      });
+
+      showToast('Shift Scheduled', `Assigned ${guard.name} to ${site.name}.`, 'success');
+    }
 
     setIsScheduleModalOpen(false);
   };
@@ -307,6 +370,54 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
             <Filter className="w-3.5 h-3.5" />
             <span>Filters:</span>
           </div>
+
+          {/* Shift Type Filter Toggle */}
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700">
+            <button
+              onClick={() => setSelectedShiftTypeFilter('all')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                selectedShiftTypeFilter === 'all'
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+              }`}
+            >
+              All Shifts
+            </button>
+            <button
+              onClick={() => setSelectedShiftTypeFilter('static')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                selectedShiftTypeFilter === 'static'
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+              }`}
+            >
+              <Building2 className="w-3 h-3 text-blue-500" />
+              <span>Static Posts</span>
+            </button>
+            <button
+              onClick={() => setSelectedShiftTypeFilter('roving')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                selectedShiftTypeFilter === 'roving'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-indigo-600 dark:text-indigo-400 hover:text-indigo-700'
+              }`}
+            >
+              <Car className="w-3 h-3" />
+              <span>Roving Circuits</span>
+            </button>
+          </div>
+
+          {/* Roving Group Filter */}
+          <select
+            value={selectedRovingGroupFilter}
+            onChange={(e) => setSelectedRovingGroupFilter(e.target.value)}
+            className="bg-indigo-50/50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 rounded-xl px-3 py-1.5 text-xs font-bold text-indigo-900 dark:text-indigo-200 focus:outline-hidden"
+          >
+            <option value="all">All Roving Groups</option>
+            {ROVING_GROUPS.map((grp) => (
+              <option key={grp} value={grp}>{grp}</option>
+            ))}
+          </select>
 
           {/* Site Filter */}
           <select
@@ -440,13 +551,16 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
                         const isOnBreak = shift.status === 'on_break';
                         const isLate = shift.status === 'late' || shift.isLate;
                         const isCompleted = shift.status === 'completed';
+                        const isRoving = !!shift.isRovingShift;
 
                         return (
                           <div
                             key={shift.id}
                             onClick={() => setSelectedShiftForDetail(shift)}
                             className={`p-2.5 rounded-xl border text-xs cursor-pointer transition-all hover:shadow-md hover:scale-[1.01] flex flex-col justify-between gap-1.5 ${
-                              isOnDuty
+                              isRoving
+                                ? 'bg-gradient-to-br from-indigo-50/90 to-blue-50/70 dark:from-indigo-950/60 dark:to-slate-900 border-indigo-300 dark:border-indigo-700/70 text-indigo-950 dark:text-indigo-100 shadow-2xs'
+                                : isOnDuty
                                 ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-800 text-emerald-950 dark:text-emerald-100 ring-1 ring-emerald-500/20'
                                 : isOnBreak
                                 ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-300 dark:border-amber-800 text-amber-950 dark:text-amber-100'
@@ -459,7 +573,8 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
                           >
                             {/* Top Time & Status */}
                             <div className="flex items-center justify-between gap-1">
-                              <span className="font-mono text-[11px] font-black">
+                              <span className="font-mono text-[11px] font-black flex items-center gap-1">
+                                {isRoving && <Car className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />}
                                 {shift.startTime} - {shift.endTime}
                               </span>
                               <span
@@ -472,6 +587,8 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
                                     ? 'bg-rose-600 text-white'
                                     : isCompleted
                                     ? 'bg-slate-500 text-white'
+                                    : isRoving
+                                    ? 'bg-indigo-600 text-white'
                                     : 'bg-blue-600 text-white'
                                 }`}
                               >
@@ -483,6 +600,8 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
                                   ? '⚠️ Late'
                                   : shift.status === 'completed'
                                   ? '✓ Done'
+                                  : isRoving
+                                  ? '🚗 Roving'
                                   : 'Scheduled'}
                               </span>
                             </div>
@@ -498,15 +617,34 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
                               </span>
                             </div>
 
-                            {/* Facility & Post */}
+                            {/* Facility & Post or Roving Group */}
                             <div className="pt-1 border-t border-slate-200/60 dark:border-slate-700/60 text-[11px]">
-                              <div className="font-bold flex items-center gap-1 truncate text-slate-700 dark:text-slate-300">
-                                <Building2 className="w-3 h-3 text-slate-400 shrink-0" />
-                                <span className="truncate">{shift.siteName}</span>
-                              </div>
-                              <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
-                                {shift.postRole}
-                              </div>
+                              {isRoving ? (
+                                <div className="space-y-0.5">
+                                  <div className="font-extrabold flex items-center gap-1 text-indigo-700 dark:text-indigo-300">
+                                    <span className="px-1.5 py-0.2 bg-indigo-200 dark:bg-indigo-900/80 rounded text-[9px] uppercase tracking-wider font-mono">
+                                      {shift.rovingGroup || 'Alpha Group'}
+                                    </span>
+                                    <span className="truncate text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                                      {shift.assignedRoverUnit || 'Rover'}
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] text-slate-600 dark:text-slate-400 truncate flex items-center gap-1">
+                                    <Navigation className="w-2.5 h-2.5 text-indigo-500 shrink-0" />
+                                    <span>{shift.siteName}</span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="font-bold flex items-center gap-1 truncate text-slate-700 dark:text-slate-300">
+                                    <Building2 className="w-3 h-3 text-slate-400 shrink-0" />
+                                    <span className="truncate">{shift.siteName}</span>
+                                  </div>
+                                  <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                                    {shift.postRole}
+                                  </div>
+                                </>
+                              )}
                             </div>
                           </div>
                         );
@@ -773,6 +911,24 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
 
             {/* Shift Summary Cards */}
             <div className="space-y-2.5 text-xs">
+              {selectedShiftForDetail.isRovingShift && (
+                <div className="p-3 bg-gradient-to-r from-indigo-900 to-blue-900 text-white rounded-xl shadow-xs space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-indigo-200 flex items-center gap-1.5">
+                      <Car className="w-3.5 h-3.5 text-indigo-300" />
+                      <span>Roving Mobile Patrol Shift</span>
+                    </span>
+                    <span className="px-2 py-0.5 bg-indigo-500/40 rounded-full font-mono text-[10px] font-extrabold text-white border border-indigo-400/30">
+                      {selectedShiftForDetail.rovingGroup || 'Alpha Group'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-indigo-200">Assigned Rover:</span>
+                    <span className="font-bold text-white">{selectedShiftForDetail.assignedRoverUnit || 'Rover 1 (Interceptor)'}</span>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-2 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Assigned Officer</span>
@@ -784,7 +940,9 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
                 </div>
 
                 <div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Facility / Post</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    {selectedShiftForDetail.isRovingShift ? 'Base Site / Circuit' : 'Facility / Post'}
+                  </span>
                   <div className="font-bold text-slate-900 dark:text-white mt-0.5 flex items-center gap-1.5">
                     <Building2 className="w-3.5 h-3.5 text-blue-500" />
                     <span>{selectedShiftForDetail.siteName}</span>
@@ -950,6 +1108,134 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
             </div>
 
             <form onSubmit={handleCreateShiftSubmit} className="space-y-3">
+              {/* Shift Category Switcher: Static vs Roving */}
+              <div>
+                <label className="text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400 block mb-1.5">
+                  Shift Category & Deployment Type
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormIsRoving(false);
+                      setFormPostRole('Access Control & Lobby Post');
+                    }}
+                    className={`p-2.5 rounded-xl border text-left flex items-start gap-2.5 transition-all cursor-pointer ${
+                      !formIsRoving
+                        ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-500 text-[#1e3a8a] dark:text-blue-200 ring-2 ring-blue-500/20'
+                        : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    <Building2 className="w-4 h-4 mt-0.5 text-blue-600 shrink-0" />
+                    <div>
+                      <div className="font-extrabold text-xs">Static Site Post</div>
+                      <div className="text-[10px] opacity-75">Dedicated guard stationed at a single building or checkpoint</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormIsRoving(true);
+                      setFormPostRole('Mobile Circuit Patrol Officer');
+                    }}
+                    className={`p-2.5 rounded-xl border text-left flex items-start gap-2.5 transition-all cursor-pointer ${
+                      formIsRoving
+                        ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-500 text-indigo-900 dark:text-indigo-200 ring-2 ring-indigo-500/20'
+                        : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    <Car className="w-4 h-4 mt-0.5 text-indigo-600 shrink-0" />
+                    <div>
+                      <div className="font-extrabold text-xs">Roving Mobile Shift</div>
+                      <div className="text-[10px] opacity-75">Assigned to a patrol vehicle & circuit group covering multiple sites</div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Roving Group & Vehicle Configuration (If Roving) */}
+              {formIsRoving && (
+                <div className="p-3 bg-gradient-to-br from-indigo-50 to-blue-50/50 dark:from-indigo-950/40 dark:to-slate-900 rounded-xl border border-indigo-200 dark:border-indigo-800 space-y-2.5">
+                  <div className="flex items-center gap-1.5 text-xs font-black text-indigo-900 dark:text-indigo-200">
+                    <Navigation className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Roving Patrol Configuration</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-indigo-800 dark:text-indigo-300 block mb-1">
+                        Patrol Group / Sector
+                      </label>
+                      <select
+                        value={formRovingGroup}
+                        onChange={(e) => {
+                          const grp = e.target.value as RovingGroup;
+                          setFormRovingGroup(grp);
+                          const matchingRover = rovers.find(r => r.rovingGroup === grp);
+                          if (matchingRover) {
+                            setFormAssignedRoverUnit(matchingRover.unitNumber);
+                          }
+                          const groupSites = sitesList.filter(s => s.rovingGroup === grp);
+                          if (groupSites.length > 0) {
+                            setFormSiteName(groupSites[0].name);
+                          }
+                        }}
+                        className="w-full bg-white dark:bg-slate-800 border border-indigo-300 dark:border-indigo-700 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-slate-100"
+                      >
+                        {ROVING_GROUPS.map((grp) => (
+                          <option key={grp} value={grp}>
+                            {grp} ({ROVING_GROUP_CONFIGS[grp]?.zone || 'Patrol Sector'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-indigo-800 dark:text-indigo-300 block mb-1">
+                        Assigned Rover Vehicle
+                      </label>
+                      <select
+                        value={formAssignedRoverUnit}
+                        onChange={(e) => setFormAssignedRoverUnit(e.target.value)}
+                        className="w-full bg-white dark:bg-slate-800 border border-indigo-300 dark:border-indigo-700 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-900 dark:text-slate-100 font-mono"
+                      >
+                        {rovers.map((r) => (
+                          <option key={r.id} value={r.unitNumber}>
+                            {r.unitNumber} ({r.rovingGroup})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Circuit site tags preview */}
+                  <div className="pt-1">
+                    {(() => {
+                      const sitesInGroup = sitesList.filter(s => s.rovingGroup === formRovingGroup);
+                      return (
+                        <>
+                          <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 block mb-1">
+                            Circuit Sites in {formRovingGroup} ({sitesInGroup.length} locations):
+                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {sitesInGroup.length > 0 ? (
+                              sitesInGroup.map((st) => (
+                                <span key={st.id} className="px-2 py-0.5 bg-white dark:bg-slate-800 text-[10px] font-semibold text-slate-700 dark:text-slate-300 rounded-md border border-indigo-200/80 dark:border-indigo-800/80">
+                                  {st.name}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-[10px] text-indigo-500 italic">No assigned sites in site directory</span>
+                            )}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+
               {/* Select Officer & Facility */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -970,7 +1256,7 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
 
                 <div>
                   <label className="text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400 block mb-1">
-                    Facility / Site
+                    {formIsRoving ? 'Initial Base / Checkpoint' : 'Facility / Site'}
                   </label>
                   <select
                     value={formSiteName}

@@ -4,6 +4,7 @@ import { OpenShiftBoard } from './OpenShiftBoard';
 import { TradeBoard } from './TradeBoard';
 import { ActiveCallsPanel } from './ActiveCallsPanel';
 import { GuardDutyTerminal } from './GuardDutyTerminal';
+import { LiveRouteView } from './LiveRouteView';
 import { CallAlertModal } from './CallAlertModal';
 import { EmergencyAlertOverlay } from './EmergencyAlertOverlay';
 import { ShiftAlertPreferencesModal } from './ShiftAlertPreferencesModal';
@@ -29,7 +30,8 @@ import {
   Fingerprint,
   KeyRound,
   LogOut,
-  UserPlus
+  UserPlus,
+  Navigation
 } from 'lucide-react';
 
 interface GuardViewProps {
@@ -54,7 +56,7 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
     alertPreferences,
     eligiblePriorityShifts
   } = useShiftOps();
-  const [activeTab, setActiveTab] = useState<'duty_post' | 'open_board' | 'trade_board' | 'active_calls'>('duty_post');
+  const [activeTab, setActiveTab] = useState<'duty_post' | 'live_route' | 'open_board' | 'trade_board' | 'active_calls'>('duty_post');
   const [showGuardMenu, setShowGuardMenu] = useState(false);
   const [isAlertPrefsOpen, setIsAlertPrefsOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -352,6 +354,20 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
         </button>
 
         <button
+          id="guard-tab-live-route"
+          onClick={() => setActiveTab('live_route')}
+          className={`flex-1 py-3 text-[10px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
+            activeTab === 'live_route'
+              ? 'border-b-2 border-cyan-500 dark:border-cyan-400 text-cyan-700 dark:text-cyan-400 bg-cyan-50/40 dark:bg-cyan-950/30 font-black'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+          }`}
+        >
+          <Navigation className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+          <span>ROUTE</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-ping" />
+        </button>
+
+        <button
           id="guard-tab-open-board"
           onClick={() => setActiveTab('open_board')}
           className={`flex-1 py-3 text-[10px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
@@ -426,6 +442,7 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
         <PriorityShiftPushBanner onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />
 
         {activeTab === 'duty_post' && <GuardDutyTerminal onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
+        {activeTab === 'live_route' && <LiveRouteView onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} onNavigateToDuty={() => setActiveTab('duty_post')} />}
         {activeTab === 'open_board' && <OpenShiftBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
         {activeTab === 'trade_board' && <TradeBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
         {activeTab === 'active_calls' && <ActiveCallsPanel />}

@@ -41,7 +41,8 @@ import {
   CheckCheck,
   Zap,
   ExternalLink,
-  RotateCcw
+  RotateCcw,
+  Navigation
 } from 'lucide-react';
 import { 
   playReceiptConfirmedSound,
@@ -75,7 +76,12 @@ export const CallsForServicePanel: React.FC = () => {
     callReceipts,
     clearAllCallReceipts,
     acknowledgeCall,
-    activeGuard
+    activeGuard,
+    rovers,
+    roverPlans,
+    activeInterceptions,
+    dispatchAdHocInterception,
+    showToast
   } = useShiftOps();
 
   // Filters
@@ -97,6 +103,11 @@ export const CallsForServicePanel: React.FC = () => {
   const [details, setDetails] = useState('');
   const [officerInstructions, setOfficerInstructions] = useState('');
   const [isBolo, setIsBolo] = useState(false);
+  const [assignedRoverSelection, setAssignedRoverSelection] = useState<string>('unassigned');
+
+  // Reassign Modal State
+  const [reassigningCallId, setReassigningCallId] = useState<string | null>(null);
+  const [reassignRoverId, setReassignRoverId] = useState<string>('nearest');
 
   // BOLO Subject Details
   const [boloName, setBoloName] = useState('');
@@ -207,6 +218,7 @@ export const CallsForServicePanel: React.FC = () => {
     setCallerName('');
     setCallerPhone('');
     setCallerLocation('');
+    setAssignedRoverSelection('unassigned');
     setIsDispatchModalOpen(true);
   };
 
@@ -267,10 +279,37 @@ export const CallsForServicePanel: React.FC = () => {
       isBolo,
       boloSubject,
       callerInfo,
-      officerInstructions: officerInstructions.trim() || undefined
+      officerInstructions: officerInstructions.trim() || undefined,
+      assignedRoverId: assignedRoverSelection !== 'unassigned' ? assignedRoverSelection : undefined
     });
 
     setIsDispatchModalOpen(false);
+  };
+
+  const handleExecuteReassign = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reassigningCallId) return;
+
+    const targetCall = callsForService.find(c => c.id === reassigningCallId);
+    if (!targetCall) {
+      setReassigningCallId(null);
+      return;
+    }
+
+    let chosenRover = rovers.find(r => r.id === reassignRoverId);
+    if (reassignRoverId === 'nearest' || !chosenRover) {
+      chosenRover = rovers.find(r => r.status === 'patrolling' || r.status === 'dwelling') || rovers[0];
+    }
+
+    if (chosenRover) {
+      dispatchAdHocInterception(targetCall.id, targetCall.locationDetails, chosenRover.id);
+      showToast?.(
+        'Rover Unit Assigned & Intercept Pushed',
+        `Call ${targetCall.id} assigned to ${chosenRover.unitNumber} (${chosenRover.assignedGuardName || 'Officer'}). Route order updated!`,
+        'success'
+      );
+    }
+    setReassigningCallId(null);
   };
 
   const handleCancelSubmit = (e: React.FormEvent) => {
@@ -684,6 +723,79 @@ export const CallsForServicePanel: React.FC = () => {
                       </div>
                     </div>
                   )}
+
+                  {/* ROVER FLEET ASSIGNMENT & INTERCEPT STATUS BOX */}
+                  {call.assignedRoverUnit || call.assignedRoverId ? (
+                    <div className="bg-gradient-to-r from-slate-900 via-cyan-950/80 to-slate-900 border border-cyan-500/50 rounded-xl p-3 text-white space-y-2 shadow-sm">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-cyan-600/30 text-cyan-400 rounded-lg border border-cyan-400/40 shrink-0">
+                            <Car className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[10px] font-black uppercase tracking-wider text-cyan-300">
+                                Assigned Rover:
+                              </span>
+                              <span className="bg-cyan-500 text-slate-950 text-[11px] font-mono font-black px-2 py-0.5 rounded-full shadow-xs">
+                                {call.assignedRoverUnit || 'ROVER FLEET'}
+                              </span>
+                              {call.assignedRovingGroup && (
+                                <span className="bg-cyan-950 text-cyan-200 border border-cyan-700/80 text-[10px] font-bold px-1.5 py-0.5 rounded">
+                                  {call.assignedRovingGroup}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs font-bold text-slate-100 mt-0.5">
+                              Responding Officer: <strong>{call.assignedGuardName || 'Roving Officer'}</strong> {call.assignedGuardBadge ? `(${call.assignedGuardBadge})` : ''}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="bg-rose-950 text-rose-200 border border-rose-500/80 text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1">
+                            <Zap className="w-3 h-3 text-amber-400 animate-pulse" />
+                            ⚡ Stop #1 in Route Queue
+                          </span>
+                          {!isCleared && !isCancelled && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReassigningCallId(call.id);
+                                setReassignRoverId(call.assignedRoverId || 'nearest');
+                              }}
+                              className="px-2 py-1 bg-cyan-900/80 hover:bg-cyan-800 text-cyan-200 text-[10px] font-bold rounded-lg border border-cyan-600/60 cursor-pointer transition-colors"
+                            >
+                              Reassign
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="p-2 bg-slate-950/70 rounded-lg border border-cyan-900/60 text-[11px] text-cyan-200/90 font-mono flex items-center gap-2">
+                        <Navigation className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                        <span>Dynamic Reroute Active: Intercept stop priority pushed to {call.assignedRoverUnit}&apos;s route. Subsequent circuit rounds shifted automatically.</span>
+                      </div>
+                    </div>
+                  ) : !isCleared && !isCancelled ? (
+                    <div className="bg-slate-50 dark:bg-slate-950/50 border border-dashed border-slate-300 dark:border-slate-700/80 rounded-xl p-2.5 flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                        <Car className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span>Static Post Call • No Rover Assigned</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReassigningCallId(call.id);
+                          setReassignRoverId('nearest');
+                        }}
+                        className="px-2.5 py-1 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                      >
+                        <Zap className="w-3 h-3 text-slate-950" />
+                        <span>⚡ Dispatch to Rover</span>
+                      </button>
+                    </div>
+                  ) : null}
 
                   {/* Guard Acknowledgment Receipt Status Box */}
                   {call.acknowledgedByGuard ? (
@@ -1134,6 +1246,52 @@ export const CallsForServicePanel: React.FC = () => {
                 </div>
               )}
 
+              {/* Rover Unit Assignment & Dynamic Interception Selector */}
+              <div className="p-3.5 bg-gradient-to-r from-slate-900 to-cyan-950/90 rounded-xl border border-cyan-500/40 text-white space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
+                    <Car className="w-4 h-4 text-cyan-400" />
+                    <span>Assign to Roving Patrol Unit (Dynamic Intercept)</span>
+                  </label>
+                  <span className="text-[10px] font-mono text-cyan-300 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-700/60">
+                    Live Route Queue Sync
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <label className="block text-[10px] text-slate-300 uppercase font-bold mb-1">
+                      Target Rover Unit / Group
+                    </label>
+                    <select
+                      value={assignedRoverSelection}
+                      onChange={(e) => setAssignedRoverSelection(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-cyan-500/50 rounded-lg text-white font-semibold text-xs focus:ring-1 focus:ring-cyan-400 focus:outline-hidden"
+                    >
+                      <option value="unassigned">Broadcast to Static Facility Post (No Rover Assigned)</option>
+                      <option value="nearest">⚡ Nearest Available Rover (Auto-Calculate Distance & Traffic)</option>
+                      {rovers.map(rover => (
+                        <option key={rover.id} value={rover.id}>
+                          {rover.unitNumber} ({rover.rovingGroup}) • {rover.assignedGuardName || 'Unassigned'} [{rover.status.toUpperCase()}]
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="p-2 bg-slate-950/60 rounded-lg border border-slate-800 flex flex-col justify-center text-[11px] text-slate-300">
+                    {assignedRoverSelection === 'unassigned' ? (
+                      <span className="text-slate-400">
+                        Will appear on general post terminals and static guard queues.
+                      </span>
+                    ) : (
+                      <span className="text-cyan-300 font-mono">
+                        ⚡ <strong>Dynamic Intercept:</strong> Immediately injects as #1 priority stop on the rover's route and alerts the on-duty guard.
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {/* Narrative & Caller Info */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -1256,6 +1414,74 @@ export const CallsForServicePanel: React.FC = () => {
                   className="px-4 py-1.5 rounded-lg text-xs font-black bg-rose-600 hover:bg-rose-500 text-white cursor-pointer"
                 >
                   Confirm Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* REASSIGN ROVER MODAL */}
+      {reassigningCallId && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-4">
+            <div className="flex items-center gap-2.5 border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="p-2 bg-cyan-600/20 text-cyan-400 border border-cyan-500/40 rounded-xl">
+                <Car className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                  Dispatch / Reassign to Rover Unit
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Select a mobile patrol unit. The call will be immediately injected into the rover&apos;s active circuit route queue.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleExecuteReassign} className="space-y-3">
+              <div>
+                <label className="block text-[10px] uppercase font-bold text-slate-600 dark:text-slate-400 mb-1">
+                  Target Patrol Rover
+                </label>
+                <select
+                  value={reassignRoverId}
+                  onChange={(e) => setReassignRoverId(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 font-semibold"
+                >
+                  <option value="nearest">⚡ Auto-Calculate Nearest Available Rover</option>
+                  {rovers.map(rover => (
+                    <option key={rover.id} value={rover.id}>
+                      {rover.unitNumber} ({rover.rovingGroup}) — Officer {rover.assignedGuardName || 'Unassigned'} [{rover.status.toUpperCase()}]
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="p-3 bg-cyan-50 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-800 rounded-xl text-xs text-cyan-900 dark:text-cyan-200 space-y-1">
+                <p className="font-bold flex items-center gap-1">
+                  <Zap className="w-3.5 h-3.5 text-amber-500" />
+                  Dynamic Interception & Route Re-Calculation:
+                </p>
+                <p className="text-[11px] text-cyan-800 dark:text-cyan-300">
+                  The target rover&apos;s turn-by-turn itinerary will instantly reprioritize this emergency stop. The assigned guard will receive a real-time priority notification.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setReassigningCallId(null)}
+                  className="px-3.5 py-1.5 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 rounded-lg text-xs font-black bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-slate-950 flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Execute Intercept Dispatch</span>
                 </button>
               </div>
             </form>
@@ -1386,6 +1612,18 @@ export const CallsForServicePanel: React.FC = () => {
                             </span>
                             <span>•</span>
                             <span>{receipt.siteName}</span>
+                            {(receipt.assignedRoverUnit || receipt.assignedRovingGroup) && (
+                              <>
+                                <span>•</span>
+                                <span className="inline-flex items-center gap-1 bg-cyan-100 text-cyan-900 dark:bg-cyan-950 dark:text-cyan-300 font-mono text-[10px] font-bold px-2 py-0.5 rounded-full border border-cyan-300 dark:border-cyan-800">
+                                  <Car className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
+                                  <span>{receipt.assignedRoverUnit || 'ROVER UNIT'}</span>
+                                  {receipt.assignedRovingGroup && (
+                                    <span className="opacity-75 font-sans">({receipt.assignedRovingGroup})</span>
+                                  )}
+                                </span>
+                              </>
+                            )}
                             {evType === 'acknowledged' && (
                               <>
                                 <span>•</span>

@@ -1,6 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
-import { SiteProfile, SiteCategory, SiteSecurityTier } from '../../types/shift';
+import { 
+  SiteProfile, 
+  SiteCategory, 
+  SiteSecurityTier, 
+  SiteServiceType, 
+  RovingGroup, 
+  ROVING_GROUPS, 
+  ROVING_GROUP_CONFIGS 
+} from '../../types/shift';
 import { SiteJsonImportModal } from './SiteJsonImportModal';
 import { validateSite, auditAllSites, SiteValidationResult } from '../../utils/siteValidation';
 import { 
@@ -42,7 +50,14 @@ import {
   Compass,
   ArrowRight,
   ClipboardCheck,
-  CheckCheck
+  CheckCheck,
+  Car,
+  Route,
+  Truck,
+  Navigation2,
+  Layers3,
+  ArrowUpDown,
+  CheckSquare
 } from 'lucide-react';
 
 interface SiteDirectoryProps {
@@ -72,8 +87,10 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [tierFilter, setTierFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [serviceTypeFilter, setServiceTypeFilter] = useState<'all' | 'dedicated' | 'roving'>('all');
+  const [rovingGroupFilter, setRovingGroupFilter] = useState<string>('all');
   const [validationFilter, setValidationFilter] = useState<'all' | 'needs_attention' | 'missing_contact' | 'incomplete_orders' | 'ready'>('all');
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'table' | 'roving_matrix'>('grid');
 
   // Modal States
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -94,6 +111,11 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
   const [formZone, setFormZone] = useState('');
   const [formCategory, setFormCategory] = useState<SiteCategory>('corporate');
   const [formSecurityTier, setFormSecurityTier] = useState<SiteSecurityTier>('Tier 2 - Elevated');
+  const [formServiceType, setFormServiceType] = useState<SiteServiceType>('dedicated');
+  const [formRovingGroup, setFormRovingGroup] = useState<RovingGroup>('Alpha Group');
+  const [formRovingNotes, setFormRovingNotes] = useState('');
+  const [formRouteOrder, setFormRouteOrder] = useState<number | ''>('');
+  const [formPatrolFrequency, setFormPatrolFrequency] = useState('Hourly Sweep');
   const [formPrimaryContactName, setFormPrimaryContactName] = useState('');
   const [formPrimaryContactPhone, setFormPrimaryContactPhone] = useState('');
   const [formPrimaryContactEmail, setFormPrimaryContactEmail] = useState('');
@@ -213,7 +235,22 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
         return false;
       }
 
-      // 2. Search Query
+      // 2. Service Type Filter
+      if (serviceTypeFilter !== 'all') {
+        const currentService = site.serviceType || 'dedicated';
+        if (currentService !== serviceTypeFilter) {
+          return false;
+        }
+      }
+
+      // 3. Roving Group Filter
+      if (rovingGroupFilter !== 'all') {
+        if (site.serviceType !== 'roving' || site.rovingGroup !== rovingGroupFilter) {
+          return false;
+        }
+      }
+
+      // 4. Search Query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchesName = site.name.toLowerCase().includes(q);
@@ -222,42 +259,46 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
         const matchesZone = site.zone?.toLowerCase().includes(q) || false;
         const matchesContact = site.primaryContactName.toLowerCase().includes(q);
         const matchesCerts = site.requiredCertifications.some(c => c.toLowerCase().includes(q));
-        if (!matchesName && !matchesCode && !matchesAddress && !matchesZone && !matchesContact && !matchesCerts) {
+        const matchesGroup = site.rovingGroup?.toLowerCase().includes(q) || false;
+        const matchesServiceType = (site.serviceType || 'dedicated').toLowerCase().includes(q);
+        if (!matchesName && !matchesCode && !matchesAddress && !matchesZone && !matchesContact && !matchesCerts && !matchesGroup && !matchesServiceType) {
           return false;
         }
       }
 
-      // 3. Category Filter
+      // 5. Category Filter
       if (categoryFilter !== 'all' && site.category !== categoryFilter) {
         return false;
       }
 
-      // 4. Tier Filter
+      // 6. Tier Filter
       if (tierFilter !== 'all' && site.securityTier !== tierFilter) {
         return false;
       }
 
-      // 5. Status Filter
+      // 7. Status Filter
       if (statusFilter !== 'all' && site.status !== statusFilter) {
         return false;
       }
 
       return true;
     });
-  }, [sitesList, searchQuery, categoryFilter, tierFilter, statusFilter, validationFilter, siteValidationsMap]);
+  }, [sitesList, searchQuery, categoryFilter, tierFilter, statusFilter, serviceTypeFilter, rovingGroupFilter, validationFilter, siteValidationsMap]);
 
   // Aggregate Metrics
   const metrics = useMemo(() => {
     const total = sitesList.length;
     const active = sitesList.filter(s => s.status === 'active').length;
+    const dedicatedCount = sitesList.filter(s => (s.serviceType || 'dedicated') === 'dedicated').length;
+    const rovingCount = sitesList.filter(s => s.serviceType === 'roving').length;
     const tier4Count = sitesList.filter(s => s.securityTier === 'Tier 4 - Critical Infrastructure').length;
     const totalPosts = sitesList.reduce((acc, curr) => acc + (curr.activePostsCount || 1), 0);
     const continuous247 = sitesList.filter(s => s.operatingHours?.includes('24/7')).length;
-    return { total, active, tier4Count, totalPosts, continuous247 };
+    return { total, active, dedicatedCount, rovingCount, tier4Count, totalPosts, continuous247 };
   }, [sitesList]);
 
   // Open Create Modal
-  const handleOpenCreateModal = () => {
+  const handleOpenCreateModal = (presetRovingGroup?: RovingGroup) => {
     setEditingSiteId(null);
     setFormName('');
     setFormCode('');
@@ -265,9 +306,14 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
     setFormCity('Seattle');
     setFormState('WA');
     setFormZip('');
-    setFormZone('');
+    setFormZone(presetRovingGroup ? ROVING_GROUP_CONFIGS[presetRovingGroup]?.zone || '' : '');
     setFormCategory('corporate');
     setFormSecurityTier('Tier 2 - Elevated');
+    setFormServiceType(presetRovingGroup ? 'roving' : 'dedicated');
+    setFormRovingGroup(presetRovingGroup || 'Alpha Group');
+    setFormRovingNotes('');
+    setFormRouteOrder('');
+    setFormPatrolFrequency('Hourly Sweep');
     setFormPrimaryContactName('');
     setFormPrimaryContactPhone('');
     setFormPrimaryContactEmail('');
@@ -300,6 +346,11 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
     setFormZone(site.zone || '');
     setFormCategory(site.category);
     setFormSecurityTier(site.securityTier);
+    setFormServiceType(site.serviceType || 'dedicated');
+    setFormRovingGroup(site.rovingGroup || 'Alpha Group');
+    setFormRovingNotes(site.rovingNotes || '');
+    setFormRouteOrder(site.routeOrder ?? '');
+    setFormPatrolFrequency(site.patrolFrequency || (site.serviceType === 'roving' ? 'Hourly Sweep' : ''));
     setFormPrimaryContactName(site.primaryContactName);
     setFormPrimaryContactPhone(site.primaryContactPhone);
     setFormPrimaryContactEmail(site.primaryContactEmail || '');
@@ -320,11 +371,41 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
     setIsEditModalOpen(true);
   };
 
+  // Quick Change Roving Group Handler
+  const handleQuickAssignGroup = (siteId: string, newGroup: RovingGroup) => {
+    updateSite(siteId, {
+      serviceType: 'roving',
+      rovingGroup: newGroup
+    });
+    showToast('Roving Group Updated', `Site assigned to ${newGroup}.`, 'success');
+  };
+
+  // Quick Change Service Type Handler
+  const handleQuickToggleServiceType = (site: SiteProfile) => {
+    const nextType: SiteServiceType = (site.serviceType || 'dedicated') === 'dedicated' ? 'roving' : 'dedicated';
+    const nextGroup: RovingGroup | undefined = nextType === 'roving' ? (site.rovingGroup || 'Alpha Group') : undefined;
+    updateSite(site.id, {
+      serviceType: nextType,
+      rovingGroup: nextGroup,
+      patrolFrequency: nextType === 'roving' ? (site.patrolFrequency || 'Hourly Sweep') : undefined
+    });
+    showToast(
+      'Service Type Changed', 
+      `${site.name} is now classified as ${nextType === 'roving' ? 'Roving Patrol' : 'Dedicated Post'}.`,
+      'info'
+    );
+  };
+
   // Save Site (Create or Update)
   const handleSaveSite = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim() || !formAddress.trim()) {
       showToast('Validation Error', 'Site name and address are required.', 'warning');
+      return;
+    }
+
+    if (formServiceType === 'roving' && !formRovingGroup) {
+      showToast('Validation Error', 'Please assign a Roving Property Group (Alpha, Bravo, Charlie, Delta, Echo, Foxtrot).', 'warning');
       return;
     }
 
@@ -338,6 +419,11 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
       zone: formZone.trim() || undefined,
       category: formCategory,
       securityTier: formSecurityTier,
+      serviceType: formServiceType,
+      rovingGroup: formServiceType === 'roving' ? formRovingGroup : undefined,
+      rovingNotes: formServiceType === 'roving' && formRovingNotes.trim() ? formRovingNotes.trim() : undefined,
+      routeOrder: formServiceType === 'roving' && formRouteOrder !== '' ? Number(formRouteOrder) : undefined,
+      patrolFrequency: formServiceType === 'roving' ? (formPatrolFrequency.trim() || 'Hourly Sweep') : undefined,
       primaryContactName: formPrimaryContactName.trim() || 'Facility Dispatcher',
       primaryContactPhone: formPrimaryContactPhone.trim() || '+1 (555) 019-9000',
       primaryContactEmail: formPrimaryContactEmail.trim() || undefined,
@@ -498,10 +584,10 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
       </div>
 
       {/* KPI Metric Summary Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Facilities</span>
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Sites</span>
             <Building2 className="w-4 h-4 text-blue-500" />
           </div>
           <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{metrics.total}</p>
@@ -512,45 +598,56 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
 
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 shadow-sm">
           <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Dedicated Posts</span>
+            <Building2 className="w-4 h-4 text-indigo-500" />
+          </div>
+          <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{metrics.dedicatedCount}</p>
+          <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium flex items-center gap-1 mt-0.5">
+            Fixed station sites
+          </span>
+        </div>
+
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Roving Properties</span>
+            <Car className="w-4 h-4 text-cyan-500" />
+          </div>
+          <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{metrics.rovingCount}</p>
+          <span className="text-[11px] text-cyan-600 dark:text-cyan-400 font-medium flex items-center gap-1 mt-0.5">
+            Across 6 patrol groups
+          </span>
+        </div>
+
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 shadow-sm">
+          <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Tier 4 Critical</span>
             <ShieldAlert className="w-4 h-4 text-rose-500" />
           </div>
           <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{metrics.tier4Count}</p>
           <span className="text-[11px] text-rose-600 dark:text-rose-400 font-medium flex items-center gap-1 mt-0.5">
-            <Sparkles className="w-3 h-3" /> Maritime & Airport
+            <Sparkles className="w-3 h-3" /> High-security posts
           </span>
         </div>
 
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Active Guard Posts</span>
-            <Layers className="w-4 h-4 text-indigo-500" />
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Guard Posts</span>
+            <Layers className="w-4 h-4 text-amber-500" />
           </div>
           <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{metrics.totalPosts}</p>
-          <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium flex items-center gap-1 mt-0.5">
-            Concurrent posts
-          </span>
-        </div>
-
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">24/7 Operations</span>
-            <Clock className="w-4 h-4 text-amber-500" />
-          </div>
-          <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{metrics.continuous247}</p>
           <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1 mt-0.5">
-            Continuous coverage
+            Concurrent posts
           </span>
         </div>
 
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 shadow-sm col-span-2 sm:col-span-1">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Officer Qualifications</span>
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Trained Fleet</span>
             <Users className="w-4 h-4 text-emerald-500" />
           </div>
           <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{guardsList.length}</p>
           <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1 mt-0.5">
-            Cross-trained fleet
+            Cross-qualified guards
           </span>
         </div>
       </div>
@@ -666,6 +763,158 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
 
       {/* Filter & Search Toolbar */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm space-y-3.5">
+        {/* Service Type Classification Tabs (Dedicated vs Roving) */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
+            <button
+              type="button"
+              id="filter-service-all"
+              onClick={() => setServiceTypeFilter('all')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                serviceTypeFilter === 'all'
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              <Building2 className="w-3.5 h-3.5 text-blue-500" />
+              All Sites
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-300 font-mono">
+                {sitesList.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              id="filter-service-dedicated"
+              onClick={() => setServiceTypeFilter('dedicated')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                serviceTypeFilter === 'dedicated'
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-indigo-500" />
+              Dedicated Sites
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-mono font-bold">
+                {metrics.dedicatedCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              id="filter-service-roving"
+              onClick={() => setServiceTypeFilter('roving')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                serviceTypeFilter === 'roving'
+                  ? 'bg-cyan-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              <Car className="w-3.5 h-3.5" />
+              Roving Patrol Circuit
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                serviceTypeFilter === 'roving' ? 'bg-cyan-700 text-white' : 'bg-cyan-100 dark:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300'
+              }`}>
+                {metrics.rovingCount}
+              </span>
+            </button>
+          </div>
+
+          {/* View Mode Switcher */}
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate-400 font-medium">Layout:</span>
+            <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-slate-50 dark:bg-slate-800 p-0.5">
+              <button
+                type="button"
+                id="btn-view-grid"
+                onClick={() => setViewMode('grid')}
+                className={`px-2.5 py-1.5 rounded text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                  viewMode === 'grid' 
+                    ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs' 
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+                }`}
+                title="Grid Cards View"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>Grid</span>
+              </button>
+              <button
+                type="button"
+                id="btn-view-table"
+                onClick={() => setViewMode('table')}
+                className={`px-2.5 py-1.5 rounded text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                  viewMode === 'table' 
+                    ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs' 
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+                }`}
+                title="Dense Table View"
+              >
+                <List className="w-3.5 h-3.5" />
+                <span>Table</span>
+              </button>
+              <button
+                type="button"
+                id="btn-view-roving-matrix"
+                onClick={() => setViewMode('roving_matrix')}
+                className={`px-2.5 py-1.5 rounded text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                  viewMode === 'roving_matrix' 
+                    ? 'bg-cyan-600 text-white shadow-xs' 
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+                }`}
+                title="Roving Patrol Route Matrix (Alpha, Bravo, Charlie, Delta, Echo, Foxtrot)"
+              >
+                <Route className="w-3.5 h-3.5" />
+                <span>Patrol Matrix</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Roving Property Group Filter Pills */}
+        {(serviceTypeFilter === 'roving' || serviceTypeFilter === 'all') && (
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs bg-slate-50 dark:bg-slate-800/40 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
+            <span className="text-slate-500 dark:text-slate-400 text-[11px] font-semibold mr-1 shrink-0 flex items-center gap-1">
+              <Car className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+              Patrol Groups:
+            </span>
+            <button
+              type="button"
+              onClick={() => setRovingGroupFilter('all')}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
+                rovingGroupFilter === 'all'
+                  ? 'bg-slate-900 dark:bg-slate-700 text-white font-bold'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              All Groups ({sitesList.filter(s => s.serviceType === 'roving').length})
+            </button>
+            {ROVING_GROUPS.map((grp) => {
+              const cfg = ROVING_GROUP_CONFIGS[grp];
+              const count = sitesList.filter(s => s.serviceType === 'roving' && s.rovingGroup === grp).length;
+              const isSelected = rovingGroupFilter === grp;
+              return (
+                <button
+                  key={grp}
+                  type="button"
+                  id={`filter-group-${grp.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
+                  onClick={() => setRovingGroupFilter(grp)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                    isSelected
+                      ? `${cfg.badgeBg} ${cfg.badgeText} border ${cfg.borderColor} font-bold ring-2 ring-blue-500/30`
+                      : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-current"></span>
+                  {grp}
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/10 dark:bg-white/10 font-mono">
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
           {/* Search Input */}
           <div className="relative flex-1">
@@ -675,7 +924,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
               id="input-search-sites"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search site name, code (PORT-P7), address, sector zone, contact or certs..."
+              placeholder="Search site name, code (PORT-P7), address, sector zone, roving group (Alpha, Bravo...), contact or certs..."
               className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             {searchQuery && (
@@ -716,34 +965,6 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
               <option value="maintenance">Maintenance</option>
               <option value="inactive">Inactive</option>
             </select>
-
-            {/* View Mode Toggle */}
-            <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-slate-50 dark:bg-slate-800 p-0.5">
-              <button
-                type="button"
-                onClick={() => setViewMode('grid')}
-                className={`p-1.5 rounded text-xs transition-colors ${
-                  viewMode === 'grid' 
-                    ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs' 
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
-                }`}
-                title="Grid Cards View"
-              >
-                <LayoutGrid className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('table')}
-                className={`p-1.5 rounded text-xs transition-colors ${
-                  viewMode === 'table' 
-                    ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs' 
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
-                }`}
-                title="Dense Table View"
-              >
-                <List className="w-3.5 h-3.5" />
-              </button>
-            </div>
           </div>
         </div>
 
@@ -794,15 +1015,194 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
           <Building2 className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">No facilities match your search</h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
-            Try adjusting your search query, security tier, or category filters, or register a new facility.
+            Try adjusting your search query, service classification, security tier, or category filters.
           </p>
           <button
             type="button"
-            onClick={handleOpenCreateModal}
+            onClick={() => handleOpenCreateModal()}
             className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg shadow-sm"
           >
             <Plus className="w-3.5 h-3.5" /> Add Facility
           </button>
+        </div>
+      ) : viewMode === 'roving_matrix' ? (
+        /* Roving Patrol Matrix Board (Alpha, Bravo, Charlie, Delta, Echo, Foxtrot) */
+        <div className="space-y-4">
+          <div className="bg-gradient-to-r from-slate-900 via-cyan-950 to-slate-900 text-white p-4 rounded-xl border border-cyan-900/60 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-md">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-cyan-500/20 border border-cyan-400/40 text-cyan-300">
+                  <Route className="w-5 h-5" />
+                </span>
+                <h3 className="text-base font-bold text-white">
+                  Roving Service Patrol Groups & Multi-Property Circuits
+                </h3>
+              </div>
+              <p className="text-xs text-cyan-200/80 mt-1">
+                Roving guards service a collection of properties throughout their shift. Properties are organized into 6 operational patrol groups around town.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono font-bold px-3 py-1 rounded-lg bg-cyan-900/60 border border-cyan-700 text-cyan-200">
+                {metrics.rovingCount} Properties in Roving Circuits
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {ROVING_GROUPS.map((groupName) => {
+              const groupCfg = ROVING_GROUP_CONFIGS[groupName];
+              const groupSites = sitesList
+                .filter(s => s.serviceType === 'roving' && s.rovingGroup === groupName)
+                .sort((a, b) => (a.routeOrder || 99) - (b.routeOrder || 99));
+
+              return (
+                <div
+                  key={groupName}
+                  id={`roving-group-card-${groupName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
+                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden flex flex-col justify-between"
+                >
+                  {/* Group Header */}
+                  <div className={`p-4 border-b ${groupCfg.badgeBg} border-slate-200 dark:border-slate-800`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded bg-black/10 dark:bg-white/10 ${groupCfg.badgeText}`}>
+                            {groupCfg.shortCode}
+                          </span>
+                          <h4 className={`text-base font-bold ${groupCfg.badgeText}`}>
+                            {groupCfg.name}
+                          </h4>
+                        </div>
+                        <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 mt-1 flex items-center gap-1">
+                          <Compass className="w-3.5 h-3.5 text-blue-500" />
+                          {groupCfg.zone}
+                        </p>
+                        <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 line-clamp-2">
+                          {groupCfg.description}
+                        </p>
+                      </div>
+
+                      <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-2xs shrink-0 text-slate-800 dark:text-slate-200">
+                        {groupSites.length} Sites
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Group Properties List */}
+                  <div className="p-3 space-y-2.5 flex-1 max-h-[420px] overflow-y-auto">
+                    {groupSites.length === 0 ? (
+                      <div className="p-6 text-center text-slate-400 text-xs border border-dashed border-slate-200 dark:border-slate-800 rounded-lg">
+                        <Car className="w-6 h-6 mx-auto mb-2 text-slate-300 dark:text-slate-600" />
+                        No properties currently assigned to {groupName}.
+                      </div>
+                    ) : (
+                      groupSites.map((site, index) => {
+                        const catMeta = getCategoryMeta(site.category);
+                        const tierMeta = getTierMeta(site.securityTier);
+                        const validation = siteValidationsMap.get(site.id) || validateSite(site);
+
+                        return (
+                          <div
+                            key={site.id}
+                            className="bg-slate-50 dark:bg-slate-800/70 p-3 rounded-lg border border-slate-200 dark:border-slate-700/80 hover:border-blue-300 transition-colors space-y-2"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-start gap-2 flex-1">
+                                <span className="text-[11px] font-bold font-mono px-1.5 py-0.5 rounded bg-slate-900 text-white shrink-0 mt-0.5">
+                                  #{site.routeOrder || index + 1}
+                                </span>
+                                <div>
+                                  <h5 className="font-bold text-slate-900 dark:text-white text-xs line-clamp-1">
+                                    {site.name}
+                                  </h5>
+                                  <span className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5">
+                                    <MapPin className="w-3 h-3 text-rose-500 shrink-0" />
+                                    <span className="truncate">{site.address}</span>
+                                  </span>
+                                </div>
+                              </div>
+
+                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border shrink-0 ${catMeta.color}`}>
+                                {catMeta.label.split(' / ')[0]}
+                              </span>
+                            </div>
+
+                            {/* Patrol Details */}
+                            <div className="flex items-center justify-between text-[10px] text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 p-1.5 rounded border border-slate-100 dark:border-slate-800">
+                              <span className="flex items-center gap-1 font-medium text-cyan-700 dark:text-cyan-300">
+                                <Clock className="w-3 h-3 text-cyan-600" />
+                                {site.patrolFrequency || 'Hourly Sweep'}
+                              </span>
+                              <span className="text-slate-500 font-mono">
+                                Post: {site.activePostsCount || 1}
+                              </span>
+                            </div>
+
+                            {site.rovingNotes && (
+                              <p className="text-[10px] text-slate-600 dark:text-slate-400 italic line-clamp-1 bg-amber-50/60 dark:bg-amber-950/20 p-1.5 rounded border border-amber-200/60 dark:border-amber-900/40">
+                                <span className="font-bold text-amber-800 dark:text-amber-300">Patrol SOP:</span> {site.rovingNotes}
+                              </p>
+                            )}
+
+                            {/* Reassign Group & Quick Actions */}
+                            <div className="flex items-center justify-between pt-1 border-t border-slate-200 dark:border-slate-700 text-xs">
+                              <div className="flex items-center gap-1">
+                                <select
+                                  value={site.rovingGroup || groupName}
+                                  onChange={(e) => handleQuickAssignGroup(site.id, e.target.value as RovingGroup)}
+                                  className="text-[10px] py-1 px-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded text-slate-700 dark:text-slate-300 font-medium"
+                                  title="Reassign to another roving group"
+                                >
+                                  {ROVING_GROUPS.map((g) => (
+                                    <option key={g} value={g}>{g}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingDossierSite(site)}
+                                  className="p-1 text-slate-500 hover:text-blue-600 rounded transition-colors"
+                                  title="View Dossier"
+                                >
+                                  <Info className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditModal(site)}
+                                  className="p-1 text-slate-500 hover:text-slate-900 dark:hover:text-white rounded transition-colors"
+                                  title="Edit Site"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Group Action Footer */}
+                  <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 flex items-center justify-between">
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                      Circuit: {groupSites.length} checkpoint stops
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenCreateModal(groupName)}
+                      className="px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold shadow-2xs flex items-center gap-1"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Add to {groupCfg.shortCode}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -813,6 +1213,8 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
             const activeShifts = getShiftsForSite(site.name);
             const isCopied = copiedAddressId === site.id;
             const validation = siteValidationsMap.get(site.id) || validateSite(site);
+            const isRoving = site.serviceType === 'roving';
+            const rovingGroupCfg = site.rovingGroup ? ROVING_GROUP_CONFIGS[site.rovingGroup] : null;
 
             return (
               <div
@@ -876,6 +1278,44 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                     </div>
                   </div>
 
+                  {/* Service Classification Banner */}
+                  <div className={`px-4 py-2 border-b text-xs flex items-center justify-between ${
+                    isRoving 
+                      ? 'bg-cyan-50/80 dark:bg-cyan-950/40 border-cyan-200 dark:border-cyan-900/60' 
+                      : 'bg-slate-100/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800'
+                  }`}>
+                    {isRoving && rovingGroupCfg ? (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`inline-flex items-center gap-1 font-bold text-[11px] px-2 py-0.5 rounded-md ${rovingGroupCfg.badgeBg} ${rovingGroupCfg.badgeText} border ${rovingGroupCfg.borderColor}`}>
+                          <Car className="w-3 h-3" />
+                          {site.rovingGroup}
+                        </span>
+                        {site.routeOrder && (
+                          <span className="text-[10px] font-mono font-bold bg-cyan-100 dark:bg-cyan-900/80 text-cyan-800 dark:text-cyan-200 px-1.5 py-0.5 rounded">
+                            Stop #{site.routeOrder}
+                          </span>
+                        )}
+                        <span className="text-[10px] text-slate-600 dark:text-slate-300 font-medium">
+                          {site.patrolFrequency || 'Hourly Sweep'}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 font-medium text-[11px]">
+                        <Building2 className="w-3.5 h-3.5 text-indigo-500" />
+                        <span>Dedicated Stationary Post (Full Shift)</span>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => handleQuickToggleServiceType(site)}
+                      className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline font-semibold cursor-pointer shrink-0"
+                      title="Switch between Dedicated Post and Roving Service"
+                    >
+                      {isRoving ? 'Switch to Dedicated' : 'Switch to Roving'}
+                    </button>
+                  </div>
+
                   {/* Card Body */}
                   <div className="p-4 space-y-3 text-xs">
                     {/* Address with Copy */}
@@ -919,6 +1359,18 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                         </span>
                       </div>
                     </div>
+
+                    {/* Roving Notes Callout if applicable */}
+                    {isRoving && site.rovingNotes && (
+                      <div className="bg-cyan-50/60 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-900/50 rounded-lg p-2 text-[11px] text-cyan-900 dark:text-cyan-200">
+                        <div className="flex items-center gap-1 text-[10px] font-bold text-cyan-800 dark:text-cyan-300 mb-0.5">
+                          <Route className="w-3 h-3 text-cyan-600" /> Roving Patrol Instructions:
+                        </div>
+                        <p className="line-clamp-2 italic">
+                          "{site.rovingNotes}"
+                        </p>
+                      </div>
+                    )}
 
                     {/* Required Certifications Tags */}
                     {site.requiredCertifications && site.requiredCertifications.length > 0 && (
@@ -1060,6 +1512,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
               <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider text-[10px]">
                 <tr>
                   <th className="py-3 px-4">Code & Name</th>
+                  <th className="py-3 px-4">Service Type & Group</th>
                   <th className="py-3 px-4">Category & Tier</th>
                   <th className="py-3 px-4">Street Address</th>
                   <th className="py-3 px-4">Primary Contact</th>
@@ -1076,6 +1529,8 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                   const tierMeta = getTierMeta(site.securityTier);
                   const qualifiedGuards = getQualifiedGuardsForSite(site.name);
                   const validation = siteValidationsMap.get(site.id) || validateSite(site);
+                  const isRoving = site.serviceType === 'roving';
+                  const rovingGroupCfg = site.rovingGroup ? ROVING_GROUP_CONFIGS[site.rovingGroup] : null;
 
                   return (
                     <tr 
@@ -1100,6 +1555,25 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                             )}
                           </div>
                         </div>
+                      </td>
+
+                      <td className="py-3 px-4">
+                        {isRoving && rovingGroupCfg ? (
+                          <div className="space-y-0.5">
+                            <span className={`inline-flex items-center gap-1 font-bold text-[10px] px-2 py-0.5 rounded ${rovingGroupCfg.badgeBg} ${rovingGroupCfg.badgeText} border ${rovingGroupCfg.borderColor}`}>
+                              <Car className="w-3 h-3" />
+                              {site.rovingGroup}
+                            </span>
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                              {site.routeOrder ? `Stop #${site.routeOrder} • ` : ''}{site.patrolFrequency || 'Hourly'}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                            <Building2 className="w-3 h-3 text-indigo-500" />
+                            Dedicated Post
+                          </span>
+                        )}
                       </td>
 
                       <td className="py-3 px-4">
@@ -1249,6 +1723,80 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
 
             {/* Dossier Content */}
             <div className="p-6 space-y-6 flex-1 text-xs">
+              {/* Service Type & Patrol Group Classification Banner */}
+              {viewingDossierSite.serviceType === 'roving' ? (
+                <div className="p-4 rounded-xl bg-cyan-50 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-900/60 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="p-1.5 bg-cyan-600 text-white rounded-lg">
+                        <Car className="w-4 h-4" />
+                      </span>
+                      <div>
+                        <span className="font-bold text-cyan-900 dark:text-cyan-200 text-sm">
+                          Roving Service Circuit
+                        </span>
+                        <span className="text-[11px] text-cyan-700 dark:text-cyan-300 block">
+                          Assigned to <strong>{viewingDossierSite.rovingGroup || 'Unassigned Group'}</strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {viewingDossierSite.routeOrder && (
+                        <span className="text-xs font-mono font-bold px-2 py-1 bg-cyan-200 dark:bg-cyan-900 text-cyan-900 dark:text-cyan-100 rounded">
+                          Stop #{viewingDossierSite.routeOrder}
+                        </span>
+                      )}
+                      <span className="text-xs font-semibold px-2 py-1 bg-white dark:bg-slate-800 border border-cyan-300 dark:border-cyan-700 text-cyan-800 dark:text-cyan-200 rounded">
+                        {viewingDossierSite.patrolFrequency || 'Hourly Patrol Sweep'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {viewingDossierSite.rovingNotes && (
+                    <div className="bg-white/80 dark:bg-slate-900/80 p-2.5 rounded-lg border border-cyan-100 dark:border-cyan-900/50 text-[11px] text-cyan-950 dark:text-cyan-200">
+                      <span className="font-bold text-cyan-800 dark:text-cyan-300">Roving SOP / Checkpoint Instructions: </span>
+                      {viewingDossierSite.rovingNotes}
+                    </div>
+                  )}
+
+                  {/* Other properties in the same roving group */}
+                  {viewingDossierSite.rovingGroup && (
+                    <div className="pt-2 border-t border-cyan-200/60 dark:border-cyan-900/40">
+                      <span className="text-[10px] uppercase font-bold text-cyan-700 dark:text-cyan-400 block mb-1">
+                        Companion Properties in {viewingDossierSite.rovingGroup}:
+                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {sitesList
+                          .filter(s => s.serviceType === 'roving' && s.rovingGroup === viewingDossierSite.rovingGroup)
+                          .map((compSite) => (
+                            <span
+                              key={compSite.id}
+                              className={`text-[10px] px-2 py-0.5 rounded-md border font-medium ${
+                                compSite.id === viewingDossierSite.id
+                                  ? 'bg-cyan-600 text-white border-cyan-700 font-bold'
+                                  : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                              }`}
+                            >
+                              #{compSite.routeOrder || '-'}: {compSite.name}
+                            </span>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                    <Building2 className="w-4 h-4 text-indigo-500" />
+                    <span className="font-semibold text-xs">Dedicated Stationary Security Post</span>
+                  </div>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Assigned guard remains continuously on-site for entire shift duration
+                  </span>
+                </div>
+              )}
+
               {/* Quick Contact & Dispatch Row */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="bg-slate-50 dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700">
@@ -1485,8 +2033,163 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
               {/* Section 1: Facility Identity */}
               <div className="space-y-3">
                 <h4 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wider text-slate-400">
-                  1. Facility Identity & Classification
+                  1. Facility Identity & Service Classification
                 </h4>
+
+                {/* Service Type Selection: Dedicated Post vs Roving Patrol Circuit */}
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2.5">
+                  <label className="block text-slate-700 dark:text-slate-300 font-bold text-xs">
+                    Service Type / Dispatch Mode *
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <label className={`p-3 rounded-lg border cursor-pointer flex items-start gap-2.5 transition-all ${
+                      formServiceType === 'dedicated'
+                        ? 'bg-blue-50/80 dark:bg-blue-950/40 border-blue-500 ring-2 ring-blue-500/20'
+                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="serviceType"
+                        value="dedicated"
+                        checked={formServiceType === 'dedicated'}
+                        onChange={() => setFormServiceType('dedicated')}
+                        className="mt-0.5 text-blue-600 focus:ring-blue-500"
+                      />
+                      <div>
+                        <span className="font-bold text-slate-900 dark:text-white text-xs flex items-center gap-1.5">
+                          <Building2 className="w-3.5 h-3.5 text-indigo-500" />
+                          Dedicated Facility Post
+                        </span>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                          Guard remains on-site at this single facility for the entirety of their scheduled shift.
+                        </p>
+                      </div>
+                    </label>
+
+                    <label className={`p-3 rounded-lg border cursor-pointer flex items-start gap-2.5 transition-all ${
+                      formServiceType === 'roving'
+                        ? 'bg-cyan-50/80 dark:bg-cyan-950/40 border-cyan-500 ring-2 ring-cyan-500/20'
+                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                    }`}>
+                      <input
+                        type="radio"
+                        name="serviceType"
+                        value="roving"
+                        checked={formServiceType === 'roving'}
+                        onChange={() => {
+                          setFormServiceType('roving');
+                          if (!formRovingGroup) setFormRovingGroup('Alpha Group');
+                        }}
+                        className="mt-0.5 text-cyan-600 focus:ring-cyan-500"
+                      />
+                      <div>
+                        <span className="font-bold text-slate-900 dark:text-white text-xs flex items-center gap-1.5">
+                          <Car className="w-3.5 h-3.5 text-cyan-600" />
+                          Roving Service Circuit
+                        </span>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                          Property is serviced by roving guards as part of a multi-site property patrol group.
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+
+                  {/* Roving-Specific Property Group & Patrol Frequency Settings */}
+                  {formServiceType === 'roving' && (
+                    <div className="pt-3 border-t border-slate-200 dark:border-slate-700 space-y-3 animate-in fade-in-50 duration-150">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-cyan-800 dark:text-cyan-300 font-bold text-xs">
+                          Assign Property Group *
+                        </label>
+                        <span className="text-[11px] text-slate-400">
+                          6 Roving Operational Groups
+                        </span>
+                      </div>
+
+                      {/* 6 Property Groups Radio/Card Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {ROVING_GROUPS.map((grp) => {
+                          const cfg = ROVING_GROUP_CONFIGS[grp];
+                          const isSelected = formRovingGroup === grp;
+
+                          return (
+                            <button
+                              key={grp}
+                              type="button"
+                              onClick={() => setFormRovingGroup(grp)}
+                              className={`p-2.5 rounded-lg border text-left transition-all ${
+                                isSelected
+                                  ? `${cfg.badgeBg} ${cfg.badgeText} border ${cfg.borderColor} ring-2 ring-cyan-500/30 font-bold shadow-xs`
+                                  : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold">{cfg.name}</span>
+                                <span className="text-[10px] font-mono font-semibold px-1 py-0.2 rounded bg-black/10 dark:bg-white/10">
+                                  {cfg.shortCode}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400 block mt-0.5 truncate">
+                                {cfg.zone}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Route Order & Patrol Frequency Row */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <div>
+                          <label className="block text-slate-700 dark:text-slate-300 font-medium mb-1">
+                            Route Checkpoint Sequence #
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={50}
+                            value={formRouteOrder}
+                            onChange={(e) => setFormRouteOrder(Number(e.target.value))}
+                            placeholder="e.g. 1 (First stop in circuit)"
+                            className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-700 dark:text-slate-300 font-medium mb-1">
+                            Patrol Sweep Frequency *
+                          </label>
+                          <select
+                            value={formPatrolFrequency}
+                            onChange={(e) => setFormPatrolFrequency(e.target.value)}
+                            className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
+                          >
+                            <option value="Hourly Sweep">Hourly Sweep (Every 60 mins)</option>
+                            <option value="Every 90 mins">Every 90 mins</option>
+                            <option value="2-Hour Loop Sweep">2-Hour Loop Sweep</option>
+                            <option value="3x Per Shift">3x Per Shift</option>
+                            <option value="4x Per Shift">4x Per Shift (Every 2h)</option>
+                            <option value="Twice per 8-hour Shift">Twice per 8-hour Shift</option>
+                            <option value="Continuous Circuit">Continuous Circuit Patrol</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Roving Notes */}
+                      <div>
+                        <label className="block text-slate-700 dark:text-slate-300 font-medium mb-1">
+                          Roving Checkpoint SOP / Gate Codes
+                        </label>
+                        <input
+                          type="text"
+                          value={formRovingNotes}
+                          onChange={(e) => setFormRovingNotes(e.target.value)}
+                          placeholder="e.g. Lock master gate after scan, check loading dock padlocks, verify refrigeration alarm panel"
+                          className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-xs"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="sm:col-span-2">

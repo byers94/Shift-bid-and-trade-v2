@@ -20,6 +20,8 @@ import {
   Compass, 
   Sparkles,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   PhoneCall,
   AlertCircle,
   Camera,
@@ -27,7 +29,18 @@ import {
   X,
   Zap,
   Check,
-  RotateCcw
+  RotateCcw,
+  Navigation,
+  Car,
+  Crosshair,
+  Route,
+  ShieldAlert,
+  CloudRain,
+  Gauge,
+  CheckCheck,
+  Flag,
+  Layers,
+  SlidersHorizontal
 } from 'lucide-react';
 import { ScheduledShift } from '../../types/shift';
 import { VerificationCameraModal } from './VerificationCameraModal';
@@ -48,8 +61,42 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = () => {
     endGuardBreak,
     sitesList,
     opsPhone,
-    showToast
+    showToast,
+    rovers,
+    getRoverForGuard,
+    getRoverByGroup,
+    roverPlans,
+    advanceRoverCheckpoint,
+    simulateRoverGpsMove,
+    activeInterceptions,
+    trafficCondition,
+    optimizationMode,
+    clearAdHocInterception
   } = useShiftOps();
+
+  // Find assigned rover vehicle and dynamic route plan (support active shift, guard profile, or group assignment)
+  const assignedRover = getRoverForGuard(activeGuard.id) || (
+    activeClockedInShift?.assignedRoverId ? rovers.find(r => r.id === activeClockedInShift.assignedRoverId) : undefined
+  ) || (
+    activeClockedInShift?.rovingGroup ? getRoverByGroup(activeClockedInShift.rovingGroup) : undefined
+  ) || (
+    activeGuard.isRovingGuard ? getRoverByGroup(activeGuard.rovingGroup || 'Alpha Group') : undefined
+  );
+  const activeRoverPlan = assignedRover ? roverPlans[assignedRover.id] : undefined;
+  const currentRoverStop = activeRoverPlan && assignedRover 
+    ? activeRoverPlan.stops[assignedRover.currentStopIndex] 
+    : undefined;
+  const nextRoverStop = activeRoverPlan && assignedRover
+    ? activeRoverPlan.stops[assignedRover.currentStopIndex + 1]
+    : undefined;
+
+  // Active emergency intercept assigned to this guard's rover unit
+  const activeUnitIntercept = assignedRover
+    ? activeInterceptions.find(i => i.assignedRoverId === assignedRover.id && i.status === 'dispatched')
+    : undefined;
+
+  const [showFullItinerary, setShowFullItinerary] = useState<boolean>(true);
+  const [itineraryFilter, setItineraryFilter] = useState<'all' | 'pending' | 'completed'>('all');
 
   // Clock-in form state
   const [selectedSiteName, setSelectedSiteName] = useState<string>(
@@ -413,6 +460,304 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = () => {
               </button>
             </div>
           </div>
+
+          {/* ROVER DYNAMIC ROUTE & GEOFENCE CIRCUIT (If Guard is assigned to a Rover) */}
+          {assignedRover && activeRoverPlan && (
+            <div className="bg-slate-900 text-white rounded-2xl p-4 border border-cyan-500/40 shadow-xl space-y-3.5">
+              {/* Emergency Intercept High-Priority Alert */}
+              {activeUnitIntercept && (
+                <div className="p-3.5 rounded-xl bg-gradient-to-r from-rose-950 via-rose-900 to-rose-950 border-2 border-rose-500 text-rose-100 space-y-2 shadow-lg animate-pulse">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-2.5">
+                      <div className="p-2 bg-rose-600 text-white rounded-lg shrink-0">
+                        <ShieldAlert className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] font-black uppercase tracking-wider bg-rose-700 text-white px-2 py-0.5 rounded font-mono">
+                            🚨 PRIORITY CFS INTERCEPT ORDER
+                          </span>
+                          <span className="text-[10px] font-bold text-rose-200 font-mono">
+                            Assigned to: {assignedRover.unitNumber}
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-black text-white mt-1">
+                          {activeUnitIntercept.callTitle || activeUnitIntercept.callSummary}
+                        </h4>
+                        <p className="text-xs text-rose-200 font-mono flex items-center gap-1 mt-0.5">
+                          <MapPin className="w-3.5 h-3.5 text-rose-300 shrink-0" />
+                          <span>{activeUnitIntercept.locationAddress || activeUnitIntercept.targetAddress}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0 bg-rose-900/80 p-2 rounded-lg border border-rose-600/60 font-mono">
+                      <span className="text-[9px] text-rose-300 uppercase block font-sans">Target ETA</span>
+                      <span className="text-sm font-black text-white">~{activeUnitIntercept.estimatedEtaMinutes || 5} min</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-rose-800/80 text-[11px]">
+                    <span className="text-rose-300 italic">
+                      Routine rounds automatically reprioritized. Proceed immediately.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearAdHocInterception(activeUnitIntercept.id, 'Officer responded on-scene');
+                        showToast('Intercept Acknowledged', 'Dispatched intercept resolved on-scene.', 'success');
+                      }}
+                      className="px-3 py-1 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-lg shadow-sm cursor-pointer transition-colors"
+                    >
+                      Acknowledge & Mark On-Scene
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Circuit Header & Optimization Condition Badges */}
+              <div className="space-y-2 pb-3 border-b border-slate-800">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-cyan-600/20 border border-cyan-500/40 rounded-xl text-cyan-400">
+                      <Car className="w-4 h-4 text-cyan-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-black text-white flex items-center gap-1.5 flex-wrap">
+                        <span>Roving Patrol Circuit: {assignedRover.unitNumber}</span>
+                        <span className="text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-500/40 px-2 py-0.2 rounded font-mono font-bold">
+                          {assignedRover.rovingGroup}
+                        </span>
+                      </h3>
+                      <p className="text-[11px] text-slate-400 font-mono">
+                        Assigned Officer: <strong className="text-slate-200">{activeGuard.name}</strong> • Rover ID: {assignedRover.id}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="text-right font-mono">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Circuit Progress</span>
+                    <p className="text-xs font-black text-cyan-300">
+                      Stop {assignedRover.currentStopIndex + 1} of {activeRoverPlan.stops.length} ({Math.round(((assignedRover.currentStopIndex) / activeRoverPlan.stops.length) * 100)}% Complete)
+                    </p>
+                  </div>
+                </div>
+
+                {/* Real-time route optimization factors bar */}
+                <div className="p-2 bg-slate-950/80 rounded-xl border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                  <div className="flex items-center gap-1.5 font-mono text-slate-300">
+                    <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span className="text-slate-400">Route Logic:</span>
+                    <span className="font-bold text-cyan-300 capitalize">{(activeRoverPlan.optimizationMode || 'traffic_density_optimal').replace(/_/g, ' ')}</span>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap text-[10px] font-mono">
+                    <span className="px-2 py-0.5 bg-blue-950/80 text-blue-300 rounded border border-blue-800/60 flex items-center gap-1">
+                      <CloudRain className="w-3 h-3 text-blue-400" />
+                      <span>Traffic: {trafficCondition}</span>
+                    </span>
+                    <span className="px-2 py-0.5 bg-emerald-950/80 text-emerald-300 rounded border border-emerald-800/60 font-bold">
+                      Saved ~{activeRoverPlan.deadheadSavedMinutes}m Deadhead
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Current Active Target Checkpoint */}
+              {currentRoverStop && (
+                <div className="bg-gradient-to-br from-slate-950 to-slate-900 rounded-xl p-3.5 border-2 border-cyan-500/50 shadow-md space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="text-[9px] uppercase font-black tracking-wider text-cyan-400 flex items-center gap-1">
+                        <Crosshair className="w-3 h-3 text-cyan-400 animate-spin" />
+                        <span>Current Target #{assignedRover.currentStopIndex + 1}</span>
+                      </span>
+                      <h4 className="text-sm font-black text-white mt-0.5 flex items-center gap-1.5">
+                        <Building2 className="w-4 h-4 text-cyan-400 shrink-0" />
+                        <span>{currentRoverStop.siteName}</span>
+                      </h4>
+                      <p className="text-[11px] text-slate-400 font-mono flex items-center gap-1 mt-0.5">
+                        <MapPin className="w-3 h-3 text-slate-500 shrink-0" />
+                        <span>{currentRoverStop.siteAddress}</span>
+                      </p>
+                    </div>
+
+                    <div className="text-right">
+                      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full inline-block ${
+                        currentRoverStop.slaPriority === 'P1_MANDATORY_SLA' || currentRoverStop.slaPriority === 'P1'
+                          ? 'bg-rose-950 text-rose-300 border border-rose-700 font-mono'
+                          : 'bg-amber-950 text-amber-300 border border-amber-700 font-mono'
+                      }`}>
+                        {currentRoverStop.slaPriority}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* SLA Window & Dwell Timer Details */}
+                  <div className="grid grid-cols-3 gap-2 text-[11px] bg-slate-900/90 p-2.5 rounded-lg border border-slate-800">
+                    <div>
+                      <span className="text-[9px] text-slate-400 uppercase block">Target Window</span>
+                      <p className="font-mono font-bold text-slate-200">
+                        {currentRoverStop.estimatedArrival} - {currentRoverStop.estimatedDeparture}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-400 uppercase block">Mandatory Dwell</span>
+                      <p className="font-mono font-bold text-amber-300">
+                        {currentRoverStop.targetDwellMinutes} mins on-site
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-400 uppercase block">Geofence Status</span>
+                      <p className="font-mono font-bold text-emerald-400 flex items-center gap-1">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>{assignedRover.isInsideGeofence ? 'Inside Geofence' : 'Radar Scanning'}</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Action Button to Simulate/Log Checkpoint Arrival */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (assignedRover.status === 'patrolling') {
+                          simulateRoverGpsMove(assignedRover.id, {
+                            latitude: currentRoverStop.coords.latitude,
+                            longitude: currentRoverStop.coords.longitude,
+                            speedKmh: 5
+                          });
+                          advanceRoverCheckpoint(assignedRover.id);
+                        } else {
+                          advanceRoverCheckpoint(assignedRover.id, 'finish_dwell');
+                        }
+                      }}
+                      className="flex-1 py-2.5 px-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-slate-950 font-black text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-[0.99]"
+                    >
+                      <Crosshair className="w-4 h-4 text-slate-950" />
+                      <span>
+                        {assignedRover.status === 'dwelling'
+                          ? 'Complete Site Dwell -> Depart to Next Checkpoint'
+                          : 'Log Geofence Arrival & Start Dwell Timer'}
+                      </span>
+                    </button>
+
+                    <a
+                      href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(currentRoverStop.siteAddress)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-cyan-300 rounded-xl text-xs font-bold flex items-center gap-1 border border-slate-700 cursor-pointer"
+                      title="Open GPS Navigation in Google Maps"
+                    >
+                      <Navigation className="w-3.5 h-3.5" />
+                      <span>GPS</span>
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {/* COMPLETE OPTIMIZED ITINERARY LIST ACCORDION */}
+              <div className="bg-slate-950/60 rounded-xl border border-slate-800 overflow-hidden">
+                <div className="p-3 flex items-center justify-between border-b border-slate-800/80">
+                  <button
+                    type="button"
+                    onClick={() => setShowFullItinerary(!showFullItinerary)}
+                    className="flex items-center gap-2 text-xs font-bold text-slate-200 hover:text-white cursor-pointer"
+                  >
+                    <Route className="w-4 h-4 text-cyan-400" />
+                    <span>Optimized Circuit Itinerary ({activeRoverPlan.stops.length} Locations)</span>
+                    {showFullItinerary ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+                  </button>
+
+                  {/* Filter tabs */}
+                  <div className="flex items-center gap-1">
+                    {(['all', 'pending', 'completed'] as const).map((filter) => (
+                      <button
+                        key={filter}
+                        type="button"
+                        onClick={() => setItineraryFilter(filter)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase transition-colors cursor-pointer ${
+                          itineraryFilter === filter
+                            ? 'bg-cyan-600 text-white font-bold'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {filter}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {showFullItinerary && (
+                  <div className="p-2 space-y-1.5 max-h-[300px] overflow-y-auto no-scrollbar">
+                    {activeRoverPlan.stops
+                      .map((stop, idx) => ({ stop, idx }))
+                      .filter(({ idx }) => {
+                        if (itineraryFilter === 'completed') return idx < assignedRover.currentStopIndex;
+                        if (itineraryFilter === 'pending') return idx >= assignedRover.currentStopIndex;
+                        return true;
+                      })
+                      .map(({ stop, idx }) => {
+                        const isCompleted = idx < assignedRover.currentStopIndex;
+                        const isCurrent = idx === assignedRover.currentStopIndex;
+                        const isUpcoming = idx > assignedRover.currentStopIndex;
+
+                        return (
+                          <div
+                            key={stop.id || idx}
+                            className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2.5 transition-all ${
+                              isCurrent
+                                ? 'bg-cyan-950/80 border-cyan-500/80 text-white ring-1 ring-cyan-500/30'
+                                : isCompleted
+                                ? 'bg-slate-900/40 border-slate-800/60 text-slate-400 opacity-60'
+                                : 'bg-slate-900/80 border-slate-800 text-slate-200 hover:border-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              {/* Step sequence badge */}
+                              <div className={`w-6 h-6 rounded-full flex items-center justify-center font-mono text-[11px] font-bold shrink-0 ${
+                                isCurrent
+                                  ? 'bg-cyan-500 text-slate-950 font-black'
+                                  : isCompleted
+                                  ? 'bg-emerald-800 text-emerald-100'
+                                  : 'bg-slate-800 text-slate-300 border border-slate-700'
+                              }`}>
+                                {isCompleted ? '✓' : idx + 1}
+                              </div>
+
+                              <div className="min-w-0">
+                                <div className="font-bold truncate flex items-center gap-1.5">
+                                  <span className={isCurrent ? 'text-cyan-200' : isCompleted ? 'line-through text-slate-400' : 'text-white'}>
+                                    {stop.siteName}
+                                  </span>
+                                  {isCurrent && (
+                                    <span className="px-1.5 py-0.2 bg-cyan-600 text-slate-950 rounded text-[9px] font-mono font-black uppercase">
+                                      CURRENT
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[10px] text-slate-400 font-mono truncate">
+                                  {stop.siteAddress}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="text-right shrink-0 font-mono text-[11px]">
+                              <div className="font-bold text-slate-300">
+                                {stop.estimatedArrival} - {stop.estimatedDeparture}
+                              </div>
+                              <span className="text-[9px] text-slate-500">
+                                {stop.targetDwellMinutes}m dwell • {stop.slaPriority.replace('_MANDATORY_SLA', '')}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Quick Ops Dispatch Link Card */}
           <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">

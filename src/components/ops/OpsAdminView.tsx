@@ -15,6 +15,7 @@ import { CallsForServicePanel } from './CallsForServicePanel';
 import { LiveGuardRosterBoard } from './LiveGuardRosterBoard';
 import { ShiftSchedulingCalendar } from './ShiftSchedulingCalendar';
 import { LateShiftAlertModal } from './LateShiftAlertModal';
+import { RoverRouteOptimizationPanel } from './RoverRouteOptimizationPanel';
 import { 
   ShieldCheck, 
   Activity, 
@@ -42,7 +43,8 @@ import {
   PhoneCall,
   ShieldAlert,
   Clock,
-  AlertTriangle
+  AlertTriangle,
+  Navigation
 } from 'lucide-react';
 
 interface OpsAdminViewProps {
@@ -70,17 +72,20 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
     activeBroadcast,
     scheduledShifts,
     getGuardsLiveTracking,
-    lateShiftAlerts 
+    lateShiftAlerts,
+    rovers,
+    activeInterceptions
   } = useShiftOps();
 
   const [activeMainTab, setActiveMainTabState] = useState<
-    'operations' | 'live_tracking' | 'calendar_schedule' | 'calls_for_service' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal'
+    'operations' | 'live_tracking' | 'rover_routing' | 'calendar_schedule' | 'calls_for_service' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal'
   >(() => {
     try {
       const saved = localStorage.getItem(STORAGE_OPS_MAIN_TAB_KEY);
       if (
         saved === 'operations' || 
         saved === 'live_tracking' || 
+        saved === 'rover_routing' || 
         saved === 'calendar_schedule' || 
         saved === 'calls_for_service' || 
         saved === 'site_directory' || 
@@ -94,7 +99,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
     return 'operations';
   });
 
-  const setActiveMainTab = (tab: 'operations' | 'live_tracking' | 'calendar_schedule' | 'calls_for_service' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal') => {
+  const setActiveMainTab = (tab: 'operations' | 'live_tracking' | 'rover_routing' | 'calendar_schedule' | 'calls_for_service' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal') => {
     setActiveMainTabState(tab);
     try {
       localStorage.setItem(STORAGE_OPS_MAIN_TAB_KEY, tab);
@@ -410,6 +415,28 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
             </span>
           </button>
 
+          {/* Rover Fleet Route Optimization & Dispatch Sub-Nav Tab */}
+          <button
+            id="tab-rover-routing-btn"
+            type="button"
+            onClick={() => setActiveMainTab('rover_routing')}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              activeMainTab === 'rover_routing'
+                ? 'bg-cyan-600 dark:bg-cyan-600 text-slate-950 font-black shadow-xs'
+                : 'text-cyan-300 hover:text-white hover:bg-cyan-950/60 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Navigation className="w-3.5 h-3.5" />
+            <span>Rover Route Optimization</span>
+            <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${
+              activeInterceptions.length > 0
+                ? 'bg-rose-500 text-white animate-pulse'
+                : 'bg-cyan-950 text-cyan-300 border border-cyan-400/40'
+            }`}>
+              {rovers.length} Units {activeInterceptions.length > 0 ? `(${activeInterceptions.length} Intercept)` : ''}
+            </span>
+          </button>
+
           {/* Master Shift Scheduling Calendar Sub-Nav Tab */}
           <button
             id="tab-calendar-schedule-btn"
@@ -677,6 +704,16 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
             onOpenCalendar={(guardId) => {
               setCalendarTargetGuardId(guardId || null);
               setActiveMainTab('calendar_schedule');
+            }}
+          />
+        </div>
+      )}
+
+      {activeMainTab === 'rover_routing' && (
+        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
+          <RoverRouteOptimizationPanel 
+            onSelectSite={(siteId) => {
+              setActiveMainTab('site_directory');
             }}
           />
         </div>

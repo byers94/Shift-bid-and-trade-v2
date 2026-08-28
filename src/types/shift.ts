@@ -58,6 +58,10 @@ export interface GuardProfile {
   biometricsEnabled?: boolean;
   biometricCredentialId?: string;
   lastLogin?: string;
+
+  // Rover Fleet Circuit Assignment
+  isRovingGuard?: boolean;
+  rovingGroup?: RovingGroup;
 }
 
 export interface SwapProposal {
@@ -162,6 +166,11 @@ export type AdminActionType =
   | 'priority_broadcast_sent'
   | 'priority_shift_claimed'
   | 'late_shift_alert_acknowledged'
+  | 'traffic_condition_updated'
+  | 'route_optimizer_mode'
+  | 'routes_reoptimized'
+  | 'ad_hoc_interception'
+  | 'interception_cleared'
   | 'system_reset';
 
 export interface AdminAction {
@@ -317,6 +326,106 @@ export type SiteSecurityTier =
   | 'Tier 3 - High Security' 
   | 'Tier 4 - Critical Infrastructure';
 
+export type SiteServiceType = 'dedicated' | 'roving';
+
+export type RovingGroup = 
+  | 'Alpha Group' 
+  | 'Bravo Group' 
+  | 'Charlie Group' 
+  | 'Delta Group' 
+  | 'Echo Group' 
+  | 'Foxtrot Group';
+
+export const ROVING_GROUPS: RovingGroup[] = [
+  'Alpha Group',
+  'Bravo Group',
+  'Charlie Group',
+  'Delta Group',
+  'Echo Group',
+  'Foxtrot Group'
+];
+
+export interface RovingGroupConfig {
+  id: RovingGroup;
+  name: string;
+  shortCode: string;
+  color: string;
+  badgeBg: string;
+  badgeText: string;
+  borderColor: string;
+  zone: string;
+  description: string;
+}
+
+export const ROVING_GROUP_CONFIGS: Record<RovingGroup, RovingGroupConfig> = {
+  'Alpha Group': {
+    id: 'Alpha Group',
+    name: 'Alpha Group',
+    shortCode: 'GRP-A',
+    color: 'blue',
+    badgeBg: 'bg-blue-100 dark:bg-blue-950/70',
+    badgeText: 'text-blue-700 dark:text-blue-300',
+    borderColor: 'border-blue-300 dark:border-blue-700',
+    zone: 'Downtown Core & Financial District',
+    description: 'High-density commercial towers, financial hubs, and plaza access checkpoints.'
+  },
+  'Bravo Group': {
+    id: 'Bravo Group',
+    name: 'Bravo Group',
+    shortCode: 'GRP-B',
+    color: 'cyan',
+    badgeBg: 'bg-cyan-100 dark:bg-cyan-950/70',
+    badgeText: 'text-cyan-700 dark:text-cyan-300',
+    borderColor: 'border-cyan-300 dark:border-cyan-700',
+    zone: 'Waterfront & Maritime Commercial Strip',
+    description: 'Marina boardwalks, waterfront piers, passenger terminals, and seaside retail properties.'
+  },
+  'Charlie Group': {
+    id: 'Charlie Group',
+    name: 'Charlie Group',
+    shortCode: 'GRP-C',
+    color: 'emerald',
+    badgeBg: 'bg-emerald-100 dark:bg-emerald-950/70',
+    badgeText: 'text-emerald-700 dark:text-emerald-300',
+    borderColor: 'border-emerald-300 dark:border-emerald-700',
+    zone: 'Eastside Tech Parks & Innovation Campuses',
+    description: 'Tech development offices, research buildings, and corporate business parks.'
+  },
+  'Delta Group': {
+    id: 'Delta Group',
+    name: 'Delta Group',
+    shortCode: 'GRP-D',
+    color: 'amber',
+    badgeBg: 'bg-amber-100 dark:bg-amber-950/70',
+    badgeText: 'text-amber-800 dark:text-amber-300',
+    borderColor: 'border-amber-300 dark:border-amber-700',
+    zone: 'North Urban Retail Centers & Commercial Plazas',
+    description: 'Shopping centers, outdoor retail strips, dining pavilions, and parking complexes.'
+  },
+  'Echo Group': {
+    id: 'Echo Group',
+    name: 'Echo Group',
+    shortCode: 'GRP-E',
+    color: 'rose',
+    badgeBg: 'bg-rose-100 dark:bg-rose-950/70',
+    badgeText: 'text-rose-700 dark:text-rose-300',
+    borderColor: 'border-rose-300 dark:border-rose-700',
+    zone: 'South Industrial Logistics & Freight Corridors',
+    description: 'Distribution warehouses, shipping yards, logistics terminals, and multimodal storage.'
+  },
+  'Foxtrot Group': {
+    id: 'Foxtrot Group',
+    name: 'Foxtrot Group',
+    shortCode: 'GRP-F',
+    color: 'purple',
+    badgeBg: 'bg-purple-100 dark:bg-purple-950/70',
+    badgeText: 'text-purple-700 dark:text-purple-300',
+    borderColor: 'border-purple-300 dark:border-purple-700',
+    zone: 'West Metro Transit Hubs & Civic Venues',
+    description: 'Light rail plazas, transit transit centers, event concourses, and municipal buildings.'
+  }
+};
+
 export interface SiteProfile {
   id: string;
   name: string;
@@ -328,6 +437,14 @@ export interface SiteProfile {
   zone?: string; // Sector / District e.g. "Maritime District", "Downtown Metro"
   category: SiteCategory;
   securityTier: SiteSecurityTier;
+
+  // Service Type & Roving Property Group
+  serviceType?: SiteServiceType; // 'dedicated' (guard remains on-site) | 'roving' (serviced by roving patrol guard)
+  rovingGroup?: RovingGroup; // e.g. 'Alpha Group', 'Bravo Group', 'Charlie Group', 'Delta Group', 'Echo Group', 'Foxtrot Group'
+  rovingNotes?: string; // Specific patrol instructions, keybox code, checkpoint sequence, or lockup orders
+  routeOrder?: number; // Sequence order within the roving group patrol route (1, 2, 3...)
+  patrolFrequency?: string; // e.g. "3x Per Shift", "Hourly Sweep", "Opening/Closing Check", "2-Hour Loop"
+
   primaryContactName: string;
   primaryContactPhone: string;
   primaryContactEmail?: string;
@@ -441,6 +558,8 @@ export interface CallReceiptNotification {
   latencySeconds?: number;
   receiptChannel?: 'alert_modal' | 'queue_action' | 'bolo_banner';
   notes?: string;
+  assignedRoverUnit?: string;
+  assignedRovingGroup?: RovingGroup;
   disposition?: CallDisposition;
   resolutionNote?: string;
 }
@@ -462,6 +581,15 @@ export interface CallForService {
   callerInfo?: CallerInfo;
   officerInstructions?: string;
   
+  // Rover Fleet Dispatch Linkage
+  assignedRoverId?: string;
+  assignedRoverUnit?: string;
+  assignedRovingGroup?: RovingGroup;
+  assignedGuardId?: string;
+  assignedGuardName?: string;
+  assignedGuardBadge?: string;
+  assignedAt?: string;
+
   dispatchedBy: {
     name: string;
     badge: string;
@@ -539,6 +667,13 @@ export interface ScheduledShift {
   postInstructions?: string;
   requiredCertifications?: string[];
   status: ShiftDutyStatus;
+  
+  // Roving Circuit Shift Specification
+  isRovingShift?: boolean;
+  rovingGroup?: RovingGroup;
+  assignedRoverUnit?: string;
+  assignedRoverId?: string;
+  circuitStopsCount?: number;
   
   // Clock in/out tracking
   clockInTime?: string; // ISO timestamp

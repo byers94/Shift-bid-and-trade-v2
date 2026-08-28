@@ -35,8 +35,26 @@ import {
   LateShiftAlert,
   GuardLiveTrackingItem,
   PriorityShiftMatch,
-  PriorityPushNotification
+  PriorityPushNotification,
+  RovingGroup
 } from '../types/shift';
+import {
+  RoverVehicle,
+  DynamicRoutePlan,
+  AdHocInterception,
+  RoverTelemetryLog,
+  TrafficCondition,
+  OptimizationMode,
+  RouteCheckpointStop,
+  GeoClusterSector
+} from '../types/roverRoute';
+import { INITIAL_ROVERS, INITIAL_TELEMETRY_LOGS } from '../data/mockRoverData';
+import {
+  optimizeRoverRoute,
+  calculateNearestRoverForInterception,
+  evaluatePassiveTelemetryGeofence,
+  buildGeoClusterSectors
+} from '../utils/roverRouteOptimizer';
 import { 
   INITIAL_SHIFTS, 
   INITIAL_TRADES, 
@@ -152,6 +170,7 @@ interface ShiftOpsContextType {
     callerInfo?: CallerInfo;
     officerInstructions?: string;
     dispatchedBy?: { name: string; badge: string };
+    assignedRoverId?: string;
   }) => CallForService;
   acknowledgeCall: (
     callId: string, 
@@ -357,11 +376,40 @@ interface ShiftOpsContextType {
   getGuardUpcomingShifts: (guardId: string) => ScheduledShift[];
   getGuardsLiveTracking: () => GuardLiveTrackingItem[];
 
+  // Dynamic Rover Route Optimization & Telemetry
+  rovers: RoverVehicle[];
+  roverPlans: Record<string, DynamicRoutePlan>;
+  activeInterceptions: AdHocInterception[];
+  telemetryLogs: RoverTelemetryLog[];
+  trafficCondition: TrafficCondition;
+  optimizationMode: OptimizationMode;
+  antiPredictabilityJitterPct: number;
+  geoClusterSectors: GeoClusterSector[];
+  setTrafficCondition: (traffic: TrafficCondition) => void;
+  setOptimizationMode: (mode: OptimizationMode) => void;
+  setAntiPredictabilityJitterPct: (pct: number) => void;
+  reoptimizeRoverRoutes: (mode?: OptimizationMode, traffic?: TrafficCondition) => void;
+  dispatchAdHocInterception: (callId: string, customAddress?: string, overrideRoverId?: string) => AdHocInterception | null;
+  clearAdHocInterception: (interceptionId: string, resolutionNotes?: string) => void;
+  advanceRoverCheckpoint: (roverId: string, customStatus?: string) => void;
+  simulateRoverGpsMove: (roverId: string, coords: { latitude: number; longitude: number; speedKmh?: number }) => void;
+  addTelemetryLog: (log: Omit<RoverTelemetryLog, 'id' | 'timestamp'> & { timestamp?: string }) => RoverTelemetryLog;
+  getRoverForGuard: (guardId: string) => RoverVehicle | undefined;
+  getRoverByGroup: (group: RovingGroup) => RoverVehicle | undefined;
+
   // System
   resetToDefaults: () => void;
 }
 
 const ShiftOpsContext = createContext<ShiftOpsContextType | undefined>(undefined);
+
+const STORAGE_KEY_ROVERS = 'secureshift_rovers_v1';
+const STORAGE_KEY_ROVER_PLANS = 'secureshift_rover_plans_v1';
+const STORAGE_KEY_INTERCEPTIONS = 'secureshift_ad_hoc_interceptions_v1';
+const STORAGE_KEY_TELEMETRY = 'secureshift_rover_telemetry_v1';
+const STORAGE_KEY_TRAFFIC = 'secureshift_traffic_condition_v1';
+const STORAGE_KEY_OPT_MODE = 'secureshift_optimization_mode_v1';
+const STORAGE_KEY_JITTER_PCT = 'secureshift_jitter_pct_v1';
 
 const STORAGE_KEY_SHIFTS = 'secureshift_shifts_v1';
 const STORAGE_KEY_TRADES = 'secureshift_trades_v1';
@@ -571,6 +619,117 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return INITIAL_SITES;
     }
   });
+
+  // Rover Route Optimization, Telemetry & Interception State
+  const [rovers, setRovers] = useState<RoverVehicle[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_ROVERS);
+      return saved ? JSON.parse(saved) : INITIAL_ROVERS;
+    } catch {
+      return INITIAL_ROVERS;
+    }
+  });
+
+  const [trafficCondition, setTrafficConditionState] = useState<TrafficCondition>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_TRAFFIC);
+      return (saved as TrafficCondition) || 'moderate';
+    } catch {
+      return 'moderate';
+    }
+  });
+
+  const [optimizationMode, setOptimizationModeState] = useState<OptimizationMode>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_OPT_MODE);
+      return (saved as OptimizationMode) || 'traffic_density_optimal';
+    } catch {
+      return 'traffic_density_optimal';
+    }
+  });
+
+  const [antiPredictabilityJitterPct, setAntiPredictabilityJitterPctState] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_JITTER_PCT);
+      return saved ? Number(saved) : 20;
+    } catch {
+      return 20;
+    }
+  });
+
+  const [activeInterceptions, setActiveInterceptions] = useState<AdHocInterception[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_INTERCEPTIONS);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [telemetryLogs, setTelemetryLogs] = useState<RoverTelemetryLog[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_TELEMETRY);
+      return saved ? JSON.parse(saved) : INITIAL_TELEMETRY_LOGS;
+    } catch {
+      return INITIAL_TELEMETRY_LOGS;
+    }
+  });
+
+  // Generate initial plans for all active rovers
+  const [roverPlans, setRoverPlans] = useState<Record<string, DynamicRoutePlan>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_ROVER_PLANS);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+
+    const plans: Record<string, DynamicRoutePlan> = {};
+    INITIAL_ROVERS.forEach((rover) => {
+      plans[rover.id] = optimizeRoverRoute(rover, INITIAL_SITES, {
+        traffic: 'moderate',
+        mode: 'traffic_density_optimal',
+        antiPredictabilityJitterPct: 20
+      });
+    });
+    return plans;
+  });
+
+  // Geo-Cluster Sectors derived from current site list
+  const geoClusterSectors = useMemo(() => {
+    return buildGeoClusterSectors(sitesList);
+  }, [sitesList]);
+
+  // Sync Rover state changes to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_ROVERS, JSON.stringify(rovers));
+    } catch (e) {
+      console.warn('Failed to save rovers', e);
+    }
+  }, [rovers]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_ROVER_PLANS, JSON.stringify(roverPlans));
+    } catch (e) {
+      console.warn('Failed to save rover plans', e);
+    }
+  }, [roverPlans]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_INTERCEPTIONS, JSON.stringify(activeInterceptions));
+    } catch (e) {
+      console.warn('Failed to save interceptions', e);
+    }
+  }, [activeInterceptions]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_TELEMETRY, JSON.stringify(telemetryLogs));
+    } catch (e) {
+      console.warn('Failed to save telemetry logs', e);
+    }
+  }, [telemetryLogs]);
 
   const updateAlertPreferences = (prefs: Partial<ShiftAlertPreferences>) => {
     setAlertPreferencesState((prev) => {
@@ -2493,6 +2652,38 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           item.status === 'inactive' ? 'inactive' : item.status === 'maintenance' ? 'maintenance' : 'active';
         const notes = (item.notes || item.comments || '').trim() || undefined;
 
+        // Parse Service Type & Roving Group
+        let serviceType: 'dedicated' | 'roving' = 'dedicated';
+        const rawService = (item.serviceType || item.type || item.siteType || '').toString().toLowerCase();
+        if (rawService.includes('roving') || rawService.includes('mobile') || rawService.includes('patrol') || item.rovingGroup) {
+          serviceType = 'roving';
+        }
+
+        let rovingGroup: any = undefined;
+        const rawGroup = (item.rovingGroup || item.group || item.patrolGroup || '').toString();
+        if (rawGroup) {
+          const groupMap: Record<string, string> = {
+            alpha: 'Alpha Group',
+            bravo: 'Bravo Group',
+            charlie: 'Charlie Group',
+            delta: 'Delta Group',
+            echo: 'Echo Group',
+            foxtrot: 'Foxtrot Group'
+          };
+          const lowerGroup = rawGroup.toLowerCase();
+          for (const key of Object.keys(groupMap)) {
+            if (lowerGroup.includes(key)) {
+              rovingGroup = groupMap[key];
+              serviceType = 'roving';
+              break;
+            }
+          }
+        }
+
+        const rovingNotes = (item.rovingNotes || item.patrolNotes || item.routeNotes || '').trim() || undefined;
+        const routeOrder = item.routeOrder ? Number(item.routeOrder) : undefined;
+        const patrolFrequency = (item.patrolFrequency || item.frequency || (serviceType === 'roving' ? 'Hourly Sweep' : undefined))?.trim();
+
         const siteData: Omit<SiteProfile, 'id' | 'createdAt'> = {
           name,
           code,
@@ -2503,6 +2694,11 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           zone,
           category,
           securityTier,
+          serviceType,
+          rovingGroup,
+          rovingNotes,
+          routeOrder,
+          patrolFrequency,
           primaryContactName,
           primaryContactPhone,
           primaryContactEmail,
@@ -2828,15 +3024,31 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     callerInfo?: CallerInfo;
     officerInstructions?: string;
     dispatchedBy?: { name: string; badge: string };
+    assignedRoverId?: string;
   }): CallForService => {
     const year = new Date().getFullYear();
     const randNum = Math.floor(100 + Math.random() * 900);
+
+    // Identify assigned rover if requested
+    let assignedRover: RoverVehicle | undefined;
+    if (data.assignedRoverId && data.assignedRoverId !== 'unassigned') {
+      if (data.assignedRoverId === 'nearest') {
+        const matchedSite = sitesList.find(
+          (s) => s.name.toLowerCase() === data.siteName.toLowerCase() || (s.address && data.locationDetails?.includes(s.address))
+        );
+        const targetCoords = matchedSite?.coordinates || { latitude: 47.6080, longitude: -122.3350 };
+        assignedRover = calculateNearestRoverForInterception(rovers, targetCoords, trafficCondition) || rovers[0];
+      } else {
+        assignedRover = rovers.find(r => r.id === data.assignedRoverId);
+      }
+    }
+
     const newCall: CallForService = {
       id: `CFS-${year}-${randNum}`,
       callType: data.callType,
       customTypeLabel: data.customTypeLabel?.trim(),
       priority: data.priority,
-      status: 'dispatched',
+      status: assignedRover ? 'en_route' : 'dispatched',
       siteName: data.siteName.trim(),
       locationDetails: data.locationDetails.trim(),
       summary: data.summary.trim(),
@@ -2844,7 +3056,14 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       isBolo: !!data.isBolo,
       boloSubject: data.boloSubject,
       callerInfo: data.callerInfo,
-      officerInstructions: data.officerInstructions?.trim(),
+      officerInstructions: data.officerInstructions?.trim() || (assignedRover ? `Assigned to Roving Unit ${assignedRover.unitNumber} (${assignedRover.rovingGroup}) - ${assignedRover.assignedGuardName}. Priority intercept en route.` : undefined),
+      assignedRoverId: assignedRover?.id,
+      assignedRoverUnit: assignedRover?.unitNumber,
+      assignedRovingGroup: assignedRover?.rovingGroup,
+      assignedGuardId: assignedRover?.assignedGuardId,
+      assignedGuardName: assignedRover?.assignedGuardName,
+      assignedGuardBadge: assignedRover?.assignedGuardBadge,
+      assignedAt: assignedRover ? new Date().toISOString() : undefined,
       createdAt: new Date().toISOString(),
       dispatchedBy: data.dispatchedBy || {
         name: "Lt. Mark O'Connor",
@@ -2860,8 +3079,16 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       playCallDispatchSound(data.priority);
     } catch {}
 
+    // If assigned to a rover, inject intercept into the rover's dynamic route plan
+    if (assignedRover) {
+      setTimeout(() => {
+        dispatchAdHocInterception(newCall.id, newCall.locationDetails, assignedRover!.id);
+      }, 50);
+    }
+
     const typeDesc = data.isBolo ? 'BOLO BROADCAST' : data.callType.replace(/_/g, ' ').toUpperCase();
-    const logDetails = `[CALL DISPATCHED - ${data.priority.toUpperCase()}] ${newCall.id} (${typeDesc}) dispatched to ${data.siteName} [${data.locationDetails}]: "${data.summary}"`;
+    const roverSuffix = assignedRover ? ` -> ASSIGNED TO ${assignedRover.unitNumber} (${assignedRover.assignedGuardName})` : '';
+    const logDetails = `[CALL DISPATCHED - ${data.priority.toUpperCase()}] ${newCall.id} (${typeDesc}) dispatched to ${data.siteName} [${data.locationDetails}]: "${data.summary}"${roverSuffix}`;
     addAuditLog(
       'CALL_FOR_SERVICE_DISPATCHED',
       'broadcast',
@@ -2873,16 +3100,16 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     logAdminAction({
       type: 'call_dispatched',
       title: `Call Dispatched: ${newCall.id} (${data.priority.toUpperCase()})`,
-      description: `${data.isBolo ? 'BOLO / ' : ''}${newCall.summary} @ ${newCall.siteName}`,
+      description: `${data.isBolo ? 'BOLO / ' : ''}${newCall.summary} @ ${newCall.siteName}${assignedRover ? ` [Assigned: ${assignedRover.unitNumber}]` : ''}`,
       adminName: newCall.dispatchedBy.name,
       adminBadge: newCall.dispatchedBy.badge,
       badgeVariant: data.priority === 'urgent_bolo' ? 'rose' : data.priority === 'priority' ? 'amber' : 'blue',
-      metadata: { callId: newCall.id, siteName: newCall.siteName, priority: newCall.priority, isBolo: newCall.isBolo }
+      metadata: { callId: newCall.id, siteName: newCall.siteName, priority: newCall.priority, isBolo: newCall.isBolo, assignedRover: assignedRover?.unitNumber }
     });
 
     showToast(
       data.isBolo ? '🚨 BOLO ALERT DISPATCHED' : '📞 Call for Service Dispatched',
-      `${newCall.id} pushed to active guard units at ${data.siteName}.`,
+      `${newCall.id} dispatched${assignedRover ? ` & assigned to ${assignedRover.unitNumber} (${assignedRover.assignedGuardName})` : ` to active units at ${data.siteName}`}.`,
       data.priority === 'urgent_bolo' ? 'danger' : 'info'
     );
 
@@ -2964,7 +3191,9 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       timeToAcknowledgeSec,
       latencySeconds: timeToAcknowledgeSec,
       receiptChannel: options?.channel || 'queue_action',
-      notes: options?.note
+      notes: options?.note,
+      assignedRoverUnit: targetCall?.assignedRoverUnit,
+      assignedRovingGroup: targetCall?.assignedRovingGroup
     };
 
     setLatestCallReceipt(newReceiptNotification);
@@ -3183,7 +3412,9 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       acknowledgedAt: nowIso,
       disposition,
       resolutionNote: resolutionNote?.trim() || undefined,
-      notes: resolutionNote?.trim() || undefined
+      notes: resolutionNote?.trim() || undefined,
+      assignedRoverUnit: targetCall?.assignedRoverUnit,
+      assignedRovingGroup: targetCall?.assignedRovingGroup
     };
 
     setLatestCallReceipt(clearedNotification);
@@ -3668,14 +3899,77 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const nowIso = new Date().toISOString();
     const id = `SCHED-${data.date.replace(/-/g, '')}-${Date.now().toString().slice(-4)}`;
     
+    // Check if this is a roving shift and find matching rover
+    let assignedRover = rovers.find(r => r.rovingGroup === data.rovingGroup);
+    if (!assignedRover && data.isRovingShift) {
+      assignedRover = rovers[0];
+    }
+
     const newShift: ScheduledShift = {
       ...data,
       id,
+      assignedRoverUnit: data.assignedRoverUnit || assignedRover?.unitNumber,
+      assignedRoverId: data.assignedRoverId || assignedRover?.id,
       status: data.status || 'scheduled',
       createdAt: nowIso
     };
 
     setScheduledShifts((prev) => [newShift, ...prev]);
+
+    // If this is a roving shift, synchronize guard's roving group and assign to Rover Vehicle
+    if (data.isRovingShift && data.rovingGroup) {
+      // 1. Update Guard Profile in guardsList
+      setGuardsList((prev) =>
+        prev.map((g) =>
+          g.id === data.guardId
+            ? { ...g, isRovingGuard: true, rovingGroup: data.rovingGroup }
+            : g
+        )
+      );
+
+      // 2. Update activeGuard / authenticatedGuard if matching
+      if (activeGuard.id === data.guardId) {
+        setActiveGuard((prev) => ({ ...prev, isRovingGuard: true, rovingGroup: data.rovingGroup }));
+      }
+      if (authenticatedGuard?.id === data.guardId) {
+        setAuthenticatedGuard((prev) => prev ? { ...prev, isRovingGuard: true, rovingGroup: data.rovingGroup } : prev);
+      }
+
+      // 3. Update Rover Vehicle assignment
+      if (assignedRover) {
+        setRovers((prev) =>
+          prev.map((r) =>
+            r.id === assignedRover!.id
+              ? {
+                  ...r,
+                  assignedGuardId: data.guardId,
+                  assignedGuardName: data.guardName,
+                  assignedGuardBadge: data.guardBadge,
+                  status: 'patrolling'
+                }
+              : r
+          )
+        );
+
+        // 4. Re-optimize rover plan for this rover with group's sites
+        const updatedRoverObj = {
+          ...assignedRover,
+          assignedGuardId: data.guardId,
+          assignedGuardName: data.guardName,
+          assignedGuardBadge: data.guardBadge
+        };
+        const newPlan = optimizeRoverRoute(updatedRoverObj, sitesList, {
+          traffic: trafficCondition,
+          mode: optimizationMode,
+          antiPredictabilityJitterPct
+        });
+
+        setRoverPlans((prev) => ({
+          ...prev,
+          [assignedRover!.id]: newPlan
+        }));
+      }
+    }
 
     logAdminAction({
       type: 'shift_scheduled',
@@ -3683,20 +3977,22 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       adminBadge: 'OPS-LEAD-01',
       badgeVariant: 'blue',
       title: `New Shift Scheduled: ${data.siteName}`,
-      description: `Assigned ${data.guardName} (${data.guardBadge}) on ${data.date} (${data.startTime} - ${data.endTime}, ${data.hours}h).`,
+      description: `Assigned ${data.guardName} (${data.guardBadge}) on ${data.date} (${data.startTime} - ${data.endTime}, ${data.hours}h)${data.isRovingShift ? ` [Roving: ${data.rovingGroup}]` : ''}.`,
       metadata: {
         guardName: data.guardName,
         siteName: data.siteName,
         date: data.date,
         startTime: data.startTime,
-        endTime: data.endTime
+        endTime: data.endTime,
+        isRoving: data.isRovingShift,
+        rovingGroup: data.rovingGroup
       }
     });
 
     addAuditLog(
       'SHIFT_SCHEDULE_CREATED',
       'system',
-      `Shift scheduled for ${data.guardName} at ${data.siteName} on ${data.date} (${data.startTime}-${data.endTime}).`,
+      `Shift scheduled for ${data.guardName} at ${data.siteName} on ${data.date} (${data.startTime}-${data.endTime})${data.isRovingShift ? ` [${data.rovingGroup}]` : ''}.`,
       "Lt. Mark O'Connor",
       'info'
     );
@@ -3868,6 +4164,602 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     });
   };
 
+  // Dynamic Rover Route Optimization Methods
+  const addTelemetryLog = (logData: Omit<RoverTelemetryLog, 'id' | 'timestamp'> & { timestamp?: string }): RoverTelemetryLog => {
+    const newLog: RoverTelemetryLog = {
+      ...logData,
+      id: `tel-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: logData.timestamp || new Date().toISOString()
+    };
+    setTelemetryLogs((prev) => [newLog, ...prev.slice(0, 150)]);
+    return newLog;
+  };
+
+  const setTrafficCondition = (newTraffic: TrafficCondition) => {
+    setTrafficConditionState(newTraffic);
+    try {
+      localStorage.setItem(STORAGE_KEY_TRAFFIC, newTraffic);
+    } catch (e) {
+      console.warn('Failed to save traffic condition', e);
+    }
+
+    // Reoptimize all active plans with the new traffic condition
+    const updatedPlans: Record<string, DynamicRoutePlan> = {};
+    rovers.forEach((rover) => {
+      updatedPlans[rover.id] = optimizeRoverRoute(rover, sitesList, {
+        traffic: newTraffic,
+        mode: optimizationMode,
+        antiPredictabilityJitterPct
+      });
+    });
+    setRoverPlans(updatedPlans);
+
+    const trafficLabels: Record<TrafficCondition, string> = {
+      light: 'Light Flow (Speed: 100%)',
+      moderate: 'Moderate Flow (Speed: 80%)',
+      heavy: 'Heavy Congestion (Speed: 60%)',
+      incident_gridlock: 'Incident Gridlock (Speed: 45%)'
+    };
+
+    addTelemetryLog({
+      roverId: rovers[0]?.id || 'all',
+      roverUnit: 'SYSTEM-DISPATCH',
+      guardName: 'Ops Dispatcher',
+      eventType: 'ETA_RECALCULATED',
+      notes: `Global real-time traffic condition updated to ${trafficLabels[newTraffic]}. Recalculated all rover arrival windows.`
+    });
+
+    logAdminAction({
+      type: 'traffic_condition_updated',
+      title: 'Traffic Condition Updated',
+      description: `Live city routing calibrated for ${trafficLabels[newTraffic]}.`,
+      adminName: 'Lt. Mark O\'Connor',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: newTraffic === 'incident_gridlock' || newTraffic === 'heavy' ? 'rose' : 'blue',
+      metadata: { traffic: newTraffic }
+    });
+
+    showToast('Live Traffic Updated', `Recalculated route ETAs with ${trafficLabels[newTraffic]}.`, 'info');
+  };
+
+  const setOptimizationMode = (newMode: OptimizationMode) => {
+    setOptimizationModeState(newMode);
+    try {
+      localStorage.setItem(STORAGE_KEY_OPT_MODE, newMode);
+    } catch (e) {
+      console.warn('Failed to save optimization mode', e);
+    }
+
+    const updatedPlans: Record<string, DynamicRoutePlan> = {};
+    rovers.forEach((rover) => {
+      updatedPlans[rover.id] = optimizeRoverRoute(rover, sitesList, {
+        traffic: trafficCondition,
+        mode: newMode,
+        antiPredictabilityJitterPct
+      });
+    });
+    setRoverPlans(updatedPlans);
+
+    const modeLabels: Record<OptimizationMode, string> = {
+      traffic_density_optimal: 'Traffic & Density Routing (Min Deadhead Drive Time)',
+      anti_predictability_stochastic: 'Anti-Predictability Stochastic Routing (Counter-Surveillance)',
+      sla_priority_first: 'Contract SLA Time-Window Enforcement (Mandatory Hits First)',
+      stealth_randomized: 'Stealth Circuit Randomization'
+    };
+
+    addTelemetryLog({
+      roverId: rovers[0]?.id || 'all',
+      roverUnit: 'OPTIMIZER-ENGINE',
+      guardName: 'Ops Dispatcher',
+      eventType: newMode === 'anti_predictability_stochastic' ? 'STOCHASTIC_JITTER_APPLIED' : 'ETA_RECALCULATED',
+      notes: `Routing optimization algorithm switched to "${modeLabels[newMode]}".`
+    });
+
+    logAdminAction({
+      type: 'route_optimizer_mode',
+      title: 'Routing Algorithm Mode Changed',
+      description: `Switched optimizer to "${modeLabels[newMode]}".`,
+      adminName: 'Lt. Mark O\'Connor',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'purple',
+      metadata: { mode: newMode }
+    });
+
+    showToast('Route Algorithm Updated', `Dynamic routing updated to ${modeLabels[newMode]}.`, 'success');
+  };
+
+  const setAntiPredictabilityJitterPct = (pct: number) => {
+    setAntiPredictabilityJitterPctState(pct);
+    try {
+      localStorage.setItem(STORAGE_KEY_JITTER_PCT, pct.toString());
+    } catch (e) {
+      console.warn('Failed to save jitter pct', e);
+    }
+
+    if (optimizationMode === 'anti_predictability_stochastic' || optimizationMode === 'stealth_randomized') {
+      const updatedPlans: Record<string, DynamicRoutePlan> = {};
+      rovers.forEach((rover) => {
+        updatedPlans[rover.id] = optimizeRoverRoute(rover, sitesList, {
+          traffic: trafficCondition,
+          mode: optimizationMode,
+          antiPredictabilityJitterPct: pct
+        });
+      });
+      setRoverPlans(updatedPlans);
+    }
+  };
+
+  const reoptimizeRoverRoutes = (targetMode?: OptimizationMode, targetTraffic?: TrafficCondition) => {
+    const mode = targetMode || optimizationMode;
+    const traffic = targetTraffic || trafficCondition;
+
+    const updatedPlans: Record<string, DynamicRoutePlan> = {};
+    let totalDeadheadSaved = 0;
+    let totalSlaCompliant = 0;
+
+    rovers.forEach((rover) => {
+      const plan = optimizeRoverRoute(rover, sitesList, {
+        traffic,
+        mode,
+        antiPredictabilityJitterPct
+      });
+      updatedPlans[rover.id] = plan;
+      totalDeadheadSaved += plan.deadheadDriveMinutesSaved;
+      if (plan.slaComplianceScore >= 95) totalSlaCompliant++;
+    });
+
+    setRoverPlans(updatedPlans);
+
+    addTelemetryLog({
+      roverId: rovers[0]?.id || 'fleet',
+      roverUnit: 'FLEET-DISPATCH',
+      guardName: 'Lt. Mark O\'Connor',
+      eventType: 'ETA_RECALCULATED',
+      notes: `Full fleet circuit re-optimized. Projected ${totalDeadheadSaved} min deadhead reduction across ${rovers.length} rover units.`
+    });
+
+    logAdminAction({
+      type: 'routes_reoptimized',
+      title: 'Rover Routes Re-Optimized',
+      description: `Re-calculated patrol circuit for ${rovers.length} mobile units using ${mode}. Saved ~${totalDeadheadSaved}m drive time.`,
+      adminName: 'Lt. Mark O\'Connor',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'blue',
+      metadata: { mode, traffic, roversCount: rovers.length, deadheadSaved: totalDeadheadSaved }
+    });
+
+    showToast(
+      'Fleet Routes Re-Optimized',
+      `Optimized ${rovers.length} rover circuits: ~${totalDeadheadSaved} min total drive time saved.`,
+      'success'
+    );
+  };
+
+  const dispatchAdHocInterception = (
+    callId: string,
+    customAddress?: string,
+    overrideRoverId?: string
+  ): AdHocInterception | null => {
+    const call = callsForService.find((c) => c.id === callId);
+    if (!call) {
+      showToast('Call Not Found', `Unable to find call with ID ${callId}`, 'danger');
+      return null;
+    }
+
+    // Determine coords for the CFS call (from site or default city coordinates)
+    const matchedSite = sitesList.find(
+      (s) => s.name.toLowerCase() === call.siteName.toLowerCase() || (s.address && call.locationDetails?.includes(s.address))
+    );
+    const targetCoords = matchedSite?.coordinates || { latitude: 47.6080, longitude: -122.3350 };
+
+    // Select nearest rover if not explicitly overridden
+    let targetRover: RoverVehicle | undefined;
+    if (overrideRoverId) {
+      targetRover = rovers.find((r) => r.id === overrideRoverId);
+    }
+    if (!targetRover) {
+      targetRover = calculateNearestRoverForInterception(rovers, targetCoords, trafficCondition) || rovers[0];
+    }
+
+    if (!targetRover) {
+      showToast('No Available Rovers', 'No roving units available for dynamic intercept.', 'danger');
+      return null;
+    }
+
+    const currentPlan = roverPlans[targetRover.id];
+    const pendingRoutineStops = currentPlan ? currentPlan.stops.filter((s) => s.status === 'pending') : [];
+    const preemptedStop = pendingRoutineStops[0];
+
+    // Estimated intercept drive time based on distance
+    const estInterceptMinutes = 6;
+    const estArrival = new Date(Date.now() + estInterceptMinutes * 60 * 1000).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+
+    const newInterception: AdHocInterception = {
+      id: `intercept-${Date.now()}`,
+      callId: call.id,
+      callForServiceId: call.id,
+      callTitle: call.summary,
+      callSummary: call.summary,
+      callPriority: call.priority,
+      callType: call.callType,
+      siteName: call.siteName,
+      targetAddress: customAddress || call.locationDetails || matchedSite?.address || 'City Center Sector',
+      locationAddress: customAddress || call.locationDetails || matchedSite?.address || 'City Center Sector',
+      targetCoords,
+      coordinates: targetCoords,
+      assignedRoverId: targetRover.id,
+      assignedRoverUnit: targetRover.unitNumber,
+      assignedGuardName: targetRover.assignedGuardName,
+      dispatchedAt: new Date().toISOString(),
+      status: 'dispatched',
+      estimatedEtaMinutes: estInterceptMinutes,
+      estimatedArrivalMinutes: estInterceptMinutes,
+      preemptedRoutineStopSiteId: preemptedStop?.siteId,
+      preemptedRoutineStopSiteName: preemptedStop?.siteName,
+      postponedEtaShiftMinutes: 15
+    };
+
+    setActiveInterceptions((prev) => [newInterception, ...prev]);
+
+    // Update Rover status to 'intercepting'
+    setRovers((prev) =>
+      prev.map((r) =>
+        r.id === targetRover!.id
+          ? {
+              ...r,
+              status: 'intercepting',
+              currentSiteName: `⚡ INTERCEPT: ${call.summary.slice(0, 24)}...`
+            }
+          : r
+      )
+    );
+
+    // Inject emergency intercept stop to the front of the rover's plan
+    if (currentPlan) {
+      const interceptStop: RouteCheckpointStop = {
+        id: `stop-intercept-${Date.now()}`,
+        siteId: matchedSite?.id || `site-intercept-${Date.now()}`,
+        siteName: `🚨 [AD-HOC INTERCEPT] ${call.siteName}`,
+        siteAddress: customAddress || call.locationDetails || matchedSite?.address || 'Immediate Response Zone',
+        coords: targetCoords,
+        rovingGroup: targetRover.rovingGroup,
+        clusterSectorId: 'SECTOR-EMERGENCY-INTERCEPT',
+        sequenceOrder: 0,
+        originalSequenceOrder: 0,
+        estimatedArrival: estArrival,
+        estimatedDeparture: new Date(Date.now() + (estInterceptMinutes + 15) * 60 * 1000).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        }),
+        estimatedDriveMinutes: estInterceptMinutes,
+        distanceKm: 2.1,
+        targetDwellMinutes: 15,
+        slaPriority: 'P1_MANDATORY_SLA',
+        slaWindowDescription: `Ad-Hoc Emergency Call (${call.priority})`,
+        status: 'pending',
+        hitsCompletedCount: 0,
+        hitsRequiredCount: 1,
+        geofenceVerified: false,
+        geofenceRadiusMeters: 120,
+        isAdHocIntercept: true,
+        adHocCallId: call.id,
+        postInstructions: `Emergency ad-hoc diversion: ${call.summary}. Routine patrols postponed.`
+      };
+
+      const updatedStops = [interceptStop, ...currentPlan.stops];
+      setRoverPlans((prev) => ({
+        ...prev,
+        [targetRover!.id]: {
+          ...currentPlan,
+          stops: updatedStops,
+          adHocInterceptionsCount: (currentPlan.adHocInterceptionsCount || 0) + 1,
+          totalDriveMinutes: (currentPlan.totalDriveMinutes || currentPlan.deadheadDriveMinutes) + estInterceptMinutes
+        }
+      }));
+    }
+
+    // Update CFS call state
+    setCallsForService((prev) =>
+      prev.map((c) =>
+        c.id === call.id
+          ? {
+              ...c,
+              status: 'en_route',
+              assignedGuard: {
+                name: targetRover!.assignedGuardName,
+                badge: targetRover!.assignedGuardBadge
+              },
+              officerInstructions: `ROVER INTERCEPT: ${targetRover!.unitNumber} rerouted. ETA ~${estInterceptMinutes}m. Downstream routine rounds adjusted.`
+            }
+          : c
+      )
+    );
+
+    // Audio & Telemetry
+    if (alertPreferences.soundEnabled) {
+      playEmergencyAlertSound();
+    }
+
+    addTelemetryLog({
+      roverId: targetRover.id,
+      roverUnit: targetRover.unitNumber,
+      guardName: targetRover.assignedGuardName,
+      eventType: 'AD_HOC_INTERCEPT_DISPATCHED',
+      siteName: call.siteName,
+      coords: targetCoords,
+      notes: `⚡ Dynamic Reroute: Dispatched to emergency call "${call.summary}". Routine stop at "${preemptedStop?.siteName || 'patrol circuit'}" postponed +15m.`
+    });
+
+    logAdminAction({
+      type: 'ad_hoc_interception',
+      title: '🚨 Ad-Hoc Interception Dispatched',
+      description: `Rerouted ${targetRover.unitNumber} (${targetRover.assignedGuardName}) to ${call.siteName} for "${call.summary}".`,
+      adminName: 'Lt. Mark O\'Connor',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'rose',
+      metadata: { callId: call.id, roverUnit: targetRover.unitNumber, site: call.siteName }
+    });
+
+    showToast(
+      '🚨 Rover Interception Dispatched',
+      `${targetRover.unitNumber} (${targetRover.assignedGuardName}) rerouted to ${call.siteName}. ETA ${estInterceptMinutes} mins.`,
+      'danger'
+    );
+
+    return newInterception;
+  };
+
+  const clearAdHocInterception = (interceptionId: string, resolutionNotes?: string) => {
+    const intercept = activeInterceptions.find((i) => i.id === interceptionId);
+    if (!intercept) return;
+
+    setActiveInterceptions((prev) => prev.filter((i) => i.id !== interceptionId));
+
+    // Restore rover status and re-optimize circuit
+    const targetRover = rovers.find((r) => r.id === intercept.assignedRoverId);
+    if (targetRover) {
+      setRovers((prev) =>
+        prev.map((r) =>
+          r.id === targetRover.id
+            ? {
+                ...r,
+                status: 'patrolling',
+                currentSiteName: undefined
+              }
+            : r
+        )
+      );
+
+      // Re-optimize rover plan to restore normal queue
+      const restoredPlan = optimizeRoverRoute(targetRover, sitesList, {
+        traffic: trafficCondition,
+        mode: optimizationMode,
+        antiPredictabilityJitterPct
+      });
+
+      setRoverPlans((prev) => ({
+        ...prev,
+        [targetRover.id]: restoredPlan
+      }));
+    }
+
+    // Resolve CFS call
+    if (intercept.callForServiceId) {
+      setCallsForService((prev) =>
+        prev.map((c) =>
+          c.id === intercept.callForServiceId
+            ? {
+                ...c,
+                status: 'cleared',
+                disposition: 'resolved',
+                clearedAt: new Date().toISOString(),
+                clearedBy: {
+                  name: intercept.assignedGuardName,
+                  badge: targetRover?.assignedGuardBadge || 'ROVER-PATROL'
+                },
+                resolutionSummary: resolutionNotes || 'Emergency condition resolved on scene by rover officer. Routine circuit resumed.'
+              }
+            : c
+        )
+      );
+    }
+
+    addTelemetryLog({
+      roverId: intercept.assignedRoverId,
+      roverUnit: intercept.assignedRoverUnit,
+      guardName: intercept.assignedGuardName,
+      eventType: 'AD_HOC_INTERCEPT_CLEARED',
+      siteName: intercept.siteName,
+      notes: `Ad-hoc interception at "${intercept.siteName}" CLEARED. Unit returned to regular patrol circuit.`
+    });
+
+    logAdminAction({
+      type: 'interception_cleared',
+      title: 'Ad-Hoc Intercept Resolved',
+      description: `Officer ${intercept.assignedGuardName} cleared call at ${intercept.siteName}. Circuit resumed.`,
+      adminName: 'Lt. Mark O\'Connor',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'emerald',
+      metadata: { interceptionId, site: intercept.siteName, resolution: resolutionNotes }
+    });
+
+    showToast('Intercept Cleared', `${intercept.assignedRoverUnit} has resolved the call and resumed normal circuit rounds.`, 'success');
+  };
+
+  const advanceRoverCheckpoint = (roverId: string, customStatus?: string) => {
+    const targetRover = rovers.find((r) => r.id === roverId);
+    if (!targetRover) return;
+
+    const currentPlan = roverPlans[roverId];
+    if (!currentPlan || currentPlan.stops.length === 0) return;
+
+    const currentIndex = targetRover.currentStopIndex;
+    const currentStop = currentPlan.stops[currentIndex] || currentPlan.stops[0];
+
+    if (targetRover.status === 'dwelling' || customStatus === 'finish_dwell') {
+      // Completed dwell at current stop, transition to patrolling towards next stop
+      const nextIndex = (currentIndex + 1) % currentPlan.stops.length;
+      const nextStop = currentPlan.stops[nextIndex];
+
+      const updatedStops = currentPlan.stops.map((s, idx) =>
+        idx === currentIndex ? { ...s, status: 'completed' as const } : s
+      );
+
+      setRoverPlans((prev) => ({
+        ...prev,
+        [roverId]: {
+          ...currentPlan,
+          stops: updatedStops
+        }
+      }));
+
+      setRovers((prev) =>
+        prev.map((r) =>
+          r.id === roverId
+            ? {
+                ...r,
+                status: 'patrolling',
+                currentStopIndex: nextIndex,
+                currentSiteId: nextStop.siteId,
+                currentSiteName: nextStop.siteName,
+                currentDwellSeconds: 0,
+                isInsideGeofence: false
+              }
+            : r
+        )
+      );
+
+      addTelemetryLog({
+        roverId: targetRover.id,
+        roverUnit: targetRover.unitNumber,
+        guardName: targetRover.assignedGuardName,
+        eventType: 'GEOFENCE_AUTO_DEPARTURE',
+        siteId: currentStop.siteId,
+        siteName: currentStop.siteName,
+        coords: currentStop.coords,
+        notes: `Dwell complete (${currentStop.targetDwellMinutes}m). Rover en-route to next stop: "${nextStop.siteName}".`,
+        telemetrySource: 'passive_gps_geofence'
+      });
+
+      showToast(
+        'Patrol Stop Completed',
+        `${targetRover.unitNumber} departing ${currentStop.siteName} -> En-route to ${nextStop.siteName}`,
+        'info'
+      );
+    } else {
+      // Currently patrolling, now arriving and beginning dwell
+      const updatedStops = currentPlan.stops.map((s, idx) =>
+        idx === currentIndex ? { ...s, status: 'dwelling' as const } : s
+      );
+
+      setRoverPlans((prev) => ({
+        ...prev,
+        [roverId]: {
+          ...currentPlan,
+          stops: updatedStops
+        }
+      }));
+
+      setRovers((prev) =>
+        prev.map((r) =>
+          r.id === roverId
+            ? {
+                ...r,
+                status: 'dwelling',
+                currentSiteId: currentStop.siteId,
+                currentSiteName: currentStop.siteName,
+                currentDwellSeconds: 0,
+                isInsideGeofence: true,
+                currentCoords: {
+                  ...r.currentCoords,
+                  latitude: currentStop.coords.latitude,
+                  longitude: currentStop.coords.longitude
+                }
+              }
+            : r
+        )
+      );
+
+      addTelemetryLog({
+        roverId: targetRover.id,
+        roverUnit: targetRover.unitNumber,
+        guardName: targetRover.assignedGuardName,
+        eventType: 'GEOFENCE_AUTO_ARRIVAL',
+        siteId: currentStop.siteId,
+        siteName: currentStop.siteName,
+        coords: currentStop.coords,
+        notes: `Passive GPS geofence match. Arrived at ${currentStop.siteName}. Beginning mandatory ${currentStop.targetDwellMinutes}m dwell SLA.`,
+        telemetrySource: 'passive_gps_geofence'
+      });
+
+      showToast(
+        'Geofence Arrival Verified',
+        `${targetRover.unitNumber} arrived at ${currentStop.siteName}. Timer started (${currentStop.targetDwellMinutes}m).`,
+        'success'
+      );
+    }
+  };
+
+  const simulateRoverGpsMove = (
+    roverId: string,
+    coords: { latitude: number; longitude: number; speedKmh?: number }
+  ) => {
+    const targetRover = rovers.find((r) => r.id === roverId);
+    if (!targetRover) return;
+
+    const currentPlan = roverPlans[roverId];
+    const currentStop = currentPlan?.stops[targetRover.currentStopIndex];
+
+    const evaluation = currentStop
+      ? evaluatePassiveTelemetryGeofence(targetRover, currentStop, coords)
+      : null;
+
+    setRovers((prev) =>
+      prev.map((r) => {
+        if (r.id !== roverId) return r;
+        return {
+          ...r,
+          currentCoords: {
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            speedKmh: coords.speedKmh !== undefined ? coords.speedKmh : r.currentCoords.speedKmh,
+            heading: r.currentCoords.heading,
+            accuracy: 5
+          },
+          lastTelemetryTimestamp: new Date().toISOString(),
+          isInsideGeofence: evaluation ? evaluation.isInsideGeofence : r.isInsideGeofence,
+          currentDwellSeconds: evaluation ? evaluation.dwellSeconds : r.currentDwellSeconds,
+          status: evaluation?.isDwellSlaMet
+            ? 'dwelling'
+            : evaluation?.isAutoArrival
+            ? 'dwelling'
+            : r.status
+        };
+      })
+    );
+
+    if (evaluation && evaluation.telemetryEvents.length > 0) {
+      evaluation.telemetryEvents.forEach((evt) => {
+        addTelemetryLog(evt);
+      });
+    }
+  };
+
+  const getRoverForGuard = (guardId: string): RoverVehicle | undefined => {
+    return rovers.find(
+      (r) => r.assignedGuardId === guardId || r.assignedGuardName.toLowerCase() === guardId.toLowerCase()
+    );
+  };
+
+  const getRoverByGroup = (group: RovingGroup): RoverVehicle | undefined => {
+    return rovers.find((r) => r.rovingGroup === group);
+  };
+
   // Reset to Defaults
   const resetToDefaults = () => {
     setShifts(INITIAL_SHIFTS);
@@ -3887,6 +4779,23 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setIsCallAlertOpen(false);
     setScheduledShifts(INITIAL_SCHEDULED_SHIFTS);
     setDismissedLateAlertIds([]);
+    setRovers(INITIAL_ROVERS);
+    setTelemetryLogs(INITIAL_TELEMETRY_LOGS);
+    setActiveInterceptions([]);
+    setTrafficConditionState('moderate');
+    setOptimizationModeState('traffic_density_optimal');
+    setAntiPredictabilityJitterPctState(20);
+
+    const initialPlans: Record<string, DynamicRoutePlan> = {};
+    INITIAL_ROVERS.forEach((rover) => {
+      initialPlans[rover.id] = optimizeRoverRoute(rover, INITIAL_SITES, {
+        traffic: 'moderate',
+        mode: 'traffic_density_optimal',
+        antiPredictabilityJitterPct: 20
+      });
+    });
+    setRoverPlans(initialPlans);
+
     localStorage.removeItem(STORAGE_KEY_SHIFTS);
     localStorage.removeItem(STORAGE_KEY_TRADES);
     localStorage.removeItem(STORAGE_KEY_LOGS);
@@ -3904,13 +4813,20 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     localStorage.removeItem(STORAGE_KEY_CALL_RECEIPTS);
     localStorage.removeItem(STORAGE_KEY_SCHEDULED_SHIFTS);
     localStorage.removeItem(STORAGE_KEY_DISMISSED_LATE_ALERTS);
+    localStorage.removeItem(STORAGE_KEY_ROVERS);
+    localStorage.removeItem(STORAGE_KEY_ROVER_PLANS);
+    localStorage.removeItem(STORAGE_KEY_INTERCEPTIONS);
+    localStorage.removeItem(STORAGE_KEY_TELEMETRY);
+    localStorage.removeItem(STORAGE_KEY_TRAFFIC);
+    localStorage.removeItem(STORAGE_KEY_OPT_MODE);
+    localStorage.removeItem(STORAGE_KEY_JITTER_PCT);
     localStorage.removeItem('secureshift_guard_auth_session');
     setCallReceipts([]);
     setLatestCallReceipt(null);
     setAlertPreferencesState(DEFAULT_ALERT_PREFERENCES);
     setSiteFeedbacks(INITIAL_SITE_FEEDBACKS);
     setSitesList(INITIAL_SITES);
-    showToast('System Reset', 'Demo shift, trade, schedule, time tracking, CFS calls, and alert data restored to initial state.', 'info');
+    showToast('System Reset', 'Demo shift, trade, schedule, time tracking, CFS calls, rover routes, and telemetry restored to initial state.', 'info');
   };
 
   return (
@@ -3962,6 +4878,25 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         getGuardActiveShift,
         getGuardUpcomingShifts,
         getGuardsLiveTracking,
+        rovers,
+        roverPlans,
+        activeInterceptions,
+        telemetryLogs,
+        trafficCondition,
+        optimizationMode,
+        antiPredictabilityJitterPct,
+        geoClusterSectors,
+        setTrafficCondition,
+        setOptimizationMode,
+        setAntiPredictabilityJitterPct,
+        reoptimizeRoverRoutes,
+        dispatchAdHocInterception,
+        clearAdHocInterception,
+        advanceRoverCheckpoint,
+        simulateRoverGpsMove,
+        addTelemetryLog,
+        getRoverForGuard,
+        getRoverByGroup,
         eligiblePriorityShifts,
         activePriorityPush,
         getPriorityNext24hShifts,
