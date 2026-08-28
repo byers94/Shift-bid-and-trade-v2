@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Zap, 
   Clock, 
@@ -28,6 +28,7 @@ export const PriorityShiftPushBanner: React.FC<PriorityShiftPushBannerProps> = (
 }) => {
   const {
     eligiblePriorityShifts,
+    dismissedPriorityShiftIds,
     activePriorityPush,
     dismissPriorityPush,
     snoozePriorityPush,
@@ -40,22 +41,29 @@ export const PriorityShiftPushBanner: React.FC<PriorityShiftPushBannerProps> = (
   const [isClaiming, setIsClaiming] = useState(false);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
 
-  // If no eligible shifts in next 24h or alert is closed, return null
-  if (!eligiblePriorityShifts || eligiblePriorityShifts.length === 0) {
+  // Filter out any dismissed priority shifts so the guard is never blocked from viewing open shifts
+  const unDismissedShifts = useMemo(() => {
+    return (eligiblePriorityShifts || []).filter(
+      (m) => !dismissedPriorityShiftIds?.includes(m.shift.id)
+    );
+  }, [eligiblePriorityShifts, dismissedPriorityShiftIds]);
+
+  // If no un-dismissed eligible shifts in next 24h or alert is closed, return null
+  if (!unDismissedShifts || unDismissedShifts.length === 0) {
     return null;
   }
 
   // Safe index within bounds
-  const safeIndex = Math.min(currentIndex, eligiblePriorityShifts.length - 1);
-  const activeMatch: PriorityShiftMatch = eligiblePriorityShifts[safeIndex] || eligiblePriorityShifts[0];
+  const safeIndex = Math.min(currentIndex, unDismissedShifts.length - 1);
+  const activeMatch: PriorityShiftMatch = unDismissedShifts[safeIndex] || unDismissedShifts[0];
   const { shift, startsInHours, startsInMinutes, restHoursBefore, restHoursAfter, adjacentShiftBefore, adjacentShiftAfter, surgeBonusRate } = activeMatch;
 
   const handleNext = () => {
-    setCurrentIndex((prev) => (prev + 1) % eligiblePriorityShifts.length);
+    setCurrentIndex((prev) => (prev + 1) % unDismissedShifts.length);
   };
 
   const handlePrev = () => {
-    setCurrentIndex((prev) => (prev - 1 + eligiblePriorityShifts.length) % eligiblePriorityShifts.length);
+    setCurrentIndex((prev) => (prev - 1 + unDismissedShifts.length) % unDismissedShifts.length);
   };
 
   const handleClaim = () => {
@@ -67,6 +75,10 @@ export const PriorityShiftPushBanner: React.FC<PriorityShiftPushBannerProps> = (
     }
   };
 
+  const handleDismiss = () => {
+    dismissPriorityPush(shift.id);
+  };
+
   const handleTextDispatch = () => {
     const body = encodeURIComponent(
       `[PRIORITY 24H DISPATCH CLAIM]\nOfficer: ${activeGuard.name} (${activeGuard.badgeNumber})\nPhone: ${activeGuard.phone}\nClaiming Open Shift: ${shift.siteName}\nDate: ${shift.date} (${shift.startTime}-${shift.endTime}, ${shift.hours || 8}h)\nRest Buffer: ≥6h Verified (Zero Overlap)\nPlease confirm my roster assignment.`
@@ -74,7 +86,7 @@ export const PriorityShiftPushBanner: React.FC<PriorityShiftPushBannerProps> = (
     window.open(`sms:${opsPhone}?&body=${body}`, '_blank');
   };
 
-  const totalEligible = eligiblePriorityShifts.length;
+  const totalEligible = unDismissedShifts.length;
 
   return (
     <section 
@@ -132,9 +144,10 @@ export const PriorityShiftPushBanner: React.FC<PriorityShiftPushBannerProps> = (
           </button>
 
           <button
-            onClick={() => dismissPriorityPush(shift.id)}
-            title="Dismiss this priority push"
-            className="rounded p-1 text-slate-400 hover:bg-white/10 hover:text-white cursor-pointer"
+            id="dismiss-priority-push-banner-btn"
+            onClick={handleDismiss}
+            title="Dismiss this priority push notification"
+            className="rounded p-1 text-slate-400 hover:bg-white/10 hover:text-white cursor-pointer transition-colors"
             aria-label="Dismiss alert"
           >
             <X className="h-4 w-4" />

@@ -42,8 +42,11 @@ import {
   Zap,
   ExternalLink,
   RotateCcw,
-  Navigation
+  Navigation,
+  Download,
+  FileSpreadsheet
 } from 'lucide-react';
+import { ExportCallsModal } from './ExportCallsModal';
 import { 
   playReceiptConfirmedSound,
   playOnSceneAlertSound,
@@ -91,6 +94,7 @@ export const CallsForServicePanel: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<'all' | CallType>('all');
   const [selectedSiteFilter, setSelectedSiteFilter] = useState<string>('all');
   const [isReceiptsLogModalOpen, setIsReceiptsLogModalOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   // Dispatch Modal / Form State
   const [isDispatchModalOpen, setIsDispatchModalOpen] = useState(false);
@@ -379,6 +383,20 @@ export const CallsForServicePanel: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              id="open-export-calls-btn"
+              type="button"
+              onClick={() => setIsExportModalOpen(true)}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              title="Export all call records with custom date range, dispatch times, acknowledgment latency, response times, and outcome dispositions"
+            >
+              <Download className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>Export Calls</span>
+              <span className="bg-indigo-600 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full font-mono">
+                {callsForService.length}
+              </span>
+            </button>
+
             <button
               id="open-receipts-log-btn"
               type="button"
@@ -1686,6 +1704,15 @@ export const CallsForServicePanel: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Export Calls for Service Modal */}
+      <ExportCallsModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        calls={callsForService}
+        sitesList={sitesList}
+        onNotify={showToast}
+      />
     </div>
   );
 };

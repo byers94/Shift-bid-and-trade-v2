@@ -204,8 +204,10 @@ interface ShiftOpsContextType {
   // Priority 24-Hour Shifts & Push Notification Engine
   eligiblePriorityShifts: PriorityShiftMatch[];
   activePriorityPush: PriorityPushNotification | null;
+  dismissedPriorityShiftIds: string[];
   getPriorityNext24hShifts: (guardId?: string) => PriorityShiftMatch[];
-  dismissPriorityPush: (shiftId?: string) => void;
+  dismissPriorityPush: (shiftId?: string, dismissAll?: boolean) => void;
+  clearDismissedPriorityShifts: () => void;
   snoozePriorityPush: (minutes?: number) => void;
   triggerPriorityPushAlert: (shiftId?: string) => void;
   claimPriorityShift: (shiftId: string, guardId?: string) => { success: boolean; message: string; shift?: Shift; scheduledShift?: ScheduledShift };
@@ -863,12 +865,22 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [eligiblePriorityShifts, alertPreferences.priorityNext24hPush, dismissedPriorityShiftIds, priorityPushSnoozedUntil, activePriorityPush]);
 
   // Dismiss a priority push notification
-  const dismissPriorityPush = (shiftId?: string) => {
-    const targetShiftId = shiftId || activePriorityPush?.shiftId;
-    if (targetShiftId) {
-      setDismissedPriorityShiftIds((prev) => Array.from(new Set([...prev, targetShiftId])));
+  const dismissPriorityPush = (shiftId?: string, dismissAll: boolean = false) => {
+    if (dismissAll || (!shiftId && !activePriorityPush?.shiftId)) {
+      const allIds = eligiblePriorityShifts.map((m) => m.shift.id);
+      setDismissedPriorityShiftIds((prev) => Array.from(new Set([...prev, ...allIds])));
+    } else {
+      const targetShiftId = shiftId || activePriorityPush?.shiftId;
+      if (targetShiftId) {
+        setDismissedPriorityShiftIds((prev) => Array.from(new Set([...prev, targetShiftId])));
+      }
     }
     setActivePriorityPush(null);
+  };
+
+  // Clear dismissed priority shift IDs (e.g. on reset or manual refresh)
+  const clearDismissedPriorityShifts = () => {
+    setDismissedPriorityShiftIds([]);
   };
 
   // Snooze priority push notifications
@@ -4899,8 +4911,10 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         getRoverByGroup,
         eligiblePriorityShifts,
         activePriorityPush,
+        dismissedPriorityShiftIds,
         getPriorityNext24hShifts,
         dismissPriorityPush,
+        clearDismissedPriorityShifts,
         snoozePriorityPush,
         triggerPriorityPushAlert,
         claimPriorityShift,
