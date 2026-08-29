@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Camera, 
   RefreshCw, 
@@ -53,30 +53,16 @@ export const VerificationCameraModal: React.FC<VerificationCameraModalProps> = (
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Switch facing mode default based on step
-  useEffect(() => {
-    if (step === 'selfie') {
-      setFacingMode('user');
-    } else if (step === 'equipment') {
-      setFacingMode('environment');
+  const stopCamera = useCallback(() => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach((track) => track.stop());
+      videoRef.current.srcObject = null;
     }
-  }, [step]);
+    setIsCameraActive(false);
+  }, []);
 
-  // Start / stop camera stream
-  useEffect(() => {
-    if (!isOpen || step === 'review') {
-      stopCamera();
-      return;
-    }
-
-    startCamera();
-
-    return () => {
-      stopCamera();
-    };
-  }, [isOpen, step, facingMode]);
-
-  const startCamera = async () => {
+  const startCamera = useCallback(async () => {
     stopCamera();
     setCameraError(null);
 
@@ -108,16 +94,30 @@ export const VerificationCameraModal: React.FC<VerificationCameraModalProps> = (
           : 'Unable to start camera. You can capture a verified snapshot directly.'
       );
     }
-  };
+  }, [facingMode, stopCamera]);
 
-  const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach((track) => track.stop());
-      videoRef.current.srcObject = null;
+  // Switch facing mode default based on step
+  useEffect(() => {
+    if (step === 'selfie') {
+      setFacingMode('user');
+    } else if (step === 'equipment') {
+      setFacingMode('environment');
     }
-    setIsCameraActive(false);
-  };
+  }, [step]);
+
+  // Start / stop camera stream
+  useEffect(() => {
+    if (!isOpen || step === 'review') {
+      stopCamera();
+      return;
+    }
+
+    startCamera();
+
+    return () => {
+      stopCamera();
+    };
+  }, [isOpen, step, facingMode, startCamera, stopCamera]);
 
   const toggleFacingMode = () => {
     setFacingMode((prev) => (prev === 'user' ? 'environment' : 'user'));

@@ -53,8 +53,22 @@ import {
   ActivityReportDetails,
   MaintenanceReportDetails,
   IncidentReportDetails,
-  ReportMediaAttachment
+  ReportMediaAttachment,
+  OfflineQueuedReport,
+  ReportSyncStatus
 } from '../types/shift';
+import {
+  enqueueOfflineReport,
+  getOfflineReportQueue,
+  subscribeToQueueChanges,
+  syncAllQueuedReports,
+  processSingleQueuedReport,
+  isDeviceOnline
+} from '../utils/reportSyncQueue';
+import {
+  uploadAllReportMedia,
+  saveReportToFirestore
+} from '../utils/firebase';
 import {
   RoverVehicle,
   DynamicRoutePlan,
@@ -339,6 +353,11 @@ interface ShiftOpsContextType {
 
   // Standard Guard Duty Reports (Activity DAR, Maintenance, Incident Reports)
   standardReports: StandardShiftReport[];
+  offlineReportQueue: OfflineQueuedReport[];
+  isOnline: boolean;
+  isSyncingReports: boolean;
+  syncQueuedReports: () => Promise<void>;
+  retryReportSync: (reportId: string) => Promise<void>;
   submitStandardReport: (
     reportData: Omit<StandardShiftReport, 'id' | 'reportNumber' | 'createdAt'> & { timestamp?: string; id?: string }
   ) => StandardShiftReport;
@@ -761,6 +780,20 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return INITIAL_STANDARD_REPORTS;
     }
   });
+
+  // Offline Report Queue & Cloud Sync Status State
+  const [offlineReportQueue, setOfflineReportQueue] = useState<OfflineQueuedReport[]>(() => getOfflineReportQueue());
+  const [isOnline, setIsOnline] = useState<boolean>(() => isDeviceOnline());
+  const [isSyncingReports, setIsSyncingReports] = useState<boolean>(false);
+
+  // Subscribe to offline report queue and network events
+  useEffect(() => {
+    const unsubscribe = subscribeToQueueChanges((queue, online) => {
+      setOfflineReportQueue([...queue]);
+      setIsOnline(online);
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Rover Route Optimization, Telemetry & Interception State
   const [rovers, setRovers] = useState<RoverVehicle[]>(() => {
@@ -3627,6 +3660,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   // Standard Guard Duty Reports (Activity DAR, Maintenance, Incident Reports)
+  // Standard Guard Duty Reports (Activity DAR, Maintenance, Incident Reports)
   const submitStandardReport = (
     reportData: Omit<StandardShiftReport, 'id' | 'reportNumber' | 'createdAt'> & { timestamp?: string; id?: string }
   ): StandardShiftReport => {
@@ -3642,6 +3676,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const randomSuffix = Math.floor(100 + Math.random() * 900);
     const reportNumber = `${prefix}-${dateCode}-${randomSuffix}`;
     const id = reportData.id || `rpt-${reportData.reportType}-${Date.now()}`;
+    const deviceIsConnected = isDeviceOnline();
 
     const newReport: StandardShiftReport = {
       ...reportData,
@@ -3649,10 +3684,72 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       reportNumber,
       createdAt: nowIso,
       timestamp: nowIso,
-      status: reportData.status || 'submitted'
+      status: reportData.status || 'submitted',
+      syncStatus: deviceIsConnected ? 'syncing' : 'pending_sync',
+      offlineQueuedAt: deviceIsConnected ? undefined : nowIso
     };
 
+    // Save report to standardReports state first for immediate local view
     setStandardReports((prev) => [newReport, ...prev]);
+
+    // OFFLINE QUEUE HANDLING: If offline, buffer locally in localStorage queue
+    if (!deviceIsConnected) {
+      enqueueOfflineReport(newReport);
+      
+      showToast(
+        `📦 Report Saved to Offline Queue`,
+        `Report #${reportNumber} stored locally. Will auto-sync to Firebase Cloud Storage & Firestore when reconnected.`,
+        'warning'
+      );
+
+      addAuditLog(
+        'REPORT_QUEUED_OFFLINE',
+        'shift',
+        `Guard ${newReport.guardName} (${newReport.guardBadge}) filed report #${reportNumber} in OFFLINE mode. Added to local sync buffer.`,
+        `${newReport.guardName} (${newReport.guardBadge})`,
+        'warning'
+      );
+    } else {
+      // ONLINE HANDLING: Upload media files to Cloud Storage for Firebase and save to Firestore
+      (async () => {
+        try {
+          // Upload media attachments to Firebase Cloud Storage
+          const uploadedMedia = await uploadAllReportMedia(newReport);
+          
+          // Save complete record with Cloud Storage download URLs to Firestore
+          const firestoreResult = await saveReportToFirestore({
+            ...newReport,
+            media: uploadedMedia
+          });
+
+          // Update local state with the permanent Cloud Storage download URLs and sync status
+          setStandardReports((prev) =>
+            prev.map((rpt) =>
+              rpt.id === id
+                ? {
+                    ...rpt,
+                    media: uploadedMedia,
+                    syncStatus: 'synced',
+                    syncedAt: firestoreResult.syncedAt,
+                    firestoreDocId: firestoreResult.firestoreDocId,
+                    syncError: undefined
+                  }
+                : rpt
+            )
+          );
+
+          console.info(`[SyncEngine] Direct upload succeeded for ${newReport.reportNumber}. Cloud Storage download URLs active.`);
+        } catch (uploadError: any) {
+          console.warn(`[SyncEngine] Direct upload encountered error, fallback to offline queue:`, uploadError);
+          enqueueOfflineReport(newReport);
+          setStandardReports((prev) =>
+            prev.map((rpt) =>
+              rpt.id === id ? { ...rpt, syncStatus: 'pending_sync', syncError: uploadError?.message } : rpt
+            )
+          );
+        }
+      })();
+    }
 
     // Emergency incident or standard log feedback
     if (reportData.reportType === 'incident' && reportData.incidentDetails?.escalatedToEmergencyServices) {
@@ -3700,7 +3797,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       showToast(
         `⚠️ Flagged Incident Filed`,
-        `Report #${reportNumber} submitted with ${newReport.media.length} media item(s).`,
+        `Report #${reportNumber} submitted with ${newReport.media.length} media item(s). ${deviceIsConnected ? 'Uploading to Cloud Storage...' : 'Queued offline.'}`,
         'warning'
       );
     } else if (reportData.reportType === 'maintenance') {
@@ -3718,7 +3815,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       showToast(
         `🔧 Maintenance Report Filed`,
-        `Report #${reportNumber} queued for property maintenance review.`,
+        `Report #${reportNumber} submitted. ${deviceIsConnected ? 'Syncing to Cloud Storage...' : 'Buffered in offline queue.'}`,
         'info'
       );
     } else {
@@ -3742,6 +3839,68 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     return newReport;
+  };
+
+  // Synchronizes all queued reports from local storage to Firebase Cloud Storage and Firestore
+  const syncQueuedReports = async (): Promise<void> => {
+    if (!isDeviceOnline()) {
+      showToast('Cannot Sync: Device Offline', 'Please connect to the internet to upload queued reports.', 'warning');
+      return;
+    }
+
+    setIsSyncingReports(true);
+    showToast('Syncing Offline Reports...', 'Uploading media to Firebase Storage & saving Firestore docs.', 'info');
+
+    try {
+      const result = await syncAllQueuedReports((syncedReport) => {
+        // Update the report in active standardReports state with Firebase URLs
+        setStandardReports((prev) =>
+          prev.map((rpt) => (rpt.id === syncedReport.id ? syncedReport : rpt))
+        );
+      });
+
+      if (result.succeeded > 0) {
+        showToast(
+          `☁️ Cloud Sync Complete`,
+          `Successfully uploaded ${result.succeeded} report(s) and media files to Firebase Cloud Storage & Firestore.`,
+          'success'
+        );
+
+        addAuditLog(
+          'OFFLINE_REPORTS_SYNCED',
+          'system',
+          `Synced ${result.succeeded} offline report(s) to Firebase Cloud Storage & Firestore.`,
+          'Sync Manager',
+          'success'
+        );
+      } else if (result.processed === 0) {
+        showToast('All Caught Up', 'No offline reports pending sync.', 'info');
+      }
+    } catch (err: any) {
+      showToast('Sync Warning', err?.message || 'Some items could not be synced.', 'danger');
+    } finally {
+      setIsSyncingReports(false);
+      setOfflineReportQueue(getOfflineReportQueue());
+    }
+  };
+
+  // Retries a single report sync
+  const retryReportSync = async (reportId: string): Promise<void> => {
+    setIsSyncingReports(true);
+    try {
+      const res = await processSingleQueuedReport(reportId);
+      if (res.success && res.syncedReport) {
+        setStandardReports((prev) =>
+          prev.map((rpt) => (rpt.id === res.syncedReport?.id ? res.syncedReport : rpt))
+        );
+        showToast('Report Synced', `Report #${res.syncedReport.reportNumber} uploaded to Firebase Storage & Firestore.`, 'success');
+      } else {
+        showToast('Sync Failed', res.error || 'Failed to sync report.', 'danger');
+      }
+    } finally {
+      setIsSyncingReports(false);
+      setOfflineReportQueue(getOfflineReportQueue());
+    }
   };
 
   const updateStandardReport = (id: string, updates: Partial<StandardShiftReport>) => {
@@ -6021,6 +6180,11 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         getTasksForSite,
         getTaskCompletionStatus,
         standardReports,
+        offlineReportQueue,
+        isOnline,
+        isSyncingReports,
+        syncQueuedReports,
+        retryReportSync,
         submitStandardReport,
         updateStandardReport,
         deleteStandardReport,

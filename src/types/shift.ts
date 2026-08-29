@@ -882,16 +882,21 @@ export interface LateShiftAlert {
 
 export type StandardReportType = 'activity' | 'maintenance' | 'incident';
 
+export type ReportSyncStatus = 'synced' | 'pending_sync' | 'syncing' | 'failed';
+
 export interface ReportMediaAttachment {
   id: string;
   type: 'photo' | 'video';
-  url: string;
+  url: string; // Download URL from Firebase Storage or local preview data URL
+  downloadUrl?: string; // Explicit Cloud Storage download URL
+  storagePath?: string; // Firebase Storage bucket object path e.g. "reports/INC-20260829-123/evidence_1.jpg"
   thumbnailUrl?: string;
   caption?: string;
   capturedAt: string; // ISO timestamp
   fileName?: string;
   fileSizeMb?: number;
   durationSeconds?: number; // For video clips
+  isUploadedToStorage?: boolean;
   gpsCoordinates?: {
     latitude: number;
     longitude: number;
@@ -984,14 +989,43 @@ export type IncidentCategory =
 
 export type IncidentSeverity = 'low' | 'medium' | 'high' | 'critical';
 
+export type PartyInvolvedRole = 'suspect' | 'victim' | 'witness' | 'tenant' | 'visitor' | 'contractor';
+
+export type PartyIdType = 'drivers_license' | 'state_id' | 'passport' | 'employee_badge' | 'student_id' | 'military_id' | 'other' | 'none';
+
 export interface IncidentPartyInvolved {
   id: string;
   name?: string;
-  role: 'suspect' | 'victim' | 'witness' | 'tenant' | 'visitor' | 'contractor';
-  description?: string;
-  vehicleInfo?: string;
-  phoneOrContact?: string;
+  role: PartyInvolvedRole;
+  
+  // Identification Details
+  idType?: PartyIdType;
+  idNumber?: string;
+  idStateOrIssuer?: string;
   refusedIdentification?: boolean;
+  
+  // Physical Description Details
+  ageApprox?: string;
+  gender?: 'male' | 'female' | 'non_binary' | 'unknown' | string;
+  height?: string;
+  weightBuild?: string;
+  hairEyes?: string;
+  clothingDescription?: string;
+  distinguishingFeatures?: string; // Tattoos, scars, piercings, facial hair
+  
+  // Contact & Address
+  phoneOrContact?: string;
+  email?: string;
+  address?: string;
+  
+  // Vehicle Information
+  vehicleInfo?: string; // Make, Model, Color, License Plate, Year
+  
+  // Statement / Attitude / Notes
+  statementOrNotes?: string;
+  
+  // Legacy / Quick summary field
+  description?: string;
 }
 
 export type EmergencyServiceAgency = 
@@ -1067,8 +1101,26 @@ export interface StandardShiftReport {
     notes?: string;
   };
   
+  // Cloud Storage & Offline Synchronization
+  syncStatus?: ReportSyncStatus; // 'synced' | 'pending_sync' | 'syncing' | 'failed'
+  firestoreDocId?: string; // Firestore document ID
+  syncedAt?: string; // ISO timestamp when pushed to Firestore
+  offlineQueuedAt?: string; // ISO timestamp when stored in local offline queue
+  syncError?: string;
+
   createdAt: string;
   updatedAt?: string;
+}
+
+export interface OfflineQueuedReport {
+  queueId: string;
+  report: StandardShiftReport;
+  enqueuedAt: string;
+  retryCount: number;
+  lastAttemptAt?: string;
+  lastError?: string;
+  status: 'queued' | 'uploading_media' | 'saving_firestore' | 'synced' | 'failed';
+  mediaUploadProgress?: Record<string, number>; // Media ID to percent
 }
 
 export interface GuardLiveTrackingItem {

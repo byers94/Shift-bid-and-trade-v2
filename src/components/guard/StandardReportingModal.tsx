@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   X, 
   Camera, 
@@ -22,7 +22,23 @@ import {
   Check,
   Building,
   RefreshCw,
-  Play
+  Play,
+  CreditCard,
+  Car,
+  Phone,
+  Mail,
+  ChevronDown,
+  ChevronUp,
+  Edit2,
+  UserCheck,
+  UserX,
+  Sliders,
+  Cloud,
+  CloudOff,
+  Wifi,
+  WifiOff,
+  UploadCloud,
+  Database
 } from 'lucide-react';
 import { 
   StandardReportType, 
@@ -38,6 +54,8 @@ import {
   IncidentSeverity,
   IncidentReportDetails,
   IncidentPartyInvolved,
+  PartyInvolvedRole,
+  PartyIdType,
   EmergencyServiceAgency,
   GuardProfile,
   ScheduledShift
@@ -134,19 +152,48 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
   const [incTrespassIssued, setIncTrespassIssued] = useState<boolean>(true);
   const [incPoliceReportNum, setIncPoliceReportNum] = useState<string>('');
   
-  // Parties Involved
+  // Parties Involved State
   const [partiesList, setPartiesList] = useState<IncidentPartyInvolved[]>([
     {
       id: 'pty-1',
       name: 'Unidentified Male',
       role: 'suspect',
-      description: 'Approx 35-40 yrs, dark hooded jacket, jeans, carrying backpack',
-      refusedIdentification: true
+      idType: 'none',
+      refusedIdentification: true,
+      ageApprox: '35-40',
+      gender: 'male',
+      height: '5\'10"',
+      weightBuild: '180 lbs, Medium build',
+      hairEyes: 'Short dark hair, brown eyes',
+      clothingDescription: 'Dark Carhartt hooded jacket, blue jeans, black work boots, gray backpack',
+      distinguishingFeatures: 'Tattoo on right forearm, small scar over left eyebrow',
+      vehicleInfo: 'Silver 2014 Subaru Outback (Partial WA plate: 8XYZ...)',
+      statementOrNotes: 'Claimed he was looking for lost keys. Refused to provide identification and exited towards North gate upon notice of SPD dispatch.',
+      description: 'Approx 35-40 yrs, dark hooded jacket, jeans, carrying backpack (Refused ID)'
     }
   ]);
+
+  // Active party form fields
   const [newPartyName, setNewPartyName] = useState<string>('');
-  const [newPartyRole, setNewPartyRole] = useState<IncidentPartyInvolved['role']>('witness');
-  const [newPartyDesc, setNewPartyDesc] = useState<string>('');
+  const [newPartyRole, setNewPartyRole] = useState<PartyInvolvedRole>('suspect');
+  const [newPartyRefusedId, setNewPartyRefusedId] = useState<boolean>(false);
+  const [newPartyIdType, setNewPartyIdType] = useState<PartyIdType>('drivers_license');
+  const [newPartyIdNumber, setNewPartyIdNumber] = useState<string>('');
+  const [newPartyIdState, setNewPartyIdState] = useState<string>('WA');
+  const [newPartyAge, setNewPartyAge] = useState<string>('');
+  const [newPartyGender, setNewPartyGender] = useState<string>('unknown');
+  const [newPartyHeight, setNewPartyHeight] = useState<string>('');
+  const [newPartyWeight, setNewPartyWeight] = useState<string>('');
+  const [newPartyHairEyes, setNewPartyHairEyes] = useState<string>('');
+  const [newPartyClothing, setNewPartyClothing] = useState<string>('');
+  const [newPartyDistinguishing, setNewPartyDistinguishing] = useState<string>('');
+  const [newPartyPhone, setNewPartyPhone] = useState<string>('');
+  const [newPartyEmail, setNewPartyEmail] = useState<string>('');
+  const [newPartyAddress, setNewPartyAddress] = useState<string>('');
+  const [newPartyVehicle, setNewPartyVehicle] = useState<string>('');
+  const [newPartyStatement, setNewPartyStatement] = useState<string>('');
+  const [editingPartyId, setEditingPartyId] = useState<string | null>(null);
+  const [isPartyDetailsExpanded, setIsPartyDetailsExpanded] = useState<boolean>(true);
 
   // Critical Escalation State
   const [escalatedToEmergency, setEscalatedToEmergency] = useState<boolean>(false);
@@ -161,31 +208,64 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
   const [supervisorName, setSupervisorName] = useState<string>('Supervisor Marcus Vance');
 
   const [formError, setFormError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitProgress, setSubmitProgress] = useState<string>('');
+  
+  // Real-time network status tracking
+  const [networkOnline, setNetworkOnline] = useState<boolean>(() => 
+    typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean' ? navigator.onLine : true
+  );
 
-  // Sync initial report type
   useEffect(() => {
-    if (isOpen) {
-      setReportType(initialReportType);
-      setLocationName(siteName);
-      setZoneChecked(initialActivityZone);
-      setFormError(null);
-    }
-  }, [isOpen, initialReportType, siteName, initialActivityZone]);
+    const handleOnline = () => setNetworkOnline(true);
+    const handleOffline = () => setNetworkOnline(false);
 
-  // Clean up video recorder
-  useEffect(() => {
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
     return () => {
-      if (videoIntervalRef.current) {
-        clearInterval(videoIntervalRef.current);
-      }
-      stopCamera();
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
     };
   }, []);
 
-  if (!isOpen) return null;
+  const stopCamera = useCallback(() => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach((track) => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    setIsCameraActive(false);
+  }, []);
+
+  const captureSamplePhoto = useCallback(() => {
+    const title = reportType === 'activity' ? zoneChecked : reportType === 'maintenance' ? maintTitle : incTitle;
+    const sampleUrl = generateSampleReportMedia(
+      reportType,
+      title,
+      locationName,
+      guard.name,
+      guard.badgeNumber,
+      reportType === 'incident' && escalatedToEmergency
+    );
+
+    const newAttachment: ReportMediaAttachment = {
+      id: `med-${Date.now()}`,
+      type: 'photo',
+      url: sampleUrl,
+      caption: mediaCaptionInput || `${reportType.toUpperCase()} Verification Photo - ${title || locationName}`,
+      capturedAt: new Date().toISOString(),
+      fileName: `${reportType}_proof_${Date.now()}.jpg`,
+      fileSizeMb: 1.4,
+      gpsCoordinates: gpsCoordinates ? { latitude: gpsCoordinates.latitude, longitude: gpsCoordinates.longitude } : undefined
+    };
+
+    setMediaList((prev) => [newAttachment, ...prev]);
+    setMediaCaptionInput('');
+  }, [reportType, zoneChecked, maintTitle, incTitle, locationName, guard.name, guard.badgeNumber, escalatedToEmergency, mediaCaptionInput, gpsCoordinates]);
 
   // Camera handling
-  const startCamera = async () => {
+  const startCamera = useCallback(async () => {
     stopCamera();
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
@@ -210,16 +290,27 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
       // Generate sample media fallback directly if hardware unavailable
       captureSamplePhoto();
     }
-  };
+  }, [cameraFacing, stopCamera, captureSamplePhoto]);
 
-  const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach((track) => track.stop());
-      videoRef.current.srcObject = null;
+  // Sync initial report type
+  useEffect(() => {
+    if (isOpen) {
+      setReportType(initialReportType);
+      setLocationName(siteName);
+      setZoneChecked(initialActivityZone);
+      setFormError(null);
     }
-    setIsCameraActive(false);
-  };
+  }, [isOpen, initialReportType, siteName, initialActivityZone]);
+
+  // Clean up video recorder
+  useEffect(() => {
+    return () => {
+      if (videoIntervalRef.current) {
+        clearInterval(videoIntervalRef.current);
+      }
+      stopCamera();
+    };
+  }, [stopCamera]);
 
   const captureCameraPhoto = () => {
     if (!videoRef.current) return;
@@ -251,32 +342,6 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
     } catch {
       captureSamplePhoto();
     }
-  };
-
-  const captureSamplePhoto = () => {
-    const title = reportType === 'activity' ? zoneChecked : reportType === 'maintenance' ? maintTitle : incTitle;
-    const sampleUrl = generateSampleReportMedia(
-      reportType,
-      title,
-      locationName,
-      guard.name,
-      guard.badgeNumber,
-      reportType === 'incident' && escalatedToEmergency
-    );
-
-    const newAttachment: ReportMediaAttachment = {
-      id: `med-${Date.now()}`,
-      type: 'photo',
-      url: sampleUrl,
-      caption: mediaCaptionInput || `${reportType.toUpperCase()} Verification Photo - ${title || locationName}`,
-      capturedAt: new Date().toISOString(),
-      fileName: `${reportType}_proof_${Date.now()}.jpg`,
-      fileSizeMb: 1.4,
-      gpsCoordinates: gpsCoordinates ? { latitude: gpsCoordinates.latitude, longitude: gpsCoordinates.longitude } : undefined
-    };
-
-    setMediaList((prev) => [newAttachment, ...prev]);
-    setMediaCaptionInput('');
   };
 
   const handleSimulateVideoRecord = () => {
@@ -356,21 +421,136 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
     setMediaList((prev) => prev.filter((m) => m.id !== id));
   };
 
-  const addParty = () => {
-    if (!newPartyName.trim()) return;
-    const newPty: IncidentPartyInvolved = {
-      id: `pty-${Date.now()}`,
-      name: newPartyName,
-      role: newPartyRole,
-      description: newPartyDesc || undefined
-    };
-    setPartiesList((prev) => [...prev, newPty]);
+  const resetPartyForm = () => {
     setNewPartyName('');
-    setNewPartyDesc('');
+    setNewPartyRole('suspect');
+    setNewPartyRefusedId(false);
+    setNewPartyIdType('drivers_license');
+    setNewPartyIdNumber('');
+    setNewPartyIdState('WA');
+    setNewPartyAge('');
+    setNewPartyGender('unknown');
+    setNewPartyHeight('');
+    setNewPartyWeight('');
+    setNewPartyHairEyes('');
+    setNewPartyClothing('');
+    setNewPartyDistinguishing('');
+    setNewPartyPhone('');
+    setNewPartyEmail('');
+    setNewPartyAddress('');
+    setNewPartyVehicle('');
+    setNewPartyStatement('');
+    setEditingPartyId(null);
+  };
+
+  const startEditParty = (party: IncidentPartyInvolved) => {
+    setEditingPartyId(party.id);
+    setNewPartyName(party.name || '');
+    setNewPartyRole(party.role);
+    setNewPartyRefusedId(!!party.refusedIdentification);
+    setNewPartyIdType(party.idType || (party.refusedIdentification ? 'none' : 'drivers_license'));
+    setNewPartyIdNumber(party.idNumber || '');
+    setNewPartyIdState(party.idStateOrIssuer || 'WA');
+    setNewPartyAge(party.ageApprox || '');
+    setNewPartyGender(party.gender || 'unknown');
+    setNewPartyHeight(party.height || '');
+    setNewPartyWeight(party.weightBuild || '');
+    setNewPartyHairEyes(party.hairEyes || '');
+    setNewPartyClothing(party.clothingDescription || '');
+    setNewPartyDistinguishing(party.distinguishingFeatures || '');
+    setNewPartyPhone(party.phoneOrContact || '');
+    setNewPartyEmail(party.email || '');
+    setNewPartyAddress(party.address || '');
+    setNewPartyVehicle(party.vehicleInfo || '');
+    setNewPartyStatement(party.statementOrNotes || '');
+    setIsPartyDetailsExpanded(true);
+  };
+
+  const applyPartyPreset = (presetType: 'trespasser' | 'tenant' | 'witness' | 'vehicle_intruder') => {
+    if (presetType === 'trespasser') {
+      setNewPartyName('Unidentified Trespasser');
+      setNewPartyRole('suspect');
+      setNewPartyRefusedId(true);
+      setNewPartyIdType('none');
+      setNewPartyAge('30-40');
+      setNewPartyGender('male');
+      setNewPartyClothing('Dark hooded sweatshirt, baggy jeans, athletic sneakers');
+      setNewPartyStatement('Refused to identify or provide justification for presence. Escorted off property.');
+    } else if (presetType === 'tenant') {
+      setNewPartyName('Resident / Tenant');
+      setNewPartyRole('tenant');
+      setNewPartyRefusedId(false);
+      setNewPartyIdType('drivers_license');
+      setNewPartyStatement('Resident reported security disturbance or unauthorized individuals.');
+    } else if (presetType === 'witness') {
+      setNewPartyName('Eyewitness');
+      setNewPartyRole('witness');
+      setNewPartyRefusedId(false);
+      setNewPartyIdType('state_id');
+      setNewPartyStatement('Observed incident unfold and provided verbal statement to officer.');
+    } else if (presetType === 'vehicle_intruder') {
+      setNewPartyName('Vehicle Operator');
+      setNewPartyRole('suspect');
+      setNewPartyRefusedId(false);
+      setNewPartyVehicle('Dark Sedan (WA Plate #)');
+      setNewPartyStatement('Vehicle entered gate without authorization badge.');
+    }
+    setIsPartyDetailsExpanded(true);
+  };
+
+  const saveParty = () => {
+    const finalName = newPartyName.trim() || (newPartyRefusedId ? 'Unidentified Individual' : 'Party Involved');
+    
+    // Construct readable description summary for fallback
+    const summaryParts: string[] = [];
+    if (newPartyRefusedId) summaryParts.push('Refused ID');
+    else if (newPartyIdNumber) summaryParts.push(`ID: ${newPartyIdType} (${newPartyIdState} #${newPartyIdNumber})`);
+    
+    if (newPartyAge) summaryParts.push(`Age ~${newPartyAge}`);
+    if (newPartyGender && newPartyGender !== 'unknown') summaryParts.push(newPartyGender);
+    if (newPartyHeight) summaryParts.push(newPartyHeight);
+    if (newPartyWeight) summaryParts.push(newPartyWeight);
+    if (newPartyClothing) summaryParts.push(`Wearing: ${newPartyClothing}`);
+    if (newPartyDistinguishing) summaryParts.push(`Marks: ${newPartyDistinguishing}`);
+    if (newPartyVehicle) summaryParts.push(`Vehicle: ${newPartyVehicle}`);
+
+    const partyRecord: IncidentPartyInvolved = {
+      id: editingPartyId || `pty-${Date.now()}`,
+      name: finalName,
+      role: newPartyRole,
+      refusedIdentification: newPartyRefusedId,
+      idType: newPartyRefusedId ? 'none' : newPartyIdType,
+      idNumber: newPartyIdNumber.trim() || undefined,
+      idStateOrIssuer: newPartyIdState.trim() || undefined,
+      ageApprox: newPartyAge.trim() || undefined,
+      gender: newPartyGender || undefined,
+      height: newPartyHeight.trim() || undefined,
+      weightBuild: newPartyWeight.trim() || undefined,
+      hairEyes: newPartyHairEyes.trim() || undefined,
+      clothingDescription: newPartyClothing.trim() || undefined,
+      distinguishingFeatures: newPartyDistinguishing.trim() || undefined,
+      phoneOrContact: newPartyPhone.trim() || undefined,
+      email: newPartyEmail.trim() || undefined,
+      address: newPartyAddress.trim() || undefined,
+      vehicleInfo: newPartyVehicle.trim() || undefined,
+      statementOrNotes: newPartyStatement.trim() || undefined,
+      description: summaryParts.join(' • ') || undefined
+    };
+
+    if (editingPartyId) {
+      setPartiesList((prev) => prev.map((p) => (p.id === editingPartyId ? partyRecord : p)));
+    } else {
+      setPartiesList((prev) => [...prev, partyRecord]);
+    }
+
+    resetPartyForm();
   };
 
   const removeParty = (id: string) => {
     setPartiesList((prev) => prev.filter((p) => p.id !== id));
+    if (editingPartyId === id) {
+      resetPartyForm();
+    }
   };
 
   const toggleEmergencyAgency = (agency: EmergencyServiceAgency) => {
@@ -440,6 +620,9 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
       };
     }
 
+    setIsSubmitting(true);
+    setSubmitProgress(networkOnline ? 'Uploading media to Cloud Storage & creating report...' : 'Buffering to offline queue...');
+
     const payload: Omit<StandardShiftReport, 'id' | 'reportNumber' | 'createdAt'> = {
       reportType,
       shiftId: activeShift?.id,
@@ -465,9 +648,19 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
       status: 'submitted'
     };
 
-    onSubmitReport(payload);
-    onClose();
+    try {
+      onSubmitReport(payload);
+      setTimeout(() => {
+        setIsSubmitting(false);
+        onClose();
+      }, 400);
+    } catch (err: any) {
+      setIsSubmitting(false);
+      setFormError(err?.message || 'Failed to submit report. Please try again.');
+    }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div id="standard-reporting-modal-overlay" className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
@@ -1150,74 +1343,526 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
               </div>
 
               {/* Parties Involved Section */}
-              <div className="p-3.5 rounded-xl bg-slate-800/80 border border-slate-700 space-y-3">
+              <div className="p-3.5 rounded-xl bg-slate-800/90 border border-slate-700 space-y-3.5">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wide flex items-center gap-2">
-                    <User className="w-4 h-4 text-slate-400" />
-                    Parties Involved (Suspects, Victims, Witnesses, Tenants)
-                  </h4>
-                  <span className="text-[11px] text-slate-400 font-mono">
-                    {partiesList.length} documented
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-orange-400" />
+                    <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wide">
+                      Parties Involved (Suspects, Victims, Witnesses, Tenants)
+                    </h4>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-900 border border-slate-700 text-slate-300 font-mono font-medium">
+                      {partiesList.length} {partiesList.length === 1 ? 'Party' : 'Parties'} Documented
+                    </span>
+                  </div>
                 </div>
 
+                {/* List of currently documented parties */}
                 {partiesList.length > 0 && (
-                  <div className="space-y-2">
+                  <div className="space-y-2.5">
                     {partiesList.map((pty) => (
-                      <div key={pty.id} className="p-2.5 rounded-lg bg-slate-900 border border-slate-700/80 flex items-start justify-between gap-2 text-xs">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-white">{pty.name || 'Unnamed Individual'}</span>
-                            <span className="px-1.5 py-0.5 rounded text-[10px] uppercase font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                      <div 
+                        key={pty.id} 
+                        className="p-3 rounded-xl bg-slate-900/90 border border-slate-700/80 space-y-2 relative group hover:border-slate-600 transition-colors"
+                      >
+                        {/* Header Row */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-bold text-white text-sm">
+                              {pty.name || 'Unnamed Subject'}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${
+                              pty.role === 'suspect' 
+                                ? 'bg-red-950 text-red-300 border border-red-800'
+                                : pty.role === 'victim'
+                                ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                                : pty.role === 'witness'
+                                ? 'bg-blue-950 text-blue-300 border border-blue-800'
+                                : 'bg-slate-800 text-slate-300 border border-slate-700'
+                            }`}>
                               {pty.role}
                             </span>
-                            {pty.refusedIdentification && (
-                              <span className="text-[10px] text-amber-400 font-medium">Refused ID</span>
+
+                            {pty.refusedIdentification ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-950/80 text-amber-300 border border-amber-800/80 flex items-center gap-1">
+                                <UserX className="w-3 h-3" />
+                                Refused Identification
+                              </span>
+                            ) : pty.idNumber ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800/80 flex items-center gap-1 font-mono">
+                                <CreditCard className="w-3 h-3" />
+                                {pty.idType?.toUpperCase().replace('_', ' ')}: {pty.idStateOrIssuer ? `${pty.idStateOrIssuer} ` : ''}#{pty.idNumber}
+                              </span>
+                            ) : null}
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => startEditParty(pty)}
+                              className="p-1.5 text-slate-400 hover:text-blue-300 hover:bg-slate-800 rounded-lg transition-colors"
+                              title="Edit party details"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeParty(pty.id)}
+                              className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors"
+                              title="Delete party record"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Physical Description Badges */}
+                        {(pty.ageApprox || pty.gender || pty.height || pty.weightBuild || pty.hairEyes || pty.clothingDescription || pty.distinguishingFeatures) && (
+                          <div className="p-2 rounded-lg bg-slate-950/60 border border-slate-800 space-y-1.5 text-xs">
+                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              <Eye className="w-3 h-3 text-cyan-400" />
+                              Physical & Attire Description
+                            </div>
+                            
+                            <div className="flex flex-wrap gap-1.5 text-[11px]">
+                              {pty.ageApprox && (
+                                <span className="px-2 py-0.5 rounded bg-slate-800/90 text-slate-200 border border-slate-700/60">
+                                  Age: ~{pty.ageApprox}
+                                </span>
+                              )}
+                              {pty.gender && pty.gender !== 'unknown' && (
+                                <span className="px-2 py-0.5 rounded bg-slate-800/90 text-slate-200 border border-slate-700/60 capitalize">
+                                  Gender: {pty.gender.replace('_', ' ')}
+                                </span>
+                              )}
+                              {pty.height && (
+                                <span className="px-2 py-0.5 rounded bg-slate-800/90 text-slate-200 border border-slate-700/60">
+                                  Height: {pty.height}
+                                </span>
+                              )}
+                              {pty.weightBuild && (
+                                <span className="px-2 py-0.5 rounded bg-slate-800/90 text-slate-200 border border-slate-700/60">
+                                  Build: {pty.weightBuild}
+                                </span>
+                              )}
+                              {pty.hairEyes && (
+                                <span className="px-2 py-0.5 rounded bg-slate-800/90 text-slate-200 border border-slate-700/60">
+                                  Hair/Eyes: {pty.hairEyes}
+                                </span>
+                              )}
+                            </div>
+
+                            {pty.clothingDescription && (
+                              <p className="text-slate-300 text-[11px] leading-relaxed">
+                                <strong className="text-slate-400 font-medium">Clothing / Attire: </strong> 
+                                {pty.clothingDescription}
+                              </p>
+                            )}
+
+                            {pty.distinguishingFeatures && (
+                              <p className="text-amber-200/90 text-[11px] leading-relaxed">
+                                <strong className="text-amber-400 font-medium">Distinguishing Marks / Tattoos: </strong> 
+                                {pty.distinguishingFeatures}
+                              </p>
                             )}
                           </div>
-                          {pty.description && (
-                            <p className="text-slate-400 text-[11px] mt-0.5">{pty.description}</p>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removeParty(pty.id)}
-                          className="text-slate-500 hover:text-red-400 p-1"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        )}
+
+                        {/* Vehicle & Contact Info */}
+                        {(pty.vehicleInfo || pty.phoneOrContact || pty.email || pty.address) && (
+                          <div className="flex flex-wrap gap-2 text-xs">
+                            {pty.vehicleInfo && (
+                              <div className="px-2.5 py-1 rounded-lg bg-slate-950/60 border border-slate-800 text-slate-300 flex items-center gap-1.5 text-[11px]">
+                                <Car className="w-3 h-3 text-amber-400 shrink-0" />
+                                <span>{pty.vehicleInfo}</span>
+                              </div>
+                            )}
+                            {pty.phoneOrContact && (
+                              <div className="px-2.5 py-1 rounded-lg bg-slate-950/60 border border-slate-800 text-slate-300 flex items-center gap-1.5 text-[11px]">
+                                <Phone className="w-3 h-3 text-emerald-400 shrink-0" />
+                                <span>{pty.phoneOrContact}</span>
+                              </div>
+                            )}
+                            {pty.email && (
+                              <div className="px-2.5 py-1 rounded-lg bg-slate-950/60 border border-slate-800 text-slate-300 flex items-center gap-1.5 text-[11px]">
+                                <Mail className="w-3 h-3 text-blue-400 shrink-0" />
+                                <span>{pty.email}</span>
+                              </div>
+                            )}
+                            {pty.address && (
+                              <div className="px-2.5 py-1 rounded-lg bg-slate-950/60 border border-slate-800 text-slate-300 flex items-center gap-1.5 text-[11px]">
+                                <MapPin className="w-3 h-3 text-purple-400 shrink-0" />
+                                <span>{pty.address}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Statement / Remarks */}
+                        {pty.statementOrNotes && (
+                          <div className="p-2 rounded-lg bg-slate-950/50 border border-slate-800/80 text-xs">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">
+                              Statement / Verbal Demeanor
+                            </span>
+                            <p className="text-slate-200 text-[11px] italic">
+                              "{pty.statementOrNotes}"
+                            </p>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-slate-700/60">
-                  <input
-                    type="text"
-                    value={newPartyName}
-                    onChange={(e) => setNewPartyName(e.target.value)}
-                    placeholder="Name or Subject Ref"
-                    className="px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white"
-                  />
-                  <select
-                    value={newPartyRole}
-                    onChange={(e) => setNewPartyRole(e.target.value as IncidentPartyInvolved['role'])}
-                    className="px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white"
-                  >
-                    <option value="suspect">Suspect / Trespasser</option>
-                    <option value="witness">Witness</option>
-                    <option value="victim">Victim / Complainant</option>
-                    <option value="tenant">Tenant / Resident</option>
-                    <option value="contractor">Contractor / Visitor</option>
-                  </select>
-                  <button
-                    type="button"
-                    onClick={addParty}
-                    className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Add Party
-                  </button>
+                {/* Form to Add or Edit a Party */}
+                <div className="pt-3 border-t border-slate-700/80 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-200">
+                        {editingPartyId ? 'Edit Party Record' : 'Add Party / Person of Interest'}
+                      </span>
+                      {editingPartyId && (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-blue-900/60 text-blue-300 border border-blue-700">
+                          Editing Mode
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Quick Presets for Rapid Guard Input */}
+                    <div className="flex items-center gap-1 text-[11px]">
+                      <span className="text-slate-400 text-[10px] mr-1 hidden sm:inline">Quick Presets:</span>
+                      <button
+                        type="button"
+                        onClick={() => applyPartyPreset('trespasser')}
+                        className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[10px] font-medium"
+                      >
+                        ⚡ Trespasser
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyPartyPreset('tenant')}
+                        className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[10px] font-medium"
+                      >
+                        ⚡ Tenant
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyPartyPreset('witness')}
+                        className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[10px] font-medium"
+                      >
+                        ⚡ Witness
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyPartyPreset('vehicle_intruder')}
+                        className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[10px] font-medium"
+                      >
+                        ⚡ Vehicle
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Identity Row */}
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                    <div className="sm:col-span-5">
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                        Full Name / Subject Ref <span className="text-slate-400 font-normal">(or Alias)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={newPartyName}
+                        onChange={(e) => setNewPartyName(e.target.value)}
+                        placeholder="e.g. John Doe / Subject #1"
+                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white placeholder:text-slate-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-4">
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                        Party Role
+                      </label>
+                      <select
+                        value={newPartyRole}
+                        onChange={(e) => setNewPartyRole(e.target.value as PartyInvolvedRole)}
+                        className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:ring-1 focus:ring-orange-500 focus:outline-none"
+                      >
+                        <option value="suspect">Suspect / Trespasser</option>
+                        <option value="witness">Witness</option>
+                        <option value="victim">Victim / Complainant</option>
+                        <option value="tenant">Tenant / Resident</option>
+                        <option value="contractor">Contractor / Visitor</option>
+                      </select>
+                    </div>
+
+                    <div className="sm:col-span-3 flex items-end">
+                      <label className="flex items-center gap-2 p-1.5 rounded-lg bg-slate-900 border border-slate-700 w-full cursor-pointer hover:bg-slate-850">
+                        <input
+                          type="checkbox"
+                          checked={newPartyRefusedId}
+                          onChange={(e) => {
+                            setNewPartyRefusedId(e.target.checked);
+                            if (e.target.checked) setNewPartyIdType('none');
+                          }}
+                          className="w-3.5 h-3.5 rounded text-amber-500 bg-slate-950 border-slate-600 focus:ring-amber-500"
+                        />
+                        <span className="text-[11px] font-medium text-amber-300 select-none">
+                          Refused ID
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* ID Credentials Section */}
+                  <div className="p-2.5 rounded-xl bg-slate-900/70 border border-slate-850 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <CreditCard className="w-3.5 h-3.5 text-blue-400" />
+                        Identification Credentials & Documents
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-medium text-slate-400 mb-0.5">
+                          ID Document Type
+                        </label>
+                        <select
+                          value={newPartyIdType}
+                          disabled={newPartyRefusedId}
+                          onChange={(e) => setNewPartyIdType(e.target.value as PartyIdType)}
+                          className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white disabled:opacity-50 focus:outline-none"
+                        >
+                          <option value="drivers_license">Driver's License (DL)</option>
+                          <option value="state_id">State ID Card</option>
+                          <option value="passport">Passport</option>
+                          <option value="employee_badge">Employee / Contractor Badge</option>
+                          <option value="student_id">Student ID</option>
+                          <option value="military_id">Military ID</option>
+                          <option value="other">Other Official ID</option>
+                          <option value="none">No ID / Refused</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-medium text-slate-400 mb-0.5">
+                          ID / License / Badge Number
+                        </label>
+                        <input
+                          type="text"
+                          value={newPartyIdNumber}
+                          disabled={newPartyRefusedId}
+                          onChange={(e) => setNewPartyIdNumber(e.target.value)}
+                          placeholder="e.g. WDL98210492"
+                          className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white disabled:opacity-50 focus:outline-none font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-medium text-slate-400 mb-0.5">
+                          State / Issuing Authority
+                        </label>
+                        <input
+                          type="text"
+                          value={newPartyIdState}
+                          disabled={newPartyRefusedId}
+                          onChange={(e) => setNewPartyIdState(e.target.value)}
+                          placeholder="e.g. WA / CA / Company"
+                          className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white disabled:opacity-50 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Physical Description Section */}
+                  <div className="p-2.5 rounded-xl bg-slate-900/70 border border-slate-850 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <Eye className="w-3.5 h-3.5 text-cyan-400" />
+                        Physical Description & Demographics
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-medium text-slate-400 mb-0.5">
+                          Approx Age
+                        </label>
+                        <input
+                          type="text"
+                          value={newPartyAge}
+                          onChange={(e) => setNewPartyAge(e.target.value)}
+                          placeholder="e.g. 30-35"
+                          className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-medium text-slate-400 mb-0.5">
+                          Gender
+                        </label>
+                        <select
+                          value={newPartyGender}
+                          onChange={(e) => setNewPartyGender(e.target.value)}
+                          className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none"
+                        >
+                          <option value="unknown">Unknown</option>
+                          <option value="male">Male</option>
+                          <option value="female">Female</option>
+                          <option value="non_binary">Non-binary</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-medium text-slate-400 mb-0.5">
+                          Height
+                        </label>
+                        <input
+                          type="text"
+                          value={newPartyHeight}
+                          onChange={(e) => setNewPartyHeight(e.target.value)}
+                          placeholder="e.g. 5'10&quot;"
+                          className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-medium text-slate-400 mb-0.5">
+                          Weight / Build
+                        </label>
+                        <input
+                          type="text"
+                          value={newPartyWeight}
+                          onChange={(e) => setNewPartyWeight(e.target.value)}
+                          placeholder="e.g. 180 lbs, Medium"
+                          className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="col-span-2 sm:col-span-1">
+                        <label className="block text-[10px] font-medium text-slate-400 mb-0.5">
+                          Hair / Eye Color
+                        </label>
+                        <input
+                          type="text"
+                          value={newPartyHairEyes}
+                          onChange={(e) => setNewPartyHairEyes(e.target.value)}
+                          placeholder="e.g. Dark Brown"
+                          className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-medium text-slate-400 mb-0.5">
+                          Clothing & Attire (Jacket, Pants, Footwear, Headwear, Bags)
+                        </label>
+                        <input
+                          type="text"
+                          value={newPartyClothing}
+                          onChange={(e) => setNewPartyClothing(e.target.value)}
+                          placeholder="e.g. Black North Face hoodie, blue denim jeans, white Nike shoes, black beanie"
+                          className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-medium text-slate-400 mb-0.5">
+                          Tattoos, Scars, Piercings & Distinguishing Marks
+                        </label>
+                        <input
+                          type="text"
+                          value={newPartyDistinguishing}
+                          onChange={(e) => setNewPartyDistinguishing(e.target.value)}
+                          placeholder="e.g. Skull tattoo on right forearm, eyebrow scar, limps on right leg"
+                          className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Vehicle, Contact & Statement Section */}
+                  <div className="p-2.5 rounded-xl bg-slate-900/70 border border-slate-850 space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-medium text-slate-400 mb-0.5 flex items-center gap-1">
+                          <Car className="w-3 h-3 text-amber-400" />
+                          Vehicle Make / Model / Plate #
+                        </label>
+                        <input
+                          type="text"
+                          value={newPartyVehicle}
+                          onChange={(e) => setNewPartyVehicle(e.target.value)}
+                          placeholder="e.g. 2018 Silver Honda Civic, WA #ABC-1234"
+                          className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-medium text-slate-400 mb-0.5 flex items-center gap-1">
+                          <Phone className="w-3 h-3 text-emerald-400" />
+                          Phone Number / Contact
+                        </label>
+                        <input
+                          type="text"
+                          value={newPartyPhone}
+                          onChange={(e) => setNewPartyPhone(e.target.value)}
+                          placeholder="e.g. (206) 555-0192"
+                          className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-medium text-slate-400 mb-0.5 flex items-center gap-1">
+                          <MapPin className="w-3 h-3 text-purple-400" />
+                          Unit / Resident Address
+                        </label>
+                        <input
+                          type="text"
+                          value={newPartyAddress}
+                          onChange={(e) => setNewPartyAddress(e.target.value)}
+                          placeholder="e.g. Apt #402 / Bldg 3"
+                          className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-medium text-slate-400 mb-0.5 flex items-center gap-1">
+                        <FileText className="w-3 h-3 text-slate-400" />
+                        Party Statement, Demeanor & Verbal Notes
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={newPartyStatement}
+                        onChange={(e) => setNewPartyStatement(e.target.value)}
+                        placeholder="Document what the party stated, their attitude/demeanor, claims made, or refusal reasons..."
+                        className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none resize-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Form Action Buttons */}
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    {editingPartyId && (
+                      <button
+                        type="button"
+                        onClick={resetPartyForm}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold"
+                      >
+                        Cancel Edit
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={saveParty}
+                      className="px-4 py-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-orange-950/50"
+                    >
+                      {editingPartyId ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                      {editingPartyId ? 'Update Party Record' : 'Add Party to Incident Report'}
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1469,25 +2114,46 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
           </div>
 
           {/* Modal Footer Controls */}
-          <div className="pt-4 border-t border-slate-800 flex items-center justify-between gap-3">
-            <div className="text-xs text-slate-400 flex items-center gap-1.5">
+          <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="text-xs text-slate-400 flex flex-wrap items-center gap-2">
               {mediaList.length > 0 ? (
-                <span className="text-emerald-400 flex items-center gap-1">
-                  <CheckCircle2 className="w-4 h-4" /> Ready to file report
+                <span className="text-emerald-400 flex items-center gap-1 font-medium">
+                  <CheckCircle2 className="w-4 h-4" /> {mediaList.length} evidence attachment{mediaList.length > 1 ? 's' : ''} ready
                 </span>
               ) : (
                 <span className="text-amber-400 flex items-center gap-1">
                   <AlertTriangle className="w-4 h-4" /> Photo or video required
                 </span>
               )}
+
+              {/* Real-time Connectivity & Sync Status Pill */}
+              <div className={`px-2.5 py-1 rounded-full text-[11px] font-semibold flex items-center gap-1.5 border transition-all ${
+                networkOnline
+                  ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/30'
+                  : 'bg-amber-950/60 text-amber-300 border-amber-500/40 animate-pulse'
+              }`}>
+                {networkOnline ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block"></span>
+                    <Cloud className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Online • Cloud Storage + Firestore Sync</span>
+                  </>
+                ) : (
+                  <>
+                    <CloudOff className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Offline Mode • Local Queue Buffer</span>
+                  </>
+                )}
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-end gap-2">
               <button
                 type="button"
                 id="cancel-report-btn"
                 onClick={onClose}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                disabled={isSubmitting}
+                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -1495,25 +2161,49 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
               <button
                 type="submit"
                 id="submit-standard-report-btn"
-                disabled={mediaList.length === 0}
-                className={`px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 shadow-lg transition-all ${
-                  mediaList.length === 0
+                disabled={mediaList.length === 0 || isSubmitting}
+                className={`px-5 sm:px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 shadow-lg transition-all relative overflow-hidden ${
+                  mediaList.length === 0 || isSubmitting
                     ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
-                    : reportType === 'activity'
-                      ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/30'
-                      : reportType === 'maintenance'
-                        ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/30'
-                        : escalatedToEmergency
-                          ? 'bg-red-600 hover:bg-red-500 text-white shadow-red-600/40 animate-pulse'
-                          : 'bg-orange-600 hover:bg-orange-500 text-white shadow-orange-600/30'
+                    : !networkOnline
+                      ? 'bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white shadow-amber-900/40 ring-1 ring-amber-400/40'
+                      : reportType === 'activity'
+                        ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/30'
+                        : reportType === 'maintenance'
+                          ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/30'
+                          : escalatedToEmergency
+                            ? 'bg-red-600 hover:bg-red-500 text-white shadow-red-600/40 animate-pulse'
+                            : 'bg-orange-600 hover:bg-orange-500 text-white shadow-orange-600/30'
                 }`}
               >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>
-                  {reportType === 'activity' && 'Submit 30-Min Activity DAR'}
-                  {reportType === 'maintenance' && 'Submit Maintenance Report'}
-                  {reportType === 'incident' && (escalatedToEmergency ? '🚨 File & Escalate Incident' : 'File Incident Report')}
-                </span>
+                {isSubmitting ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                    <span>{submitProgress || 'Processing Report...'}</span>
+                  </>
+                ) : !networkOnline ? (
+                  <>
+                    <Database className="w-4 h-4 text-amber-200" />
+                    <span>
+                      {reportType === 'incident' ? 'Queue Incident Report Offline' : 'Queue Report Offline'}
+                    </span>
+                    <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold rounded bg-amber-950/80 text-amber-200 border border-amber-500/30 uppercase">
+                      Auto-Sync
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <UploadCloud className="w-4 h-4 text-white" />
+                    <span>
+                      {reportType === 'activity' && 'Submit 30-Min Activity DAR'}
+                      {reportType === 'maintenance' && 'Submit Maintenance Report'}
+                      {reportType === 'incident' && (escalatedToEmergency ? '🚨 File & Escalate Incident' : 'File Incident Report')}
+                    </span>
+                    <span className="ml-1 px-1.5 py-0.5 text-[10px] font-semibold rounded bg-white/20 text-white">
+                      Cloud Sync
+                    </span>
+                  </>
+                )}
               </button>
             </div>
           </div>
