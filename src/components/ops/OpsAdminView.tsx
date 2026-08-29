@@ -16,6 +16,8 @@ import { LiveGuardRosterBoard } from './LiveGuardRosterBoard';
 import { ShiftSchedulingCalendar } from './ShiftSchedulingCalendar';
 import { LateShiftAlertModal } from './LateShiftAlertModal';
 import { RoverRouteOptimizationPanel } from './RoverRouteOptimizationPanel';
+import { SiteTaskOverview } from './SiteTaskOverview';
+import { StandardReportsHub } from './StandardReportsHub';
 import { 
   ShieldCheck, 
   Activity, 
@@ -44,7 +46,8 @@ import {
   ShieldAlert,
   Clock,
   AlertTriangle,
-  Navigation
+  Navigation,
+  CheckSquare
 } from 'lucide-react';
 
 interface OpsAdminViewProps {
@@ -71,14 +74,17 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
     sitesList, 
     activeBroadcast,
     scheduledShifts,
+    shiftClaims,
     getGuardsLiveTracking,
     lateShiftAlerts,
     rovers,
-    activeInterceptions
+    activeInterceptions,
+    taskCompletionLogs,
+    standardReports
   } = useShiftOps();
 
   const [activeMainTab, setActiveMainTabState] = useState<
-    'operations' | 'live_tracking' | 'rover_routing' | 'calendar_schedule' | 'calls_for_service' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal'
+    'operations' | 'live_tracking' | 'rover_routing' | 'calendar_schedule' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal'
   >(() => {
     try {
       const saved = localStorage.getItem(STORAGE_OPS_MAIN_TAB_KEY);
@@ -88,6 +94,8 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         saved === 'rover_routing' || 
         saved === 'calendar_schedule' || 
         saved === 'calls_for_service' || 
+        saved === 'standard_reports' || 
+        saved === 'site_tasks' ||
         saved === 'site_directory' || 
         saved === 'guard_directory' || 
         saved === 'top_performers' || 
@@ -99,7 +107,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
     return 'operations';
   });
 
-  const setActiveMainTab = (tab: 'operations' | 'live_tracking' | 'rover_routing' | 'calendar_schedule' | 'calls_for_service' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal') => {
+  const setActiveMainTab = (tab: 'operations' | 'live_tracking' | 'rover_routing' | 'calendar_schedule' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal') => {
     setActiveMainTabState(tab);
     try {
       localStorage.setItem(STORAGE_OPS_MAIN_TAB_KEY, tab);
@@ -116,8 +124,10 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   const [calendarTargetGuardId, setCalendarTargetGuardId] = useState<string | null>(null);
 
   const activeShiftsCount = shifts.filter((s) => s.status === 'open').length;
+  const pendingClaimsCount = (shiftClaims || []).filter((c) => c.status === 'pending_approval').length;
   const pendingSwapsCount = trades.filter((t) => t.status === 'pending_swap').length;
   const pendingPostsCount = trades.filter((t) => t.status === 'pending_approval').length;
+  const totalPendingApprovals = pendingClaimsCount + pendingSwapsCount + pendingPostsCount;
   const emergencyCount = shifts.filter((s) => s.status === 'open' && s.urgency === 'emergency').length;
   const activeBidsCount = bids.length;
   const activeCallsCount = callsForService.filter((c) => c.status !== 'cleared' && c.status !== 'cancelled').length;
@@ -126,6 +136,11 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   const liveGuards = getGuardsLiveTracking();
   const onDutyGuardsCount = liveGuards.filter((g) => g.currentStatus === 'on_duty' || g.currentStatus === 'on_break').length;
   const lateGuardsCount = liveGuards.filter((g) => g.currentStatus === 'late' || g.activeShift?.isLate).length;
+
+  const allSiteTasksCount = sitesList.reduce((acc, s) => acc + (s.timeSpecificTasks?.length || 0), 0);
+  const todayTaskLogsCount = (taskCompletionLogs || []).filter(l => l.completedAt?.startsWith(new Date().toISOString().slice(0, 10))).length;
+  const pendingStandardReportsCount = (standardReports || []).filter(r => r.status === 'submitted').length;
+  const emergencyEscalatedReportsCount = (standardReports || []).filter(r => r.reportType === 'incident' && r.incidentDetails?.escalatedToEmergencyServices).length;
 
   return (
     <main 
@@ -272,11 +287,11 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
               </p>
             </button>
 
-            {/* Pending Swaps */}
+            {/* Pending Approvals */}
             <div className="bg-blue-900/40 dark:bg-slate-900/60 border border-blue-700/40 dark:border-slate-800 px-2.5 py-1 rounded-lg text-left">
-              <p className="text-[8px] sm:text-[9px] text-blue-200 dark:text-blue-300 uppercase font-semibold">Pending Swaps</p>
+              <p className="text-[8px] sm:text-[9px] text-blue-200 dark:text-blue-300 uppercase font-semibold">Approvals & Swaps</p>
               <p className="text-xs sm:text-sm font-black font-mono text-amber-400">
-                {pendingSwapsCount.toString().padStart(2, '0')}
+                {totalPendingApprovals.toString().padStart(2, '0')}
               </p>
             </div>
 
@@ -384,9 +399,9 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
           >
             <Layers className="w-3.5 h-3.5" />
             <span>Shift & Trade Operations</span>
-            {pendingSwapsCount + pendingPostsCount > 0 && (
+            {totalPendingApprovals > 0 && (
               <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
-                {pendingSwapsCount + pendingPostsCount}
+                {totalPendingApprovals}
               </span>
             )}
           </button>
@@ -476,6 +491,52 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
                 : 'bg-slate-700 text-slate-300'
             }`}>
               {activeCallsCount}
+            </span>
+          </button>
+
+          {/* Site Tasks Overview & Compliance Dashboard Sub-Nav Tab */}
+          <button
+            id="tab-site-tasks-btn"
+            type="button"
+            onClick={() => setActiveMainTab('site_tasks')}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              activeMainTab === 'site_tasks'
+                ? 'bg-purple-600 dark:bg-purple-600 text-white shadow-xs font-black'
+                : 'text-purple-300 hover:text-white hover:bg-purple-950/60 dark:hover:bg-slate-800'
+            }`}
+          >
+            <CheckSquare className="w-3.5 h-3.5 text-purple-300" />
+            <span>Site Tasks Overview</span>
+            <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${
+              todayTaskLogsCount > 0 
+                ? 'bg-purple-200 text-purple-950 font-mono' 
+                : 'bg-slate-700 text-slate-300 font-mono'
+            }`}>
+              {todayTaskLogsCount}/{allSiteTasksCount}
+            </span>
+          </button>
+
+          {/* Guard Duty DAR, Maintenance & Incident Reports Hub Sub-Nav Tab */}
+          <button
+            id="tab-standard-reports-btn"
+            type="button"
+            onClick={() => setActiveMainTab('standard_reports')}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              activeMainTab === 'standard_reports'
+                ? 'bg-indigo-600 dark:bg-indigo-600 text-white shadow-xs font-black'
+                : 'text-indigo-300 hover:text-white hover:bg-indigo-950/60 dark:hover:bg-slate-800'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5 text-indigo-300" />
+            <span>Duty & DAR Reports</span>
+            <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full font-mono ${
+              emergencyEscalatedReportsCount > 0
+                ? 'bg-red-500 text-white animate-pulse'
+                : pendingStandardReportsCount > 0
+                ? 'bg-amber-400 text-slate-950'
+                : 'bg-slate-700 text-slate-300'
+            }`}>
+              {standardReports.length} {emergencyEscalatedReportsCount > 0 ? `(🚨 ${emergencyEscalatedReportsCount})` : pendingStandardReportsCount > 0 ? `(${pendingStandardReportsCount} New)` : ''}
             </span>
           </button>
 
@@ -635,10 +696,10 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
               }`}
             >
               <ArrowRightLeft className="w-3.5 h-3.5" />
-              <span>Trades</span>
-              {pendingSwapsCount + pendingPostsCount > 0 && (
+              <span>Approvals</span>
+              {totalPendingApprovals > 0 && (
                 <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full font-mono">
-                  {pendingSwapsCount + pendingPostsCount}
+                  {totalPendingApprovals}
                 </span>
               )}
             </button>
@@ -730,6 +791,25 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
       {activeMainTab === 'calls_for_service' && (
         <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
           <CallsForServicePanel />
+        </div>
+      )}
+
+      {activeMainTab === 'site_tasks' && (
+        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
+          <SiteTaskOverview 
+            onNavigateToSiteDirectory={(siteId) => {
+              setActiveMainTab('site_directory');
+            }}
+            onNavigateToSchedule={(siteId) => {
+              setActiveMainTab('calendar_schedule');
+            }}
+          />
+        </div>
+      )}
+
+      {activeMainTab === 'standard_reports' && (
+        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
+          <StandardReportsHub />
         </div>
       )}
 

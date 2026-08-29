@@ -40,10 +40,21 @@ import {
   CheckCheck,
   Flag,
   Layers,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Timer,
+  Bell,
+  Lock,
+  Unlock,
+  CheckCircle,
+  BellRing
 } from 'lucide-react';
-import { ScheduledShift } from '../../types/shift';
+import { ScheduledShift, TimeSpecificTask, StandardReportType } from '../../types/shift';
 import { VerificationCameraModal } from './VerificationCameraModal';
+import { TimeSpecificTaskAlertBanner } from './TimeSpecificTaskAlertBanner';
+import { GuardTimedTasksSection } from './GuardTimedTasksSection';
+import { StandardReportingModal } from './StandardReportingModal';
+import { GuardThirtyMinIntervalTracker } from './GuardThirtyMinIntervalTracker';
+import { GuardReportsLogSection } from './GuardReportsLogSection';
 import { getCurrentLocation, calculateDistance, GeoCoordinates, formatDistance } from '../../utils/geo';
 
 interface GuardDutyTerminalProps {
@@ -71,8 +82,19 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = () => {
     activeInterceptions,
     trafficCondition,
     optimizationMode,
-    clearAdHocInterception
+    clearAdHocInterception,
+    standardReports,
+    submitStandardReport,
+    getLastActivityReportForGuard
   } = useShiftOps();
+
+  // Standard Shift Reporting Modal State
+  const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
+  const [reportModalType, setReportModalType] = useState<StandardReportType>('activity');
+  const [reportInitialZone, setReportInitialZone] = useState<string>('North Facility Perimeter & Access Gate');
+
+  // Most recent activity DAR check-in for current guard
+  const lastActivityReport = getLastActivityReportForGuard(activeGuard.id);
 
   // Find assigned rover vehicle and dynamic route plan (support active shift, guard profile, or group assignment)
   const assignedRover = getRoverForGuard(activeGuard.id) || (
@@ -278,6 +300,9 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = () => {
 
   return (
     <div id="guard-duty-terminal" className="space-y-4 pb-4">
+      {/* Time-Specific Task / Amenity Lockout Live Alert Banner */}
+      <TimeSpecificTaskAlertBanner />
+
       {/* ACTIVE CLOCKED IN VIEW */}
       {activeClockedInShift ? (
         <div className="space-y-3 animate-in fade-in duration-200">
@@ -460,6 +485,23 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = () => {
               </button>
             </div>
           </div>
+
+          {/* 30-Minute Routine Patrol Check-in & Standard Reporting Tracker */}
+          <GuardThirtyMinIntervalTracker
+            guard={activeGuard}
+            activeShift={activeClockedInShift}
+            lastActivityReport={lastActivityReport}
+            onOpenReportModal={(type) => {
+              setReportModalType(type);
+              setIsReportModalOpen(true);
+            }}
+          />
+
+          {/* Time-Specific Tasks & Amenity Lockouts Schedule */}
+          <GuardTimedTasksSection 
+            currentSiteName={activeClockedInShift.siteName} 
+            isRoverGuard={Boolean(assignedRover)} 
+          />
 
           {/* ROVER DYNAMIC ROUTE & GEOFENCE CIRCUIT (If Guard is assigned to a Rover) */}
           {assignedRover && activeRoverPlan && (
@@ -758,6 +800,16 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = () => {
               </div>
             </div>
           )}
+
+          {/* Guard Standard Reports & DAR Log Section */}
+          <GuardReportsLogSection
+            guard={activeGuard}
+            reports={standardReports}
+            onOpenNewReportModal={(type) => {
+              setReportModalType(type || 'activity');
+              setIsReportModalOpen(true);
+            }}
+          />
 
           {/* Quick Ops Dispatch Link Card */}
           <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
@@ -1240,6 +1292,23 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = () => {
           </div>
         </div>
       )}
+
+      {/* STANDARD SHIFT REPORTING MODAL (ACTIVITY, MAINTENANCE, INCIDENT) */}
+      <StandardReportingModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        guard={activeGuard}
+        activeShift={activeClockedInShift}
+        siteName={activeClockedInShift?.siteName || selectedSiteName}
+        siteAddress={activeClockedInShift?.siteAddress}
+        gpsCoordinates={pendingGpsCoords}
+        initialReportType={reportModalType}
+        initialActivityZone={reportInitialZone}
+        intervalSequence={lastActivityReport?.activityDetails?.intervalSequence ? lastActivityReport.activityDetails.intervalSequence + 1 : 1}
+        onSubmitReport={(reportData) => {
+          submitStandardReport(reportData);
+        }}
+      />
     </div>
   );
 };

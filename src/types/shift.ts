@@ -100,6 +100,76 @@ export interface BidRecord {
   timestamp: string;
 }
 
+export type ShiftClaimCheckType = 'site_training' | 'rest_buffer' | 'overtime';
+
+export interface ShiftClaimViolationCheck {
+  isSiteTrained: boolean;
+  siteTrainingDetails?: string;
+  
+  isRestBufferValid: boolean;
+  restBufferDetails?: string;
+  restHours?: number;
+  
+  isOvertimeCompliant: boolean;
+  overtimeDetails?: string;
+  currentWeeklyHours: number;
+  shiftHours: number;
+  projectedWeeklyHours: number;
+  overtimeHours: number;
+}
+
+export type ShiftClaimStatus = 'pending_approval' | 'approved' | 'denied' | 'auto_approved';
+
+export interface ShiftClaimRequest {
+  id: string;
+  shiftId: string;
+  shift: Shift;
+  guardId: string;
+  guardName: string;
+  guardBadge: string;
+  guardPhone: string;
+  guardProfile: GuardProfile;
+  claimTimestamp: string;
+  status: ShiftClaimStatus;
+  requiresAdminApproval: boolean;
+  failedChecks: ShiftClaimCheckType[];
+  violationDetails: ShiftClaimViolationCheck;
+  resolvedAt?: string;
+  resolvedByAdminName?: string;
+  resolvedByAdminBadge?: string;
+  adminResolutionNote?: string;
+}
+
+export interface ScheduleConflictCheckResult {
+  hasOverlap: boolean;
+  hasInsufficientRest: boolean;
+  isEligible: boolean;
+  overlappingShift?: ScheduledShift | Shift;
+  adjacentShiftBefore?: ScheduledShift | Shift;
+  adjacentShiftAfter?: ScheduledShift | Shift;
+  restHoursBefore?: number;
+  restHoursAfter?: number;
+  conflictReason?: string;
+}
+
+export interface ShiftClaimEligibilityResult {
+  isAutoApprovable: boolean;
+  requiresAdminApproval: boolean;
+  isSiteTrained: boolean;
+  siteTrainingReason?: string;
+  isRestBufferValid: boolean;
+  restBufferReason?: string;
+  conflict?: ScheduleConflictCheckResult;
+  isOvertimeCompliant: boolean;
+  overtimeReason?: string;
+  currentWeeklyHours: number;
+  shiftHours: number;
+  projectedWeeklyHours: number;
+  overtimeHours: number;
+  failedChecks: ShiftClaimCheckType[];
+  summaryMessage: string;
+}
+
 export interface AuditLogEntry {
   id: string;
   action: string;
@@ -165,6 +235,9 @@ export type AdminActionType =
   | 'shift_reassigned'
   | 'priority_broadcast_sent'
   | 'priority_shift_claimed'
+  | 'shift_claim_flagged'
+  | 'shift_claim_approved'
+  | 'shift_claim_denied'
   | 'late_shift_alert_acknowledged'
   | 'traffic_condition_updated'
   | 'route_optimizer_mode'
@@ -466,6 +539,78 @@ export interface SiteProfile {
   geofenceRadiusMeters?: number; // Allowed clock-in perimeter (e.g. 50, 100, 200m)
   requireGeofence?: boolean; // Whether GPS validation is mandatory
   geofenceStrictEnforce?: boolean; // Whether out-of-bounds clock-ins are blocked vs logged
+
+  // Time-Specific Scheduled Tasks & Amenities Closures
+  timeSpecificTasks?: TimeSpecificTask[];
+}
+
+export type TimeSpecificTaskCategory = 
+  | 'amenity_lock'        // e.g. Pool, jacuzzi, rooftop closure
+  | 'amenity_unlock'      // e.g. Morning gym/pool unlock
+  | 'facility_closure'    // e.g. Laundry room, clubhouse, business center
+  | 'access_control'      // e.g. Gate lock, lobby exterior doors locking
+  | 'lighting_audit'      // e.g. Perimeter and garage lighting inspection
+  | 'curfew_enforcement'  // e.g. Noise curfew check, courtyard clearing
+  | 'hazard_inspection'   // e.g. Fire exit check, boiler room log, dumpster gate
+  | 'general_service'     // e.g. Package room lock, key checkout audit
+  | 'other';
+
+export type TaskScheduleFrequency = 'daily' | 'weekdays' | 'weekends' | 'custom_days';
+
+export type TaskPriority = 'mandatory_sla' | 'priority' | 'routine';
+
+export interface TimeSpecificTask {
+  id: string;
+  siteId: string;
+  siteName?: string;
+  title: string; // e.g. "Pool & Jacuzzi Area Lockup"
+  category: TimeSpecificTaskCategory;
+  scheduledTime: string; // "HH:MM" 24hr format, e.g. "22:00"
+  locationZone: string; // e.g. "North Courtyard Pool Gate #2"
+  instructions: string; // e.g. "Clear all residents from water. Lock perimeter gates with padlock #4. Verify pump room is secured."
+  frequency: TaskScheduleFrequency;
+  customDays?: number[]; // [0 = Sun, 1 = Mon, ..., 6 = Sat]
+  leadTimeMinutes: number; // e.g. 15 (notify 15 min before scheduledTime)
+  gracePeriodMinutes: number; // e.g. 15 (allowed completion window after scheduledTime)
+  priority: TaskPriority;
+  requirePhoto: boolean;
+  requireGps: boolean;
+  isActive: boolean;
+  tags?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface TaskCompletionLog {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  siteId: string;
+  siteName: string;
+  scheduledTime: string;
+  completedAt: string; // ISO string
+  guardId: string;
+  guardName: string;
+  guardBadge: string;
+  status: 'completed' | 'verified' | 'flagged_issue' | 'exception_logged';
+  notes?: string;
+  photoUrl?: string;
+  gpsCoords?: { latitude: number; longitude: number };
+  completedWithinSla: boolean;
+}
+
+export interface TimeSpecificTaskAlert {
+  id: string;
+  taskId: string;
+  task: TimeSpecificTask;
+  siteId: string;
+  siteName: string;
+  dueTime: string; // Formatted or 24hr
+  alertType: 'approaching' | 'due_now' | 'overdue';
+  triggeredAt: string; // ISO
+  dismissed: boolean;
+  acknowledgedByGuardId?: string;
+  acknowledgedAt?: string;
 }
 
 export type CallPriority = 'routine' | 'priority' | 'urgent_bolo';
@@ -731,6 +876,201 @@ export interface LateShiftAlert {
   createdAt?: string;
 }
 
+// ----------------------------------------------------
+// Standard Guard Duty Reports (Activity DAR, Maintenance, Incident with Escalation)
+// ----------------------------------------------------
+
+export type StandardReportType = 'activity' | 'maintenance' | 'incident';
+
+export interface ReportMediaAttachment {
+  id: string;
+  type: 'photo' | 'video';
+  url: string;
+  thumbnailUrl?: string;
+  caption?: string;
+  capturedAt: string; // ISO timestamp
+  fileName?: string;
+  fileSizeMb?: number;
+  durationSeconds?: number; // For video clips
+  gpsCoordinates?: {
+    latitude: number;
+    longitude: number;
+  };
+}
+
+export type ActivityPatrolType = 
+  | 'foot_patrol' 
+  | 'vehicle_patrol' 
+  | 'perimeter_sweep' 
+  | 'interior_inspection' 
+  | 'access_checkpoint_check' 
+  | 'fixed_post_scan'
+  | 'common_area_sweep';
+
+export type ActivityStatusType = 
+  | 'all_clear' 
+  | 'routine_normal' 
+  | 'doors_secured' 
+  | 'patrol_completed' 
+  | 'no_anomalies_detected';
+
+export interface ActivityReportDetails {
+  patrolType: ActivityPatrolType;
+  zoneChecked: string; // e.g. "North Loading Dock & Perimeter Fence"
+  status: ActivityStatusType;
+  observationNotes: string; // Routine details, all doors verified secured
+  isThirtyMinCheckin: boolean; // Indicates standard 30-minute interval patrol check-in
+  intervalSequence?: number; // e.g. 1st, 2nd, 3rd patrol check of shift
+  doorsCheckedCount?: number;
+  lightsCheckedCount?: number;
+}
+
+export type MaintenanceIssueCategory = 
+  | 'lighting_electrical' 
+  | 'plumbing_leak' 
+  | 'doors_locks_gates' 
+  | 'hvac_climate' 
+  | 'glass_drywall_damage' 
+  | 'trash_hazards' 
+  | 'elevator_mechanical' 
+  | 'fire_safety_extinguisher' 
+  | 'landscaping_obstruction' 
+  | 'other';
+
+export type MaintenanceSeverity = 'routine' | 'moderate' | 'urgent' | 'critical_safety_hazard';
+
+export type WorkOrderStatus = 
+  | 'reported' 
+  | 'acknowledged_by_ops' 
+  | 'work_order_created' 
+  | 'in_progress' 
+  | 'dispatched_to_client' 
+  | 'resolved' 
+  | 'escalated_to_property_management';
+
+export type MaintenanceWorkOrderStatus = WorkOrderStatus;
+
+export interface MaintenanceReportDetails {
+  issueCategory: MaintenanceIssueCategory;
+  severity: MaintenanceSeverity;
+  specificLocation: string; // e.g. "Building C, 2nd Floor Hallway near Rm 204"
+  issueTitle: string; // e.g. "Overhead Light Ballast Sparks / Outage"
+  detailedDescription: string;
+  safetyHazard: boolean;
+  propertyStaffNotified: boolean;
+  notifiedPersonName?: string;
+  suggestedAction?: string;
+  workOrderStatus: WorkOrderStatus;
+  workOrderNumber?: string;
+}
+
+export type IncidentCategory = 
+  | 'trespassing' 
+  | 'suspicious_person' 
+  | 'suspicious_vehicle' 
+  | 'parking_violation' 
+  | 'noise_disturbance' 
+  | 'property_damage' 
+  | 'altercation_verbal' 
+  | 'altercation_physical' 
+  | 'burglary_forced_entry' 
+  | 'theft_shoplifting' 
+  | 'unauthorized_access' 
+  | 'medical_emergency' 
+  | 'fire_smoke_hazard' 
+  | 'contraband_confiscation' 
+  | 'loitering' 
+  | 'other_guard_action';
+
+export type IncidentSeverity = 'low' | 'medium' | 'high' | 'critical';
+
+export interface IncidentPartyInvolved {
+  id: string;
+  name?: string;
+  role: 'suspect' | 'victim' | 'witness' | 'tenant' | 'visitor' | 'contractor';
+  description?: string;
+  vehicleInfo?: string;
+  phoneOrContact?: string;
+  refusedIdentification?: boolean;
+}
+
+export type EmergencyServiceAgency = 
+  | 'police_911' 
+  | 'fire_department' 
+  | 'ems_paramedics' 
+  | 'hazmat_team' 
+  | 'transit_police' 
+  | 'operations_supervisor_onscene';
+
+export interface IncidentReportDetails {
+  incidentCategory: IncidentCategory;
+  severity: IncidentSeverity;
+  incidentTitle: string; // e.g. "Trespasser Directed Off Pier 7 Berth 4"
+  summary: string;
+  detailedTimeline: string;
+  actionTakenByGuard: string; // e.g. "Confronted individual, issued formal verbal trespass notice, monitored subject until off property."
+  partiesInvolved?: IncidentPartyInvolved[];
+  
+  // Guard Action Details
+  trespassNoticeIssued?: boolean;
+  policeReportNumber?: string;
+
+  // Escalation to Emergency Services
+  escalatedToEmergencyServices: boolean;
+  emergencyServicesContacted?: EmergencyServiceAgency[];
+  emergencyContactTime?: string; // ISO or HH:MM
+  cadIncidentNumber?: string; // Dispatch/CAD CAD-8921
+  respondingUnits?: string; // e.g. "Seattle PD Unit 412, Officer Chen (Badge #891)"
+  emergencyOutcome?: string; // e.g. "Subject detained by SPD and issued criminal trespass admonishment."
+  supervisorNotified: boolean;
+  supervisorName?: string;
+}
+
+export interface StandardShiftReport {
+  id: string; // e.g. "RPT-2026-0829-01"
+  reportNumber: string;
+  reportType: StandardReportType;
+  
+  // Shift & Facility linkage
+  shiftId?: string;
+  siteId?: string;
+  siteName: string;
+  siteAddress?: string;
+  
+  // Guard Officer
+  guardId: string;
+  guardName: string;
+  guardBadge: string;
+  guardPhone?: string;
+  
+  timestamp: string; // ISO
+  gpsCoordinates?: {
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+  };
+  
+  // MANDATORY: All reports must require at least one photo and/or video
+  media: ReportMediaAttachment[];
+  
+  // Specific Report Details
+  activityDetails?: ActivityReportDetails;
+  maintenanceDetails?: MaintenanceReportDetails;
+  incidentDetails?: IncidentReportDetails;
+  
+  // Review & Workflow
+  status: 'submitted' | 'reviewed' | 'flagged_for_client' | 'archived';
+  reviewedByAdmin?: {
+    adminName: string;
+    adminBadge: string;
+    reviewedAt: string;
+    notes?: string;
+  };
+  
+  createdAt: string;
+  updatedAt?: string;
+}
+
 export interface GuardLiveTrackingItem {
   guardId: string;
   guardName: string;
@@ -753,5 +1093,6 @@ export interface GuardLiveTrackingItem {
   geofencePassed?: boolean;
   geofenceDistanceMeters?: number;
 }
+
 
 

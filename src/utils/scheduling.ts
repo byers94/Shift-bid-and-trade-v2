@@ -1,4 +1,11 @@
-import { Shift, ScheduledShift, GuardProfile, PriorityShiftMatch } from '../types/shift';
+import { 
+  Shift, 
+  ScheduledShift, 
+  GuardProfile, 
+  PriorityShiftMatch,
+  ShiftClaimEligibilityResult,
+  ShiftClaimCheckType
+} from '../types/shift';
 import { calculateHours } from './time';
 
 /**
@@ -327,4 +334,199 @@ export function formatRestBuffer(hours?: number): string {
   const m = Math.round((hours - h) * 60);
   if (m === 0) return `${h}h 00m`;
   return `${h}h ${m.toString().padStart(2, '0')}m`;
+}
+
+/**
+ * Calculates a guard's scheduled and filled hours for the Monday-Sunday work week containing targetDateStr.
+ */
+export function getWeeklyHoursForGuard(
+  guardId: string,
+  targetDateStr: string,
+  scheduledShifts: ScheduledShift[],
+  shifts: Shift[],
+  guardName?: string
+): {
+  weekStartIso: string;
+  weekEndIso: string;
+  weekLabel: string;
+  totalWeeklyHours: number;
+  assignedShiftCount: number;
+  shiftsInWeek: Array<ScheduledShift | Shift>;
+} {
+  const targetDate = new Date(`${targetDateStr}T12:00:00`);
+  if (isNaN(targetDate.getTime())) {
+    return {
+      weekStartIso: targetDateStr,
+      weekEndIso: targetDateStr,
+      weekLabel: 'Current Week',
+      totalWeeklyHours: 0,
+      assignedShiftCount: 0,
+      shiftsInWeek: []
+    };
+  }
+
+  // Calculate Monday (start of work week) and Sunday (end of work week)
+  const day = targetDate.getDay(); // 0 is Sunday, 1 is Monday, ...
+  const diffToMonday = (day === 0 ? -6 : 1) - day;
+  
+  const monday = new Date(targetDate);
+  monday.setDate(targetDate.getDate() + diffToMonday);
+  monday.setHours(0, 0, 0, 0);
+
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+
+  const mondayStr = monday.toISOString().split('T')[0];
+  const sundayStr = sunday.toISOString().split('T')[0];
+
+  const shiftsInWeek: Array<ScheduledShift | Shift> = [];
+  const processedShiftIds = new Set<string>();
+
+  // 1. Scheduled shifts
+  for (const s of scheduledShifts) {
+    if (s.guardId === guardId && s.status !== 'cancelled') {
+      if (s.date >= mondayStr && s.date <= sundayStr) {
+        shiftsInWeek.push(s);
+        processedShiftIds.add(s.id);
+      }
+    }
+  }
+
+  // 2. Filled shifts from general shifts list (avoiding duplicate ID)
+  for (const s of shifts) {
+    if (
+      s.status === 'filled' &&
+      !processedShiftIds.has(s.id) &&
+      (s.assignedGuardId === guardId || (guardName && s.assignedGuardName?.toLowerCase() === guardName.toLowerCase()))
+    ) {
+      if (s.date >= mondayStr && s.date <= sundayStr) {
+        shiftsInWeek.push(s);
+        processedShiftIds.add(s.id);
+      }
+    }
+  }
+
+  const totalWeeklyHours = shiftsInWeek.reduce((sum, s) => {
+    const h = s.hours || calculateHours(s.startTime, s.endTime) || 8;
+    return sum + h;
+  }, 0);
+
+  const weekLabel = `${monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${sunday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+
+  return {
+    weekStartIso: mondayStr,
+    weekEndIso: sundayStr,
+    weekLabel,
+    totalWeeklyHours: Math.round(totalWeeklyHours * 10) / 10,
+    assignedShiftCount: shiftsInWeek.length,
+    shiftsInWeek
+  };
+}
+
+/**
+ * Evaluates the 3 mandatory pre-claim checks for 1-click shift claiming:
+ * 1. Site Training / OJT Qualification: Guard must be trained for this site.
+ * 2. Rest / Turnaround Time Buffer: Guard must not have direct overlap and must meet minRestHours (turnaround) buffer.
+ * 3. Weekly 40-Hour Regular Limit (Overtime Check): Claiming this shift must not push guard over 40.0 hours for the week.
+ *
+ * If ANY check fails, isAutoApprovable is false and requiresAdminApproval is true.
+ */
+export function evaluateShiftClaimEligibility(
+  shift: Shift,
+  guard: GuardProfile,
+  scheduledShifts: ScheduledShift[],
+  shifts: Shift[],
+  minRestHours: number = 6
+): ShiftClaimEligibilityResult {
+  const failedChecks: ShiftClaimCheckType[] = [];
+  
+  // ----------------------------------------------------
+  // CHECK 1: Site Training / OJT Qualification Check
+  // ----------------------------------------------------
+  const cleanSiteName = (shift.siteName || '').trim().toLowerCase();
+  const isSiteTrained = (guard.ojtSites || []).some((trainedSite) => {
+    const cleanTrained = trainedSite.trim().toLowerCase();
+    return (
+      cleanTrained === cleanSiteName ||
+      cleanSiteName.includes(cleanTrained) ||
+      cleanTrained.includes(cleanSiteName)
+    );
+  });
+
+  let siteTrainingReason: string | undefined;
+  if (!isSiteTrained) {
+    failedChecks.push('site_training');
+    siteTrainingReason = `Officer ${guard.name} (${guard.badgeNumber}) is not OJT-certified/trained for "${shift.siteName}". (Certified sites: ${guard.ojtSites?.join(', ') || 'None'})`;
+  }
+
+  // ----------------------------------------------------
+  // CHECK 2: Minimum Rest / Turnaround Buffer & Overlap Check
+  // ----------------------------------------------------
+  const guardAssignedShifts: Array<ScheduledShift | Shift> = [
+    ...scheduledShifts.filter((s) => s.guardId === guard.id && s.status !== 'cancelled'),
+    ...shifts.filter(
+      (s) =>
+        s.status === 'filled' &&
+        (s.assignedGuardId === guard.id || s.assignedGuardName?.toLowerCase() === guard.name.toLowerCase())
+    )
+  ];
+
+  const conflict = checkShiftScheduleConflict(shift, guardAssignedShifts, minRestHours);
+  const isRestBufferValid = conflict.isEligible;
+  let restBufferReason: string | undefined;
+
+  if (!isRestBufferValid) {
+    failedChecks.push('rest_buffer');
+    restBufferReason = conflict.conflictReason || 'Turnaround rest limit / schedule conflict detected.';
+  }
+
+  // ----------------------------------------------------
+  // CHECK 3: 40-Hour Weekly Overtime Limit Check
+  // ----------------------------------------------------
+  const weeklyInfo = getWeeklyHoursForGuard(guard.id, shift.date, scheduledShifts, shifts, guard.name);
+  const currentWeeklyHours = weeklyInfo.totalWeeklyHours;
+  const shiftHours = shift.hours || calculateHours(shift.startTime, shift.endTime) || 8;
+  const projectedWeeklyHours = Math.round((currentWeeklyHours + shiftHours) * 10) / 10;
+  const isOvertimeCompliant = projectedWeeklyHours <= 40.0;
+  const overtimeHours = isOvertimeCompliant ? 0 : Math.round((projectedWeeklyHours - 40.0) * 10) / 10;
+  
+  let overtimeReason: string | undefined;
+  if (!isOvertimeCompliant) {
+    failedChecks.push('overtime');
+    overtimeReason = `Overtime threshold exceeded: Officer currently has ${currentWeeklyHours}h scheduled this week (${weeklyInfo.weekLabel}). Adding this ${shiftHours}h shift brings total to ${projectedWeeklyHours}h (${overtimeHours}h Overtime).`;
+  }
+
+  // ----------------------------------------------------
+  // Summary & Approval Determination
+  // ----------------------------------------------------
+  const isAutoApprovable = failedChecks.length === 0;
+  const requiresAdminApproval = failedChecks.length > 0;
+
+  let summaryMessage = 'All pre-claim checks passed. Shift auto-approved for 1-click scheduling.';
+  if (requiresAdminApproval) {
+    const reasons: string[] = [];
+    if (!isSiteTrained) reasons.push('Not trained on site');
+    if (!isRestBufferValid) reasons.push('Rest buffer/turnaround violation');
+    if (!isOvertimeCompliant) reasons.push(`Overtime threshold exceeded (${projectedWeeklyHours}h/40h)`);
+    summaryMessage = `Admin review required: ${reasons.join(', ')}.`;
+  }
+
+  return {
+    isAutoApprovable,
+    requiresAdminApproval,
+    isSiteTrained,
+    siteTrainingReason,
+    isRestBufferValid,
+    restBufferReason,
+    conflict,
+    isOvertimeCompliant,
+    overtimeReason,
+    currentWeeklyHours,
+    shiftHours,
+    projectedWeeklyHours,
+    overtimeHours,
+    failedChecks,
+    summaryMessage
+  };
 }

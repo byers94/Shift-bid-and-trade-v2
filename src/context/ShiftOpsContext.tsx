@@ -36,7 +36,24 @@ import {
   GuardLiveTrackingItem,
   PriorityShiftMatch,
   PriorityPushNotification,
-  RovingGroup
+  RovingGroup,
+  TimeSpecificTask,
+  TimeSpecificTaskCategory,
+  TaskScheduleFrequency,
+  TaskPriority,
+  TaskCompletionLog,
+  TimeSpecificTaskAlert,
+  ShiftClaimRequest,
+  ShiftClaimEligibilityResult,
+  ShiftClaimViolationCheck,
+  ShiftClaimCheckType,
+  ShiftClaimStatus,
+  StandardShiftReport,
+  StandardReportType,
+  ActivityReportDetails,
+  MaintenanceReportDetails,
+  IncidentReportDetails,
+  ReportMediaAttachment
 } from '../types/shift';
 import {
   RoverVehicle,
@@ -71,14 +88,19 @@ import {
   GUARD_BASE_METRICS,
   INITIAL_SITES,
   INITIAL_CALLS_FOR_SERVICE,
-  INITIAL_SCHEDULED_SHIFTS
+  INITIAL_SCHEDULED_SHIFTS,
+  INITIAL_CLAIM_REQUESTS,
+  INITIAL_TASK_COMPLETION_LOGS,
+  INITIAL_STANDARD_REPORTS
 } from '../data/mockData';
 import { calculateHours, generateSmsLink, calculateShiftLateStatus, getShiftElapsedSeconds, formatElapsedTimer } from '../utils/time';
 import {
   evaluatePriorityShiftsForGuard,
   checkShiftScheduleConflict,
   isShiftOccurringInNext24Hours,
-  formatRestBuffer
+  formatRestBuffer,
+  evaluateShiftClaimEligibility,
+  getWeeklyHoursForGuard
 } from '../utils/scheduling';
 import { 
   playEmergencyAlertSound, 
@@ -90,8 +112,13 @@ import {
   playClockOutAlertSound,
   playLateAlertSound,
   playBreakAlertSound,
-  playPriorityShiftAlertSound
+  playPriorityShiftAlertSound,
+  playTaskAlertSound,
+  playTaskCompletedSound,
+  playReportSubmittedSound,
+  playEmergencyEscalationSound
 } from '../utils/audioAlert';
+
 
 interface NotificationToast {
   id: string;
@@ -210,8 +237,21 @@ interface ShiftOpsContextType {
   clearDismissedPriorityShifts: () => void;
   snoozePriorityPush: (minutes?: number) => void;
   triggerPriorityPushAlert: (shiftId?: string) => void;
-  claimPriorityShift: (shiftId: string, guardId?: string) => { success: boolean; message: string; shift?: Shift; scheduledShift?: ScheduledShift };
+  claimPriorityShift: (shiftId: string, guardId?: string) => { 
+    success: boolean; 
+    requiresApproval?: boolean; 
+    claimRequest?: ShiftClaimRequest; 
+    message: string; 
+    shift?: Shift; 
+    scheduledShift?: ScheduledShift 
+  };
   broadcastPriorityPushToGuards: (shiftId: string) => { notifiedGuardsCount: number; eligibleGuards: GuardProfile[] };
+  
+  // 1-Click Shift Claim Validation & Admin Approval Flow
+  shiftClaims: ShiftClaimRequest[];
+  approveShiftClaim: (claimId: string, adminNote?: string) => void;
+  denyShiftClaim: (claimId: string, reason: string) => void;
+  evaluateShiftClaim: (shiftId: string, guardId?: string) => ShiftClaimEligibilityResult | null;
   
   // Emergency Broadcast Operations
   sendEmergencyBroadcast: (data: {
@@ -272,6 +312,51 @@ interface ShiftOpsContextType {
     sitesArray: any[],
     options?: { overwrite?: boolean; defaultOjt?: boolean }
   ) => { count: number; updatedCount: number; errors: string[] };
+
+  // Site Time-Specific Tasks & Post Orders Management (Locks, Curfews, Closures)
+  taskCompletionLogs: TaskCompletionLog[];
+  activeTaskAlert: TimeSpecificTaskAlert | null;
+  taskAlertsHistory: TimeSpecificTaskAlert[];
+  addTimeSpecificTask: (siteId: string, taskData: Omit<TimeSpecificTask, 'id' | 'siteId' | 'createdAt' | 'updatedAt'>) => TimeSpecificTask;
+  updateTimeSpecificTask: (siteId: string, taskId: string, taskData: Partial<TimeSpecificTask>) => void;
+  deleteTimeSpecificTask: (siteId: string, taskId: string) => void;
+  completeTimeSpecificTask: (
+    taskId: string,
+    siteId: string,
+    guard: GuardProfile,
+    options?: {
+      notes?: string;
+      photoUrl?: string;
+      gpsCoords?: { latitude: number; longitude: number };
+      status?: 'completed' | 'verified' | 'flagged_issue' | 'exception_logged';
+    }
+  ) => TaskCompletionLog;
+  dismissTaskAlert: () => void;
+  acknowledgeTaskAlert: (alertId: string, guardId?: string) => void;
+  triggerTestTaskAlert: (task?: TimeSpecificTask, alertType?: 'approaching' | 'due_now' | 'overdue') => void;
+  getTasksForSite: (siteId: string) => TimeSpecificTask[];
+  getTaskCompletionStatus: (taskId: string, dateStr?: string) => TaskCompletionLog | undefined;
+
+  // Standard Guard Duty Reports (Activity DAR, Maintenance, Incident Reports)
+  standardReports: StandardShiftReport[];
+  submitStandardReport: (
+    reportData: Omit<StandardShiftReport, 'id' | 'reportNumber' | 'createdAt'> & { timestamp?: string; id?: string }
+  ) => StandardShiftReport;
+  updateStandardReport: (id: string, updates: Partial<StandardShiftReport>) => void;
+  deleteStandardReport: (id: string) => void;
+  reviewStandardReport: (
+    id: string, 
+    adminNameOrData: string | { adminId?: string; adminName: string; adminBadge: string; notes?: string; status?: 'reviewed' | 'flagged_for_client' | 'archived' }, 
+    adminBadge?: string, 
+    notes?: string, 
+    status?: 'reviewed' | 'flagged_for_client' | 'archived'
+  ) => void;
+  updateMaintenanceWorkOrder: (
+    id: string, 
+    workOrderStatus: MaintenanceReportDetails['workOrderStatus'], 
+    workOrderNumber?: string
+  ) => void;
+  getLastActivityReportForGuard: (guardId: string) => StandardShiftReport | undefined;
 
   // Shift Operations
   createShift: (data: {
@@ -431,6 +516,10 @@ const STORAGE_KEY_CALLS_FOR_SERVICE = 'secureshift_calls_for_service_v1';
 const STORAGE_KEY_CALL_RECEIPTS = 'secureshift_call_receipts_v1';
 const STORAGE_KEY_SCHEDULED_SHIFTS = 'secureshift_scheduled_shifts_v1';
 const STORAGE_KEY_DISMISSED_LATE_ALERTS = 'secureshift_dismissed_late_alerts_v1';
+const STORAGE_KEY_TASK_COMPLETION_LOGS = 'secureshift_task_completion_logs_v1';
+const STORAGE_KEY_TASK_ALERTS_HISTORY = 'secureshift_task_alerts_history_v1';
+const STORAGE_KEY_SHIFT_CLAIMS = 'secureshift_claim_requests_v1';
+const STORAGE_KEY_STANDARD_REPORTS = 'secureshift_standard_reports_v1';
 
 export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [scheduledShifts, setScheduledShifts] = useState<ScheduledShift[]>(() => {
@@ -489,6 +578,15 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return saved ? JSON.parse(saved) : INITIAL_TRADES;
     } catch {
       return INITIAL_TRADES;
+    }
+  });
+
+  const [shiftClaims, setShiftClaims] = useState<ShiftClaimRequest[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_SHIFT_CLAIMS);
+      return saved ? JSON.parse(saved) : INITIAL_CLAIM_REQUESTS;
+    } catch {
+      return INITIAL_CLAIM_REQUESTS;
     }
   });
 
@@ -616,9 +714,51 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [sitesList, setSitesList] = useState<SiteProfile[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_SITES);
-      return saved ? JSON.parse(saved) : INITIAL_SITES;
+      if (saved) {
+        const parsed: SiteProfile[] = JSON.parse(saved);
+        // Ensure default tasks are retained if the saved version had no tasks
+        return parsed.map((site) => {
+          const initial = INITIAL_SITES.find((s) => s.id === site.id);
+          if ((!site.timeSpecificTasks || site.timeSpecificTasks.length === 0) && initial?.timeSpecificTasks && initial.timeSpecificTasks.length > 0) {
+            return { ...site, timeSpecificTasks: initial.timeSpecificTasks };
+          }
+          return site;
+        });
+      }
+      return INITIAL_SITES;
     } catch {
       return INITIAL_SITES;
+    }
+  });
+
+  // Time-Sensitive Tasks (Pool/Laundry locks, Curfews, Closures) State
+  const [taskCompletionLogs, setTaskCompletionLogs] = useState<TaskCompletionLog[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_TASK_COMPLETION_LOGS);
+      return saved ? JSON.parse(saved) : INITIAL_TASK_COMPLETION_LOGS;
+    } catch {
+      return INITIAL_TASK_COMPLETION_LOGS;
+    }
+  });
+
+  const [activeTaskAlert, setActiveTaskAlert] = useState<TimeSpecificTaskAlert | null>(null);
+  const [taskAlertsHistory, setTaskAlertsHistory] = useState<TimeSpecificTaskAlert[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_TASK_ALERTS_HISTORY);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [dismissedTaskAlertKeys, setDismissedTaskAlertKeys] = useState<Set<string>>(new Set());
+
+  // Standard Guard Duty Reports (Activity DAR, Maintenance, Incident Reports)
+  const [standardReports, setStandardReports] = useState<StandardShiftReport[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_STANDARD_REPORTS);
+      return saved ? JSON.parse(saved) : INITIAL_STANDARD_REPORTS;
+    } catch {
+      return INITIAL_STANDARD_REPORTS;
     }
   });
 
@@ -927,11 +1067,34 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     );
   };
 
-  // One-Click Claim of Priority Shift with Overlap & 6-Hour Rest Gap Verification
+  // Evaluate Shift Claim Pre-Checks
+  const evaluateShiftClaim = (
+    shiftId: string,
+    guardId?: string
+  ): ShiftClaimEligibilityResult | null => {
+    const targetShift = shifts.find((s) => s.id === shiftId);
+    if (!targetShift) return null;
+    const guard = guardId ? (guardsList.find((g) => g.id === guardId) || activeGuard) : activeGuard;
+    const minRest = alertPreferences.minRestBufferHours !== undefined ? alertPreferences.minRestBufferHours : 6;
+    return evaluateShiftClaimEligibility(targetShift, guard, scheduledShifts, shifts, minRest);
+  };
+
+  // One-Click Claim of Shift with 3-Point Validation:
+  // 1. Site Training / OJT Qualification
+  // 2. Rest / Turnaround Time Buffer & Overlap
+  // 3. Weekly 40-Hour Regular Limit (Overtime Check)
+  // If ANY check fails -> Flag for Admin Review & place into pending claim queue.
   const claimPriorityShift = (
     shiftId: string,
     guardId?: string
-  ): { success: boolean; message: string; shift?: Shift; scheduledShift?: ScheduledShift } => {
+  ): { 
+    success: boolean; 
+    requiresApproval?: boolean; 
+    claimRequest?: ShiftClaimRequest; 
+    message: string; 
+    shift?: Shift; 
+    scheduledShift?: ScheduledShift 
+  } => {
     const targetShift = shifts.find((s) => s.id === shiftId);
     if (!targetShift) {
       return { success: false, message: 'Shift not found.' };
@@ -942,110 +1105,403 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     const guard = guardId ? (guardsList.find((g) => g.id === guardId) || activeGuard) : activeGuard;
-
-    // Collect all existing assignments for the guard
-    const guardAssignedShifts: Array<ScheduledShift | Shift> = [
-      ...scheduledShifts.filter((s) => s.guardId === guard.id && s.status !== 'cancelled'),
-      ...shifts.filter(
-        (s) =>
-          s.status === 'filled' &&
-          (s.assignedGuardId === guard.id || s.assignedGuardName?.toLowerCase() === guard.name.toLowerCase())
-      )
-    ];
-
     const minRest = alertPreferences.minRestBufferHours !== undefined ? alertPreferences.minRestBufferHours : 6;
-    const conflict = checkShiftScheduleConflict(targetShift, guardAssignedShifts, minRest);
 
-    if (!conflict.isEligible) {
-      const reason = conflict.conflictReason || 'Schedule conflict detected.';
-      showToast('Cannot Claim Shift', reason, 'danger');
-      addAuditLog(
-        'SHIFT_CLAIM_REJECTED',
-        'shift',
-        `Officer ${guard.name} (${guard.badgeNumber}) claim for ${targetShift.siteName} rejected: ${reason}`,
-        `${guard.name} (${guard.badgeNumber})`,
-        'warning'
+    // Check if guard already has an active pending claim for this shift
+    const existingPendingClaim = shiftClaims.find(
+      (c) => c.shiftId === shiftId && c.guardId === guard.id && c.status === 'pending_approval'
+    );
+    if (existingPendingClaim) {
+      showToast(
+        'Claim Already Pending',
+        `You already submitted a claim for ${targetShift.siteName} (${targetShift.date}) which is currently awaiting Ops Admin Review.`,
+        'info'
       );
-      return { success: false, message: reason, shift: targetShift };
+      return {
+        success: true,
+        requiresApproval: true,
+        claimRequest: existingPendingClaim,
+        message: 'Claim is already pending manager review.',
+        shift: targetShift
+      };
     }
 
-    // Mark shift as filled
+    // Run the 3-point pre-claim validation checks
+    const eligibility = evaluateShiftClaimEligibility(targetShift, guard, scheduledShifts, shifts, minRest);
+
+    // CASE 1: All 3 Checks PASS -> 1-Click Auto-Approve & Immediate Schedule
+    if (eligibility.isAutoApprovable) {
+      // Mark shift as filled
+      setShifts((prev) =>
+        prev.map((s) =>
+          s.id === shiftId
+            ? {
+                ...s,
+                status: 'filled',
+                assignedGuardName: guard.name,
+                assignedGuardId: guard.id
+              }
+            : s
+        )
+      );
+
+      // Add to scheduledShifts
+      const durationHours = targetShift.hours || calculateHours(targetShift.startTime, targetShift.endTime) || 8;
+      const newScheduledShift: ScheduledShift = {
+        id: `SCHED-${Date.now()}`,
+        guardId: guard.id,
+        guardName: guard.name,
+        guardBadge: guard.badgeNumber,
+        guardPhone: guard.phone,
+        siteId: `site-${targetShift.siteName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+        siteName: targetShift.siteName,
+        siteAddress: targetShift.address || 'Address on file',
+        date: targetShift.date,
+        startTime: targetShift.startTime,
+        endTime: targetShift.endTime,
+        hours: durationHours,
+        postRole: targetShift.location || `${targetShift.siteName} Security Post`,
+        postInstructions: targetShift.notes || 'Report to security office on arrival. Complete patrol checklist.',
+        requiredCertifications: targetShift.requiredCertifications || [],
+        status: 'scheduled',
+        createdAt: new Date().toISOString()
+      };
+
+      setScheduledShifts((prev) => [newScheduledShift, ...prev]);
+
+      // Record auto-approved claim
+      const autoClaim: ShiftClaimRequest = {
+        id: `CLAIM-AUTO-${Date.now()}`,
+        shiftId: targetShift.id,
+        shift: targetShift,
+        guardId: guard.id,
+        guardName: guard.name,
+        guardBadge: guard.badgeNumber,
+        guardPhone: guard.phone,
+        guardProfile: guard,
+        claimTimestamp: new Date().toISOString(),
+        status: 'auto_approved',
+        requiresAdminApproval: false,
+        failedChecks: [],
+        violationDetails: {
+          isSiteTrained: true,
+          siteTrainingDetails: 'OJT verified.',
+          isRestBufferValid: true,
+          restBufferDetails: `Rest buffer compliant (≥${minRest}h).`,
+          isOvertimeCompliant: true,
+          overtimeDetails: `Weekly regular hours compliant (${eligibility.projectedWeeklyHours}h / 40h max).`,
+          currentWeeklyHours: eligibility.currentWeeklyHours,
+          shiftHours: eligibility.shiftHours,
+          projectedWeeklyHours: eligibility.projectedWeeklyHours,
+          overtimeHours: 0
+        },
+        resolvedAt: new Date().toISOString(),
+        resolvedByAdminName: 'Auto-Dispatch Compliance Engine',
+        adminResolutionNote: 'All 3 pre-claim checks passed. Instant 1-click roster assignment.'
+      };
+      setShiftClaims((prev) => [autoClaim, ...prev]);
+
+      // Dismiss active priority push for this shift
+      dismissPriorityPush(shiftId);
+
+      // Play confirmation audio
+      if (alertPreferences.soundEnabled) {
+        playClockInAlertSound();
+      }
+
+      // Audit logs & admin actions
+      addAuditLog(
+        'PRIORITY_SHIFT_CLAIMED',
+        'shift',
+        `Officer ${guard.name} (${guard.badgeNumber}) claimed 1-click shift at ${targetShift.siteName} (${targetShift.date} ${targetShift.startTime}-${targetShift.endTime}). Checks passed: Site Trained, Turnaround Rest ≥${minRest}h, ≤40h Weekly Regular.`,
+        `${guard.name} (${guard.badgeNumber})`,
+        'success'
+      );
+
+      logAdminAction({
+        type: 'priority_shift_claimed',
+        title: '1-Click Shift Claimed (Auto-Approved)',
+        description: `Officer ${guard.name} (${guard.badgeNumber}) claimed ${targetShift.siteName} (${targetShift.date}). All 3 compliance checks verified.`,
+        adminName: `${guard.name}`,
+        adminBadge: `${guard.badgeNumber}`,
+        badgeVariant: 'emerald',
+        metadata: { shiftId: targetShift.id, guardId: guard.id, siteName: targetShift.siteName, minRest }
+      });
+
+      showToast(
+        '🎉 1-Click Claim Approved!',
+        `You are scheduled for ${targetShift.siteName} on ${targetShift.date} (${targetShift.startTime}-${targetShift.endTime}). Site training, rest buffer, & regular hours verified.`,
+        'success'
+      );
+
+      return {
+        success: true,
+        requiresApproval: false,
+        message: 'Shift successfully claimed and scheduled!',
+        shift: { ...targetShift, status: 'filled', assignedGuardName: guard.name, assignedGuardId: guard.id },
+        scheduledShift: newScheduledShift
+      };
+    }
+
+    // CASE 2: At least 1 Check FAILED -> Flag for Admin Review & Place into Pending Claim Queue
+    const newClaimRequest: ShiftClaimRequest = {
+      id: `CLAIM-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+      shiftId: targetShift.id,
+      shift: targetShift,
+      guardId: guard.id,
+      guardName: guard.name,
+      guardBadge: guard.badgeNumber,
+      guardPhone: guard.phone,
+      guardProfile: guard,
+      claimTimestamp: new Date().toISOString(),
+      status: 'pending_approval',
+      requiresAdminApproval: true,
+      failedChecks: eligibility.failedChecks,
+      violationDetails: {
+        isSiteTrained: eligibility.isSiteTrained,
+        siteTrainingDetails: eligibility.siteTrainingReason,
+        isRestBufferValid: eligibility.isRestBufferValid,
+        restBufferDetails: eligibility.restBufferReason,
+        restHours: eligibility.conflict?.restHoursBefore ?? eligibility.conflict?.restHoursAfter,
+        isOvertimeCompliant: eligibility.isOvertimeCompliant,
+        overtimeDetails: eligibility.overtimeReason,
+        currentWeeklyHours: eligibility.currentWeeklyHours,
+        shiftHours: eligibility.shiftHours,
+        projectedWeeklyHours: eligibility.projectedWeeklyHours,
+        overtimeHours: eligibility.overtimeHours
+      }
+    };
+
+    setShiftClaims((prev) => [newClaimRequest, ...prev]);
+
+    // Dismiss active priority push so guard is not re-prompted
+    dismissPriorityPush(shiftId);
+
+    // Play warning sound
+    if (alertPreferences.soundEnabled) {
+      playEmergencyAlertSound();
+    }
+
+    // Notify guard via Toast with explicit breakdown of failed checks
+    const failedBulletPoints: string[] = [];
+    if (!eligibility.isSiteTrained) failedBulletPoints.push('Site training qualification required');
+    if (!eligibility.isRestBufferValid) failedBulletPoints.push('Turnaround / minimum rest time limit violation');
+    if (!eligibility.isOvertimeCompliant) failedBulletPoints.push(`Pushes weekly schedule over 40h limit (${eligibility.projectedWeeklyHours}h total, +${eligibility.overtimeHours}h OT)`);
+
+    showToast(
+      '⚠️ Admin Approval Required',
+      `Your 1-click claim for ${targetShift.siteName} (${targetShift.date}) requires manager review: ${failedBulletPoints.join(' • ')}. Your request has been flagged on the Ops Admin panel.`,
+      'warning'
+    );
+
+    // Log in audit log
+    addAuditLog(
+      'SHIFT_CLAIM_FLAGGED',
+      'shift',
+      `Officer ${guard.name} (${guard.badgeNumber}) 1-click claim for ${targetShift.siteName} flagged for Admin Review. Flagged checks: [${eligibility.failedChecks.join(', ')}]. ${eligibility.summaryMessage}`,
+      `${guard.name} (${guard.badgeNumber})`,
+      'warning'
+    );
+
+    // Log admin action for Ops Admin
+    logAdminAction({
+      type: 'shift_claim_flagged',
+      title: 'Shift Claim Flagged for Review',
+      description: `Officer ${guard.name} (${guard.badgeNumber}) requested 1-click claim for ${targetShift.siteName} (${targetShift.date} ${targetShift.startTime}-${targetShift.endTime}). Policy flags: ${eligibility.failedChecks.join(', ')}.`,
+      adminName: 'Dispatch Compliance Engine',
+      adminBadge: 'SYS-AUTO',
+      badgeVariant: 'amber',
+      metadata: { 
+        claimId: newClaimRequest.id, 
+        shiftId: targetShift.id, 
+        guardId: guard.id, 
+        failedChecks: eligibility.failedChecks,
+        projectedWeeklyHours: eligibility.projectedWeeklyHours
+      }
+    });
+
+    return {
+      success: true,
+      requiresApproval: true,
+      claimRequest: newClaimRequest,
+      message: `Shift claim submitted for Admin Review (${failedBulletPoints.join(', ')})`,
+      shift: targetShift
+    };
+  };
+
+  // Approve a Flagged Shift Claim (Ops Admin)
+  const approveShiftClaim = (claimId: string, adminNote?: string) => {
+    const claim = shiftClaims.find((c) => c.id === claimId);
+    if (!claim) {
+      showToast('Claim Not Found', 'Could not locate the requested shift claim.', 'danger');
+      return;
+    }
+
+    if (claim.status !== 'pending_approval') {
+      showToast('Already Processed', `This claim was already marked as ${claim.status}.`, 'info');
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const adminCommander = adminUsers[0]?.name || 'Lt. Mark O\'Connor';
+    const adminBadge = adminUsers[0]?.badgeId || 'OPS-CMD-01';
+
+    // 1. Update claim status to approved
+    setShiftClaims((prev) =>
+      prev.map((c) =>
+        c.id === claimId
+          ? {
+              ...c,
+              status: 'approved',
+              resolvedAt: nowIso,
+              resolvedByAdminName: adminCommander,
+              resolvedByAdminBadge: adminBadge,
+              adminResolutionNote: adminNote || 'Shift claim approved with administrative override.'
+            }
+          : c
+      )
+    );
+
+    // 2. Mark shift as filled
     setShifts((prev) =>
       prev.map((s) =>
-        s.id === shiftId
+        s.id === claim.shiftId
           ? {
               ...s,
               status: 'filled',
-              assignedGuardName: guard.name,
-              assignedGuardId: guard.id
+              assignedGuardName: claim.guardName,
+              assignedGuardId: claim.guardId
             }
           : s
       )
     );
 
-    // Add to scheduledShifts
-    const durationHours = targetShift.hours || calculateHours(targetShift.startTime, targetShift.endTime) || 8;
+    // 3. Add to scheduledShifts
+    const durationHours = claim.shift.hours || calculateHours(claim.shift.startTime, claim.shift.endTime) || 8;
     const newScheduledShift: ScheduledShift = {
       id: `SCHED-${Date.now()}`,
-      guardId: guard.id,
-      guardName: guard.name,
-      guardBadge: guard.badgeNumber,
-      guardPhone: guard.phone,
-      siteId: `site-${targetShift.siteName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
-      siteName: targetShift.siteName,
-      siteAddress: targetShift.address || 'Address on file',
-      date: targetShift.date,
-      startTime: targetShift.startTime,
-      endTime: targetShift.endTime,
+      guardId: claim.guardId,
+      guardName: claim.guardName,
+      guardBadge: claim.guardBadge,
+      guardPhone: claim.guardPhone,
+      siteId: `site-${claim.shift.siteName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+      siteName: claim.shift.siteName,
+      siteAddress: claim.shift.address || 'Address on file',
+      date: claim.shift.date,
+      startTime: claim.shift.startTime,
+      endTime: claim.shift.endTime,
       hours: durationHours,
-      postRole: targetShift.location || `${targetShift.siteName} Priority Post`,
-      postInstructions: targetShift.notes || 'Report to security office on arrival. Complete patrol checklist.',
-      requiredCertifications: targetShift.requiredCertifications || [],
+      postRole: claim.shift.location || `${claim.shift.siteName} Security Post`,
+      postInstructions: claim.shift.notes || 'Report to security office on arrival. Manager override authorized.',
+      requiredCertifications: claim.shift.requiredCertifications || [],
       status: 'scheduled',
-      createdAt: new Date().toISOString()
+      createdAt: nowIso
     };
 
     setScheduledShifts((prev) => [newScheduledShift, ...prev]);
 
-    // Dismiss active priority push for this shift
-    dismissPriorityPush(shiftId);
-
-    // Play confirmation audio
+    // 4. Play confirmation audio & toast
     if (alertPreferences.soundEnabled) {
-      playClockInAlertSound();
+      playReceiptConfirmedSound();
     }
 
-    // Audit logs & admin actions
+    showToast(
+      'Shift Claim Approved',
+      `Officer ${claim.guardName} (${claim.guardBadge}) assigned to ${claim.shift.siteName} (${claim.shift.date}). Overridden flags: ${claim.failedChecks.join(', ')}.`,
+      'success'
+    );
+
+    // 5. Audit logs & admin actions
     addAuditLog(
-      'PRIORITY_SHIFT_CLAIMED',
+      'SHIFT_CLAIM_APPROVED',
       'shift',
-      `Officer ${guard.name} (${guard.badgeNumber}) claimed 24h priority shift at ${targetShift.siteName} (${targetShift.date} ${targetShift.startTime}-${targetShift.endTime}). 6h+ rest buffer verified.`,
-      `${guard.name} (${guard.badgeNumber})`,
+      `Admin ${adminCommander} (${adminBadge}) APPROVED flagged shift claim #${claim.id} for Officer ${claim.guardName} (${claim.guardBadge}) at ${claim.shift.siteName}. Overridden flags: [${claim.failedChecks.join(', ')}]. Note: ${adminNote || 'Manager override authorized.'}`,
+      `${adminCommander} (${adminBadge})`,
       'success'
     );
 
     logAdminAction({
-      type: 'priority_shift_claimed',
-      title: 'Priority 24h Shift Claimed',
-      description: `Officer ${guard.name} (${guard.badgeNumber}) claimed 24h priority post at ${targetShift.siteName} (${targetShift.date} ${targetShift.startTime}-${targetShift.endTime}). Rest buffer verified (${minRest}h min).`,
-      adminName: `${guard.name}`,
-      adminBadge: `${guard.badgeNumber}`,
+      type: 'shift_claim_approved',
+      title: 'Flagged Shift Claim Approved',
+      description: `Admin approved 1-click claim for Officer ${claim.guardName} at ${claim.shift.siteName} (${claim.shift.date}). Overridden flags: ${claim.failedChecks.join(', ')}.`,
+      adminName: adminCommander,
+      adminBadge: adminBadge,
       badgeVariant: 'emerald',
-      metadata: { shiftId: targetShift.id, guardId: guard.id, siteName: targetShift.siteName, minRest }
+      metadata: { 
+        claimId: claim.id, 
+        shiftId: claim.shiftId, 
+        guardId: claim.guardId, 
+        overriddenFlags: claim.failedChecks,
+        adminNote 
+      }
     });
+  };
 
-    showToast(
-      '🎉 Priority Shift Claimed!',
-      `You are scheduled for ${targetShift.siteName} on ${targetShift.date} (${targetShift.startTime}-${targetShift.endTime}). 6h+ rest buffer verified.`,
-      'success'
+  // Deny a Flagged Shift Claim (Ops Admin)
+  const denyShiftClaim = (claimId: string, reason: string) => {
+    const claim = shiftClaims.find((c) => c.id === claimId);
+    if (!claim) {
+      showToast('Claim Not Found', 'Could not locate the requested shift claim.', 'danger');
+      return;
+    }
+
+    if (claim.status !== 'pending_approval') {
+      showToast('Already Processed', `This claim was already marked as ${claim.status}.`, 'info');
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const adminCommander = adminUsers[0]?.name || 'Lt. Mark O\'Connor';
+    const adminBadge = adminUsers[0]?.badgeId || 'OPS-CMD-01';
+
+    // 1. Update claim status to denied
+    setShiftClaims((prev) =>
+      prev.map((c) =>
+        c.id === claimId
+          ? {
+              ...c,
+              status: 'denied',
+              resolvedAt: nowIso,
+              resolvedByAdminName: adminCommander,
+              resolvedByAdminBadge: adminBadge,
+              adminResolutionNote: reason || 'Shift claim denied by operations manager.'
+            }
+          : c
+      )
     );
 
-    return {
-      success: true,
-      message: 'Shift successfully claimed and scheduled!',
-      shift: { ...targetShift, status: 'filled', assignedGuardName: guard.name, assignedGuardId: guard.id },
-      scheduledShift: newScheduledShift
-    };
+    // Shift remains OPEN for other guards to claim
+
+    // 2. Toast
+    showToast(
+      'Shift Claim Denied',
+      `Shift claim for Officer ${claim.guardName} at ${claim.shift.siteName} was denied. Reason: ${reason}`,
+      'danger'
+    );
+
+    // 3. Audit logs & admin actions
+    addAuditLog(
+      'SHIFT_CLAIM_DENIED',
+      'shift',
+      `Admin ${adminCommander} (${adminBadge}) DENIED shift claim #${claim.id} for Officer ${claim.guardName} (${claim.guardBadge}) at ${claim.shift.siteName}. Reason: ${reason}`,
+      `${adminCommander} (${adminBadge})`,
+      'danger'
+    );
+
+    logAdminAction({
+      type: 'shift_claim_denied',
+      title: 'Flagged Shift Claim Denied',
+      description: `Admin denied shift claim for Officer ${claim.guardName} at ${claim.shift.siteName} (${claim.shift.date}). Reason: ${reason}`,
+      adminName: adminCommander,
+      adminBadge: adminBadge,
+      badgeVariant: 'rose',
+      metadata: { 
+        claimId: claim.id, 
+        shiftId: claim.shiftId, 
+        guardId: claim.guardId, 
+        reason 
+      }
+    });
   };
 
   // Broadcast priority push to all eligible guards (used by Ops Dispatch)
@@ -1189,6 +1645,14 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   useEffect(() => {
     try {
+      localStorage.setItem(STORAGE_KEY_SHIFT_CLAIMS, JSON.stringify(shiftClaims));
+    } catch (e) {
+      console.warn('Storage save failed for shiftClaims', e);
+    }
+  }, [shiftClaims]);
+
+  useEffect(() => {
+    try {
       localStorage.setItem(STORAGE_KEY_LOGS, JSON.stringify(auditLogs));
     } catch (e) {
       console.warn('Storage save failed', e);
@@ -1282,6 +1746,146 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       console.warn('Storage save failed for dismissedLateAlertIds', e);
     }
   }, [dismissedLateAlertIds]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_TASK_COMPLETION_LOGS, JSON.stringify(taskCompletionLogs));
+    } catch (e) {
+      console.warn('Storage save failed for taskCompletionLogs', e);
+    }
+  }, [taskCompletionLogs]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_TASK_ALERTS_HISTORY, JSON.stringify(taskAlertsHistory));
+    } catch (e) {
+      console.warn('Storage save failed for taskAlertsHistory', e);
+    }
+  }, [taskAlertsHistory]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_STANDARD_REPORTS, JSON.stringify(standardReports));
+    } catch (e) {
+      console.warn('Storage save failed for standardReports', e);
+    }
+  }, [standardReports]);
+
+  // Automated Time-Sensitive Task Alert Engine
+  useEffect(() => {
+    const checkScheduledTasks = () => {
+      const now = new Date();
+      const nowHours = now.getHours();
+      const nowMinutes = now.getMinutes();
+      const currentMinutesOfDay = nowHours * 60 + nowMinutes;
+      const todayStr = now.toISOString().slice(0, 10);
+      const dayOfWeek = now.getDay(); // 0 = Sun, 6 = Sat
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+      // Determine active site for activeGuard
+      const activeShift = scheduledShifts.find(
+        (s) => s.guardId === activeGuard.id && (s.status === 'on_duty' || s.status === 'on_break' || s.status === 'scheduled')
+      );
+
+      // Sites relevant to the guard: either the site they are currently at or sites in their roving group
+      let relevantSites: SiteProfile[] = [];
+      if (activeShift?.siteName) {
+        const site = getSiteByName(activeShift.siteName);
+        if (site) relevantSites.push(site);
+      }
+      if (activeGuard.isRovingGuard && activeGuard.rovingGroup) {
+        const rovingSites = sitesList.filter(s => s.rovingGroup === activeGuard.rovingGroup);
+        rovingSites.forEach(rs => {
+          if (!relevantSites.some(s => s.id === rs.id)) {
+            relevantSites.push(rs);
+          }
+        });
+      }
+
+      // If no relevant sites found, check all sites that have tasks
+      if (relevantSites.length === 0) {
+        relevantSites = sitesList.filter(s => s.timeSpecificTasks && s.timeSpecificTasks.length > 0);
+      }
+
+      for (const site of relevantSites) {
+        if (!site.timeSpecificTasks) continue;
+        for (const task of site.timeSpecificTasks) {
+          if (!task.isActive) continue;
+
+          // Check day frequency
+          if (task.frequency === 'weekdays' && isWeekend) continue;
+          if (task.frequency === 'weekends' && !isWeekend) continue;
+          if (task.frequency === 'custom_days' && task.customDays && !task.customDays.includes(dayOfWeek)) continue;
+
+          // Check if already completed today
+          const alreadyCompleted = taskCompletionLogs.some(
+            (log) => log.taskId === task.id && log.completedAt.startsWith(todayStr)
+          );
+          if (alreadyCompleted) continue;
+
+          // Parse scheduled time (HH:mm)
+          const [taskH, taskM] = task.scheduledTime.split(':').map(Number);
+          if (isNaN(taskH) || isNaN(taskM)) continue;
+          const taskMinutesOfDay = taskH * 60 + taskM;
+          const diffMinutes = currentMinutesOfDay - taskMinutesOfDay; // positive = past scheduled time, negative = before scheduled time
+
+          const leadTime = task.leadTimeMinutes || 15;
+          const gracePeriod = task.gracePeriodMinutes || 20;
+
+          // Evaluation windows:
+          // 1. Approaching: [-leadTime, -1]
+          // 2. Due Now: [0, 5]
+          // 3. Overdue: [6, gracePeriod + 30]
+          let alertType: 'approaching' | 'due_now' | 'overdue' | null = null;
+          if (diffMinutes >= -leadTime && diffMinutes < 0) {
+            alertType = 'approaching';
+          } else if (diffMinutes >= 0 && diffMinutes <= 5) {
+            alertType = 'due_now';
+          } else if (diffMinutes > 5 && diffMinutes <= gracePeriod + 30) {
+            alertType = 'overdue';
+          }
+
+          if (alertType) {
+            const alertKey = `${task.id}_${todayStr}_${alertType}`;
+            if (!dismissedTaskAlertKeys.has(alertKey)) {
+              const alertObj: TimeSpecificTaskAlert = {
+                id: `talert-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+                taskId: task.id,
+                task,
+                siteId: site.id,
+                siteName: site.name,
+                dueTime: task.scheduledTime,
+                alertType,
+                triggeredAt: new Date().toISOString(),
+                dismissed: false
+              };
+
+              setActiveTaskAlert(alertObj);
+              setTaskAlertsHistory((prev) => [alertObj, ...prev.slice(0, 49)]);
+
+              try {
+                playTaskAlertSound(alertType);
+              } catch {}
+
+              const badge = alertType === 'overdue' ? '⚠️ OVERDUE TASK' : alertType === 'due_now' ? '⏰ TASK DUE NOW' : '⏳ UPCOMING TASK';
+              showToast(
+                `${badge}: ${task.title}`,
+                `${site.name} (${task.locationZone}) - Due: ${task.scheduledTime}`,
+                alertType === 'overdue' ? 'danger' : alertType === 'due_now' ? 'warning' : 'info'
+              );
+
+              setDismissedTaskAlertKeys((prev) => new Set(prev).add(alertKey));
+              return;
+            }
+          }
+        }
+      }
+    };
+
+    checkScheduledTasks();
+    const interval = setInterval(checkScheduledTasks, 25000);
+    return () => clearInterval(interval);
+  }, [sitesList, scheduledShifts, activeGuard, taskCompletionLogs, dismissedTaskAlertKeys]);
 
   const dismissCallReceiptNotification = (id?: string) => {
     if (!id || latestCallReceipt?.id === id) {
@@ -2782,6 +3386,442 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     return { count: newCount, updatedCount, errors };
+  };
+
+  // Time-Specific Tasks (Locks, Curfews, Closures) Operations
+  const addTimeSpecificTask = (
+    siteId: string, 
+    taskData: Omit<TimeSpecificTask, 'id' | 'siteId' | 'createdAt' | 'updatedAt'>
+  ): TimeSpecificTask => {
+    const targetSite = sitesList.find((s) => s.id === siteId);
+    const siteName = targetSite?.name || 'Site';
+    const newTask: TimeSpecificTask = {
+      ...taskData,
+      id: `task-${Date.now().toString().slice(-6)}`,
+      siteId,
+      siteName,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    setSitesList((prev) =>
+      prev.map((site) => {
+        if (site.id === siteId) {
+          const existing = site.timeSpecificTasks || [];
+          return {
+            ...site,
+            timeSpecificTasks: [...existing, newTask]
+          };
+        }
+        return site;
+      })
+    );
+
+    addAuditLog(
+      'TASK_CREATED',
+      'system',
+      `Added scheduled task "${newTask.title}" at ${newTask.scheduledTime} for ${siteName}`,
+      'Ops Admin (Post Orders)',
+      'info'
+    );
+
+    logAdminAction({
+      type: 'site_updated',
+      title: 'Time-Specific Task Configured',
+      description: `Added "${newTask.title}" (${newTask.scheduledTime}) at ${siteName}.`,
+      adminName: "Lt. Mark O'Connor",
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'purple',
+      metadata: { siteId, taskId: newTask.id, title: newTask.title, scheduledTime: newTask.scheduledTime }
+    });
+
+    showToast('Task Scheduled', `"${newTask.title}" scheduled for ${newTask.scheduledTime} at ${siteName}.`, 'success');
+    return newTask;
+  };
+
+  const updateTimeSpecificTask = (siteId: string, taskId: string, taskData: Partial<TimeSpecificTask>) => {
+    setSitesList((prev) =>
+      prev.map((site) => {
+        if (site.id === siteId) {
+          const tasks = (site.timeSpecificTasks || []).map((t) =>
+            t.id === taskId ? { ...t, ...taskData, updatedAt: new Date().toISOString() } : t
+          );
+          return { ...site, timeSpecificTasks: tasks };
+        }
+        return site;
+      })
+    );
+
+    showToast('Task Updated', 'Scheduled task parameters updated.', 'info');
+  };
+
+  const deleteTimeSpecificTask = (siteId: string, taskId: string) => {
+    const targetSite = sitesList.find((s) => s.id === siteId);
+    const targetTask = targetSite?.timeSpecificTasks?.find((t) => t.id === taskId);
+
+    setSitesList((prev) =>
+      prev.map((site) => {
+        if (site.id === siteId) {
+          return {
+            ...site,
+            timeSpecificTasks: (site.timeSpecificTasks || []).filter((t) => t.id !== taskId)
+          };
+        }
+        return site;
+      })
+    );
+
+    if (targetTask) {
+      addAuditLog(
+        'TASK_REMOVED',
+        'system',
+        `Removed scheduled task "${targetTask.title}" from ${targetSite?.name}`,
+        'Ops Admin',
+        'warning'
+      );
+    }
+
+    showToast('Task Removed', 'Scheduled task removed from site profile.', 'warning');
+  };
+
+  const completeTimeSpecificTask = (
+    taskId: string,
+    siteId: string,
+    guard: GuardProfile,
+    options?: {
+      notes?: string;
+      photoUrl?: string;
+      gpsCoords?: { latitude: number; longitude: number };
+      status?: 'completed' | 'verified' | 'flagged_issue' | 'exception_logged';
+    }
+  ): TaskCompletionLog => {
+    const targetSite = sitesList.find((s) => s.id === siteId);
+    const task = targetSite?.timeSpecificTasks?.find((t) => t.id === taskId);
+    const nowIso = new Date().toISOString();
+
+    let withinSla = true;
+    if (task) {
+      const [taskH, taskM] = task.scheduledTime.split(':').map(Number);
+      const now = new Date();
+      const taskDate = new Date();
+      taskDate.setHours(taskH, taskM, 0, 0);
+      const diffMinutes = (now.getTime() - taskDate.getTime()) / 60000;
+      withinSla = diffMinutes <= (task.gracePeriodMinutes || 20);
+    }
+
+    const log: TaskCompletionLog = {
+      id: `tlog-${Date.now()}`,
+      taskId,
+      taskTitle: task?.title || 'Scheduled Amenity Task',
+      siteId,
+      siteName: targetSite?.name || 'Assigned Site',
+      scheduledTime: task?.scheduledTime || '00:00',
+      completedAt: nowIso,
+      guardId: guard.id,
+      guardName: guard.name,
+      guardBadge: guard.badgeNumber,
+      status: options?.status || 'completed',
+      notes: options?.notes,
+      photoUrl: options?.photoUrl,
+      gpsCoords: options?.gpsCoords,
+      completedWithinSla: withinSla
+    };
+
+    setTaskCompletionLogs((prev) => [log, ...prev]);
+    playTaskCompletedSound();
+
+    if (activeTaskAlert?.taskId === taskId) {
+      setActiveTaskAlert(null);
+    }
+
+    addAuditLog(
+      'TASK_COMPLETED',
+      'shift',
+      `Officer ${guard.name} (${guard.badgeNumber}) completed "${task?.title || 'Task'}" at ${targetSite?.name} (${options?.status === 'flagged_issue' ? 'FLAGGED ISSUE' : 'VERIFIED'}).`,
+      guard.name,
+      options?.status === 'flagged_issue' ? 'warning' : 'success'
+    );
+
+    showToast(
+      'Task Completed & Logged',
+      `"${task?.title || 'Task'}" logged at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`,
+      'success'
+    );
+
+    return log;
+  };
+
+  const dismissTaskAlert = () => {
+    if (activeTaskAlert) {
+      setDismissedTaskAlertKeys((prev) => {
+        const next = new Set(prev);
+        next.add(`${activeTaskAlert.taskId}_${new Date().toISOString().slice(0, 10)}`);
+        return next;
+      });
+      setActiveTaskAlert(null);
+    }
+  };
+
+  const acknowledgeTaskAlert = (alertId: string, guardId?: string) => {
+    if (activeTaskAlert && activeTaskAlert.id === alertId) {
+      setActiveTaskAlert((prev) => prev ? {
+        ...prev,
+        acknowledgedByGuardId: guardId || activeGuard.id,
+        acknowledgedAt: new Date().toISOString()
+      } : null);
+      showToast('Task Acknowledged', 'Proceed with the scheduled post order instructions.', 'info');
+    }
+  };
+
+  const triggerTestTaskAlert = (task?: TimeSpecificTask, alertType: 'approaching' | 'due_now' | 'overdue' = 'due_now') => {
+    const sampleSite = sitesList.find((s) => s.timeSpecificTasks && s.timeSpecificTasks.length > 0) || sitesList[0];
+    const sampleTask = task || sampleSite?.timeSpecificTasks?.[0] || {
+      id: 'test-task-1',
+      siteId: sampleSite?.id || 'site-1',
+      siteName: sampleSite?.name || 'Skyline Tower & Plaza',
+      title: 'Pool & Laundry Room Night Closure',
+      category: 'amenity_lock',
+      scheduledTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
+      locationZone: 'Central Amenity Deck & Laundry Wing',
+      instructions: 'Clear all residents from the pool and hot tub. Verify gate padlocks are locked. Lock laundry room doors.',
+      frequency: 'daily',
+      leadTimeMinutes: 15,
+      gracePeriodMinutes: 15,
+      priority: 'mandatory_sla',
+      requirePhoto: true,
+      requireGps: true,
+      isActive: true,
+      tags: ['Pool', 'Laundry', 'Lockup']
+    };
+
+    const alertObj: TimeSpecificTaskAlert = {
+      id: `talert-${Date.now()}`,
+      taskId: sampleTask.id,
+      task: sampleTask,
+      siteId: sampleTask.siteId,
+      siteName: sampleTask.siteName || sampleSite?.name || 'Assigned Site',
+      dueTime: sampleTask.scheduledTime,
+      alertType,
+      triggeredAt: new Date().toISOString(),
+      dismissed: false
+    };
+
+    setActiveTaskAlert(alertObj);
+    setTaskAlertsHistory((prev) => [alertObj, ...prev.slice(0, 49)]);
+    try {
+      playTaskAlertSound(alertType);
+    } catch {}
+    showToast(`⏰ Scheduled Task: ${sampleTask.title}`, `Due at ${sampleTask.scheduledTime} at ${sampleTask.locationZone}`, 'warning');
+  };
+
+  const getTasksForSite = (siteId: string): TimeSpecificTask[] => {
+    const site = sitesList.find((s) => s.id === siteId);
+    return site?.timeSpecificTasks || [];
+  };
+
+  const getTaskCompletionStatus = (taskId: string, dateStr?: string): TaskCompletionLog | undefined => {
+    const targetDate = dateStr || new Date().toISOString().slice(0, 10);
+    return taskCompletionLogs.find(
+      (log) => log.taskId === taskId && log.completedAt.startsWith(targetDate)
+    );
+  };
+
+  // Standard Guard Duty Reports (Activity DAR, Maintenance, Incident Reports)
+  const submitStandardReport = (
+    reportData: Omit<StandardShiftReport, 'id' | 'reportNumber' | 'createdAt'> & { timestamp?: string; id?: string }
+  ): StandardShiftReport => {
+    // Strict Validation: Require at least one photo or video
+    if (!reportData.media || reportData.media.length === 0) {
+      throw new Error('Mandatory media requirement: At least one photo or video is required to file a report.');
+    }
+
+    const now = new Date();
+    const nowIso = reportData.timestamp || now.toISOString();
+    const dateCode = nowIso.slice(0, 10).replace(/-/g, '');
+    const prefix = reportData.reportType === 'activity' ? 'DAR' : reportData.reportType === 'maintenance' ? 'MNT' : 'INC';
+    const randomSuffix = Math.floor(100 + Math.random() * 900);
+    const reportNumber = `${prefix}-${dateCode}-${randomSuffix}`;
+    const id = reportData.id || `rpt-${reportData.reportType}-${Date.now()}`;
+
+    const newReport: StandardShiftReport = {
+      ...reportData,
+      id,
+      reportNumber,
+      createdAt: nowIso,
+      timestamp: nowIso,
+      status: reportData.status || 'submitted'
+    };
+
+    setStandardReports((prev) => [newReport, ...prev]);
+
+    // Emergency incident or standard log feedback
+    if (reportData.reportType === 'incident' && reportData.incidentDetails?.escalatedToEmergencyServices) {
+      try {
+        playEmergencyEscalationSound();
+      } catch {}
+      const agencyLabels = (reportData.incidentDetails.emergencyServicesContacted || ['police_911'])
+        .map((a) => a.replace(/_/g, ' ').toUpperCase())
+        .join(', ');
+
+      addAuditLog(
+        'EMERGENCY_INCIDENT_ESCALATED',
+        'system',
+        `🚨 CRITICAL ESCALATION: Guard ${newReport.guardName} (${newReport.guardBadge}) contacted emergency services at ${newReport.siteName}. Agencies: ${agencyLabels}. CAD #${newReport.incidentDetails.cadIncidentNumber || 'N/A'}.`,
+        `${newReport.guardName} (${newReport.guardBadge})`,
+        'danger'
+      );
+
+      logAdminAction({
+        type: 'shift_created',
+        title: 'Emergency Services Incident Escalation',
+        description: `Officer ${newReport.guardName} escalated an active incident at ${newReport.siteName}. Contacted: ${agencyLabels}. CAD: ${newReport.incidentDetails.cadIncidentNumber || 'N/A'}.`,
+        adminName: 'Dispatch Commander',
+        adminBadge: 'OPS-CMD-01',
+        badgeVariant: 'rose'
+      });
+
+      showToast(
+        `🚨 CRITICAL: Incident Escalated`,
+        `${newReport.siteName} - 911 / EMS dispatched. Report #${reportNumber}`,
+        'danger'
+      );
+    } else if (reportData.reportType === 'incident') {
+      try {
+        playReportSubmittedSound();
+      } catch {}
+
+      addAuditLog(
+        'INCIDENT_REPORT_SUBMITTED',
+        'shift',
+        `Guard ${newReport.guardName} (${newReport.guardBadge}) filed Flagged Incident "${newReport.incidentDetails?.incidentTitle || 'Security Action'}" at ${newReport.siteName}. Action taken: ${newReport.incidentDetails?.actionTakenByGuard?.slice(0, 80)}...`,
+        `${newReport.guardName} (${newReport.guardBadge})`,
+        'warning'
+      );
+
+      showToast(
+        `⚠️ Flagged Incident Filed`,
+        `Report #${reportNumber} submitted with ${newReport.media.length} media item(s).`,
+        'warning'
+      );
+    } else if (reportData.reportType === 'maintenance') {
+      try {
+        playReportSubmittedSound();
+      } catch {}
+
+      addAuditLog(
+        'MAINTENANCE_REPORT_SUBMITTED',
+        'shift',
+        `Guard ${newReport.guardName} (${newReport.guardBadge}) reported property maintenance issue "${newReport.maintenanceDetails?.issueTitle}" (${newReport.maintenanceDetails?.severity}) at ${newReport.siteName}.`,
+        `${newReport.guardName} (${newReport.guardBadge})`,
+        'info'
+      );
+
+      showToast(
+        `🔧 Maintenance Report Filed`,
+        `Report #${reportNumber} queued for property maintenance review.`,
+        'info'
+      );
+    } else {
+      try {
+        playReportSubmittedSound();
+      } catch {}
+
+      addAuditLog(
+        'ACTIVITY_DAR_LOGGED',
+        'shift',
+        `Guard ${newReport.guardName} (${newReport.guardBadge}) logged 30-min Activity Patrol: "${newReport.activityDetails?.zoneChecked}" (${newReport.activityDetails?.status}) at ${newReport.siteName}.`,
+        `${newReport.guardName} (${newReport.guardBadge})`,
+        'success'
+      );
+
+      showToast(
+        `📝 Activity Check-In Logged`,
+        `30-Minute DAR check verified for ${newReport.siteName}.`,
+        'success'
+      );
+    }
+
+    return newReport;
+  };
+
+  const updateStandardReport = (id: string, updates: Partial<StandardShiftReport>) => {
+    setStandardReports((prev) =>
+      prev.map((rpt) => (rpt.id === id ? { ...rpt, ...updates, updatedAt: new Date().toISOString() } : rpt))
+    );
+  };
+
+  const deleteStandardReport = (id: string) => {
+    setStandardReports((prev) => prev.filter((rpt) => rpt.id !== id));
+    showToast('Report Deleted', 'Report removed from active list.', 'info');
+  };
+
+  const reviewStandardReport = (
+    id: string,
+    adminNameOrData: string | { adminId?: string; adminName: string; adminBadge: string; notes?: string; status?: 'reviewed' | 'flagged_for_client' | 'archived' },
+    adminBadge?: string,
+    notes?: string,
+    status: 'reviewed' | 'flagged_for_client' | 'archived' = 'reviewed'
+  ) => {
+    let finalAdminName = typeof adminNameOrData === 'string' ? adminNameOrData : adminNameOrData.adminName;
+    let finalAdminBadge = typeof adminNameOrData === 'string' ? (adminBadge || 'OPS-702') : adminNameOrData.adminBadge;
+    let finalNotes = typeof adminNameOrData === 'string' ? (notes || 'Reviewed and approved by Operations Admin.') : (adminNameOrData.notes || 'Reviewed and approved by Operations Admin.');
+    let finalStatus = typeof adminNameOrData === 'string' ? status : (adminNameOrData.status || 'reviewed');
+
+    setStandardReports((prev) =>
+      prev.map((rpt) => {
+        if (rpt.id !== id) return rpt;
+        return {
+          ...rpt,
+          status: finalStatus,
+          reviewedByAdmin: {
+            adminName: finalAdminName,
+            adminBadge: finalAdminBadge,
+            reviewedAt: new Date().toISOString(),
+            notes: finalNotes
+          },
+          updatedAt: new Date().toISOString()
+        };
+      })
+    );
+
+    addAuditLog(
+      'REPORT_REVIEWED',
+      'system',
+      `Ops Admin ${finalAdminName} (${finalAdminBadge}) reviewed and marked report as "${finalStatus}".`,
+      `${finalAdminName} (${finalAdminBadge})`,
+      'success'
+    );
+
+    showToast('Report Status Updated', `Report set to ${finalStatus.replace(/_/g, ' ')}.`, 'success');
+  };
+
+  const updateMaintenanceWorkOrder = (
+    id: string,
+    workOrderStatus: MaintenanceReportDetails['workOrderStatus'],
+    workOrderNumber?: string
+  ) => {
+    setStandardReports((prev) =>
+      prev.map((rpt) => {
+        if (rpt.id !== id || !rpt.maintenanceDetails) return rpt;
+        return {
+          ...rpt,
+          maintenanceDetails: {
+            ...rpt.maintenanceDetails,
+            workOrderStatus,
+            workOrderNumber: workOrderNumber || rpt.maintenanceDetails.workOrderNumber
+          },
+          updatedAt: new Date().toISOString()
+        };
+      })
+    );
+
+    showToast('Work Order Updated', `Status changed to ${workOrderStatus.replace(/_/g, ' ')}.`, 'info');
+  };
+
+  const getLastActivityReportForGuard = (guardId: string): StandardShiftReport | undefined => {
+    return standardReports
+      .filter((rpt) => rpt.guardId === guardId && rpt.reportType === 'activity')
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
   };
 
   // Shift Templates Management
@@ -4838,6 +5878,8 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setAlertPreferencesState(DEFAULT_ALERT_PREFERENCES);
     setSiteFeedbacks(INITIAL_SITE_FEEDBACKS);
     setSitesList(INITIAL_SITES);
+    setShiftClaims(INITIAL_CLAIM_REQUESTS);
+    localStorage.removeItem(STORAGE_KEY_SHIFT_CLAIMS);
     showToast('System Reset', 'Demo shift, trade, schedule, time tracking, CFS calls, rover routes, and telemetry restored to initial state.', 'info');
   };
 
@@ -4846,6 +5888,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       value={{
         shifts,
         trades,
+        shiftClaims,
         auditLogs,
         recentAdminActions,
         adminUsers,
@@ -4919,6 +5962,9 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         triggerPriorityPushAlert,
         claimPriorityShift,
         broadcastPriorityPushToGuards,
+        approveShiftClaim,
+        denyShiftClaim,
+        evaluateShiftClaim,
         setActiveView,
         setActiveGuard,
         setTheme,
@@ -4962,6 +6008,25 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         deleteSite,
         getSiteByName,
         bulkImportSites,
+        taskCompletionLogs,
+        activeTaskAlert,
+        taskAlertsHistory,
+        addTimeSpecificTask,
+        updateTimeSpecificTask,
+        deleteTimeSpecificTask,
+        completeTimeSpecificTask,
+        dismissTaskAlert,
+        acknowledgeTaskAlert,
+        triggerTestTaskAlert,
+        getTasksForSite,
+        getTaskCompletionStatus,
+        standardReports,
+        submitStandardReport,
+        updateStandardReport,
+        deleteStandardReport,
+        reviewStandardReport,
+        updateMaintenanceWorkOrder,
+        getLastActivityReportForGuard,
         createShift,
         bulkImportShifts,
         markShiftFilled,

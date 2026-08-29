@@ -31,7 +31,8 @@ import {
   Info,
   Compass,
   AlertCircle,
-  Route
+  Route,
+  Lock
 } from 'lucide-react';
 import { RouteCheckpointStop, RoverVehicle, DynamicRoutePlan, SlaPriorityLevel } from '../../types/roverRoute';
 import { RovingGroup } from '../../types/shift';
@@ -467,6 +468,30 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
             </div>
           )}
 
+          {/* Time Specific Tasks & Lockouts on Current Site */}
+          {(() => {
+            const matchedSite = sitesList.find(s => s.name === currentStop.siteName || s.id === currentStop.siteId);
+            if (!matchedSite?.timeSpecificTasks || matchedSite.timeSpecificTasks.length === 0) return null;
+            return (
+              <div className="p-2.5 bg-slate-950/80 rounded-xl border border-amber-500/40 text-xs space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono uppercase text-amber-300 font-bold flex items-center gap-1">
+                    <Lock className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Scheduled Amenity Tasks ({matchedSite.timeSpecificTasks.length})</span>
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {matchedSite.timeSpecificTasks.map((task) => (
+                    <span key={task.id} className="text-[11px] bg-amber-950/60 text-amber-200 border border-amber-800/60 px-2 py-0.5 rounded-md font-mono flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-amber-400" />
+                      <strong>{task.title}</strong> @ {task.scheduledTime}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Primary Action Buttons */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
             <button
@@ -773,6 +798,17 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
                             • ~{stop.estimatedDriveMinutes}m drive
                           </span>
                         )}
+
+                        {(() => {
+                          const matched = sitesList.find(s => s.name === stop.siteName || s.id === stop.siteId);
+                          if (!matched?.timeSpecificTasks || matched.timeSpecificTasks.length === 0) return null;
+                          return (
+                            <span className="px-1.5 py-0.2 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700/60 font-bold flex items-center gap-0.5">
+                              <Lock className="w-2.5 h-2.5" />
+                              {matched.timeSpecificTasks[0].title} @ {matched.timeSpecificTasks[0].scheduledTime}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>

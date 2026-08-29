@@ -170,7 +170,7 @@ export const VerificationCameraModal: React.FC<VerificationCameraModalProps> = (
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const img = new Image();
+      const img = document.createElement('img');
       img.onload = () => {
         const photoDataUrl = addVerificationWatermark(img, {
           guardName: guard.name,

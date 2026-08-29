@@ -27,7 +27,7 @@ interface OpenShiftBoardProps {
 }
 
 export const OpenShiftBoard: React.FC<OpenShiftBoardProps> = ({ onOpenAlertPrefs }) => {
-  const { shifts, activeGuard, sitesList, eligiblePriorityShifts, claimPriorityShift } = useShiftOps();
+  const { shifts, activeGuard, sitesList, eligiblePriorityShifts, claimPriorityShift, shiftClaims } = useShiftOps();
   const [selectedShiftForBid, setSelectedShiftForBid] = useState<Shift | null>(null);
   const [urgencyFilter, setUrgencyFilter] = useState<'all' | 'emergency' | 'standard'>('all');
   const [siteFilter, setSiteFilter] = useState<string>('all');
@@ -342,6 +342,26 @@ export const OpenShiftBoard: React.FC<OpenShiftBoardProps> = ({ onOpenAlertPrefs
                   <div className="w-full py-2 bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-400 rounded-lg text-xs font-bold text-center uppercase tracking-wider cursor-not-allowed">
                     Position Filled
                   </div>
+                ) : (shiftClaims || []).some((c) => c.shiftId === shift.id && c.guardId === activeGuard.id && c.status === 'pending_approval') ? (
+                  (() => {
+                    const guardClaim = (shiftClaims || []).find((c) => c.shiftId === shift.id && c.guardId === activeGuard.id && c.status === 'pending_approval')!;
+                    return (
+                      <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs flex flex-col gap-1">
+                        <div className="flex items-center justify-between font-bold">
+                          <span className="flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                            <span>Claim Pending Admin Approval</span>
+                          </span>
+                          <span className="text-[9px] uppercase font-mono font-black px-1.5 py-0.5 rounded bg-amber-200 dark:bg-amber-900 text-amber-950 dark:text-amber-100">
+                            Under Review
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-tight">
+                          Policy review flagged: <strong className="text-amber-800 dark:text-amber-300">{guardClaim.failedChecks.join(', ')}</strong>. Sent to dispatch for roster approval.
+                        </p>
+                      </div>
+                    );
+                  })()
                 ) : isPriority24h ? (
                   <div className="flex gap-2">
                     <button

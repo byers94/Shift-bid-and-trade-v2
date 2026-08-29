@@ -33,6 +33,7 @@ export const PriorityShiftPushBanner: React.FC<PriorityShiftPushBannerProps> = (
     dismissPriorityPush,
     snoozePriorityPush,
     claimPriorityShift,
+    shiftClaims,
     activeGuard,
     opsPhone
   } = useShiftOps();
@@ -40,6 +41,8 @@ export const PriorityShiftPushBanner: React.FC<PriorityShiftPushBannerProps> = (
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isClaiming, setIsClaiming] = useState(false);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
+
+  const [isLocallyDismissed, setIsLocallyDismissed] = useState(false);
 
   // Filter out any dismissed priority shifts so the guard is never blocked from viewing open shifts
   const unDismissedShifts = useMemo(() => {
@@ -49,7 +52,7 @@ export const PriorityShiftPushBanner: React.FC<PriorityShiftPushBannerProps> = (
   }, [eligiblePriorityShifts, dismissedPriorityShiftIds]);
 
   // If no un-dismissed eligible shifts in next 24h or alert is closed, return null
-  if (!unDismissedShifts || unDismissedShifts.length === 0) {
+  if (isLocallyDismissed || !unDismissedShifts || unDismissedShifts.length === 0) {
     return null;
   }
 
@@ -58,11 +61,13 @@ export const PriorityShiftPushBanner: React.FC<PriorityShiftPushBannerProps> = (
   const activeMatch: PriorityShiftMatch = unDismissedShifts[safeIndex] || unDismissedShifts[0];
   const { shift, startsInHours, startsInMinutes, restHoursBefore, restHoursAfter, adjacentShiftBefore, adjacentShiftAfter, surgeBonusRate } = activeMatch;
 
-  const handleNext = () => {
+  const handleNext = (e: React.MouseEvent) => {
+    e.stopPropagation();
     setCurrentIndex((prev) => (prev + 1) % unDismissedShifts.length);
   };
 
-  const handlePrev = () => {
+  const handlePrev = (e: React.MouseEvent) => {
+    e.stopPropagation();
     setCurrentIndex((prev) => (prev - 1 + unDismissedShifts.length) % unDismissedShifts.length);
   };
 
@@ -75,8 +80,19 @@ export const PriorityShiftPushBanner: React.FC<PriorityShiftPushBannerProps> = (
     }
   };
 
-  const handleDismiss = () => {
-    dismissPriorityPush(shift.id);
+  const handleDismiss = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsLocallyDismissed(true);
+    // Dismiss all eligible priority push IDs so all 24h notices are cleared
+    dismissPriorityPush(undefined, true);
+  };
+
+  const handleSnooze = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsLocallyDismissed(true);
+    snoozePriorityPush(15);
   };
 
   const handleTextDispatch = () => {
@@ -135,7 +151,7 @@ export const PriorityShiftPushBanner: React.FC<PriorityShiftPushBannerProps> = (
           )}
 
           <button
-            onClick={() => snoozePriorityPush(15)}
+            onClick={handleSnooze}
             title="Snooze for 15 minutes"
             className="flex items-center gap-1 rounded bg-slate-800/80 hover:bg-slate-700 px-2 py-1 text-[10px] font-bold text-slate-300 cursor-pointer border border-slate-700"
           >
@@ -208,15 +224,22 @@ export const PriorityShiftPushBanner: React.FC<PriorityShiftPushBannerProps> = (
 
           {/* Right Column: Actions */}
           <div className="flex sm:flex-col items-center sm:items-stretch gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/80">
-            <button
-              id={`claim-priority-shift-btn-${shift.id}`}
-              onClick={handleClaim}
-              disabled={isClaiming}
-              className="flex-1 sm:flex-initial py-2.5 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 rounded-lg font-black text-xs uppercase tracking-wide flex items-center justify-center gap-1.5 shadow-md shadow-amber-950/50 cursor-pointer active:scale-98 transition-all disabled:opacity-50"
-            >
-              <Zap className="h-4 w-4 fill-slate-950 text-slate-950" />
-              <span>{isClaiming ? 'Claiming...' : '1-Click Claim Shift'}</span>
-            </button>
+            {(shiftClaims || []).some((c) => c.shiftId === shift.id && c.guardId === activeGuard.id && c.status === 'pending_approval') ? (
+              <div className="flex-1 sm:flex-initial py-2 px-3 bg-amber-500/20 border border-amber-400/60 text-amber-300 rounded-lg text-xs font-bold text-center flex items-center justify-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-amber-400" />
+                <span>Claim Pending Admin Review</span>
+              </div>
+            ) : (
+              <button
+                id={`claim-priority-shift-btn-${shift.id}`}
+                onClick={handleClaim}
+                disabled={isClaiming}
+                className="flex-1 sm:flex-initial py-2.5 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 rounded-lg font-black text-xs uppercase tracking-wide flex items-center justify-center gap-1.5 shadow-md shadow-amber-950/50 cursor-pointer active:scale-98 transition-all disabled:opacity-50"
+              >
+                <Zap className="h-4 w-4 fill-slate-950 text-slate-950" />
+                <span>{isClaiming ? 'Claiming...' : '1-Click Claim Shift'}</span>
+              </button>
+            )}
 
             <button
               id={`text-bid-priority-shift-btn-${shift.id}`}

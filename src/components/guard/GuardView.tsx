@@ -10,6 +10,7 @@ import { EmergencyAlertOverlay } from './EmergencyAlertOverlay';
 import { ShiftAlertPreferencesModal } from './ShiftAlertPreferencesModal';
 import { GuardLoginModal } from './GuardLoginModal';
 import { PriorityShiftPushBanner } from './PriorityShiftPushBanner';
+import { TimeSpecificTaskAlertBanner } from './TimeSpecificTaskAlertBanner';
 import { 
   Shield, 
   UserCheck, 
@@ -438,6 +439,9 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
 
       {/* Board Content */}
       <div className="flex-1 flex flex-col overflow-y-auto min-h-0 bg-slate-50 dark:bg-slate-900 p-2 sm:p-3">
+        {/* Time-Specific Task Notification Banner */}
+        <TimeSpecificTaskAlertBanner />
+
         {/* Priority 24h Push Alert Banner */}
         <PriorityShiftPushBanner onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />
 

@@ -7,7 +7,11 @@ import {
   SiteServiceType, 
   RovingGroup, 
   ROVING_GROUPS, 
-  ROVING_GROUP_CONFIGS 
+  ROVING_GROUP_CONFIGS,
+  TimeSpecificTask,
+  TimeSpecificTaskCategory,
+  TaskScheduleFrequency,
+  TaskPriority
 } from '../../types/shift';
 import { SiteJsonImportModal } from './SiteJsonImportModal';
 import { validateSite, auditAllSites, SiteValidationResult } from '../../utils/siteValidation';
@@ -57,7 +61,14 @@ import {
   Navigation2,
   Layers3,
   ArrowUpDown,
-  CheckSquare
+  CheckSquare,
+  Bell,
+  Volume2,
+  Lock,
+  Camera,
+  Timer,
+  Key,
+  Play
 } from 'lucide-react';
 
 interface SiteDirectoryProps {
@@ -79,7 +90,8 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
     addSite, 
     updateSite, 
     deleteSite,
-    showToast 
+    showToast,
+    triggerTestTaskAlert
   } = useShiftOps();
 
   // Search & Filter States
@@ -135,6 +147,189 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
   const [formGeofenceStrictEnforce, setFormGeofenceStrictEnforce] = useState<boolean>(false);
   const [newCertInput, setNewCertInput] = useState('');
   const [customCertificationsList, setCustomCertificationsList] = useState<string[]>([]);
+
+  // Time-Specific Tasks Form State
+  const [formTimeSpecificTasks, setFormTimeSpecificTasks] = useState<TimeSpecificTask[]>([]);
+  const [isAddingTaskInline, setIsAddingTaskInline] = useState(false);
+  const [editingTaskIndex, setEditingTaskIndex] = useState<number | null>(null);
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskCategory, setTaskCategory] = useState<TimeSpecificTaskCategory>('amenity_lock');
+  const [taskScheduledTime, setTaskScheduledTime] = useState('22:00');
+  const [taskLocationZone, setTaskLocationZone] = useState('');
+  const [taskInstructions, setTaskInstructions] = useState('');
+  const [taskFrequency, setTaskFrequency] = useState<TaskScheduleFrequency>('daily');
+  const [taskLeadTimeMinutes, setTaskLeadTimeMinutes] = useState(15);
+  const [taskGracePeriodMinutes, setTaskGracePeriodMinutes] = useState(20);
+  const [taskPriority, setTaskPriority] = useState<TaskPriority>('priority_sop');
+  const [taskRequirePhoto, setTaskRequirePhoto] = useState(true);
+  const [taskRequireGps, setTaskRequireGps] = useState(true);
+
+  // Quick Preset Templates for Time-Sensitive Tasks
+  const TASK_PRESETS = [
+    {
+      title: 'Pool & Hot Tub Lockout',
+      category: 'amenity_lock' as TimeSpecificTaskCategory,
+      scheduledTime: '22:00',
+      locationZone: 'Central Pool Deck & Spa Gate',
+      instructions: 'Evacuate all residents and guests. Inspect for broken glass or debris. Latch and padlock double access gates. Log water perimeter check.',
+      frequency: 'daily' as TaskScheduleFrequency,
+      priority: 'mandatory_sla' as TaskPriority,
+      leadTimeMinutes: 15,
+      gracePeriodMinutes: 15,
+      requirePhoto: true,
+      requireGps: true
+    },
+    {
+      title: 'Laundry Room Night Closure',
+      category: 'amenity_lock' as TimeSpecificTaskCategory,
+      scheduledTime: '21:00',
+      locationZone: 'Building A & B Resident Laundry Rooms',
+      instructions: 'Verify all dryer cycles are complete and no unattended laundry remains. Turn off supplemental lighting and deadbolt entrance doors.',
+      frequency: 'daily' as TaskScheduleFrequency,
+      priority: 'priority_sop' as TaskPriority,
+      leadTimeMinutes: 15,
+      gracePeriodMinutes: 20,
+      requirePhoto: true,
+      requireGps: false
+    },
+    {
+      title: 'Rooftop Lounge & Amenity Deck Closure',
+      category: 'amenity_lock' as TimeSpecificTaskCategory,
+      scheduledTime: '23:00',
+      locationZone: 'Level 24 Sky Lounge & Terrace',
+      instructions: 'Clear BBQ grill patio, verify gas valves are turned off, secure fire pit covers, and lock emergency stairwell access doors.',
+      frequency: 'daily' as TaskScheduleFrequency,
+      priority: 'mandatory_sla' as TaskPriority,
+      leadTimeMinutes: 20,
+      gracePeriodMinutes: 15,
+      requirePhoto: true,
+      requireGps: true
+    },
+    {
+      title: 'Perimeter Gate & Courtyard Lockup',
+      category: 'access_control' as TimeSpecificTaskCategory,
+      scheduledTime: '20:00',
+      locationZone: 'North & South Vehicular Security Gates',
+      instructions: 'Arm automated slider gates to keycard-only mode. Padlock pedestrian side gates. Test strobe warning lights.',
+      frequency: 'daily' as TaskScheduleFrequency,
+      priority: 'mandatory_sla' as TaskPriority,
+      leadTimeMinutes: 15,
+      gracePeriodMinutes: 20,
+      requirePhoto: true,
+      requireGps: true
+    },
+    {
+      title: 'Fitness Center & Amenities Morning Unlock',
+      category: 'amenity_lock' as TimeSpecificTaskCategory,
+      scheduledTime: '06:00',
+      locationZone: 'Ground Floor Fitness Center',
+      instructions: 'Unlock main entrance double doors, verify AC is active, turn on ambient lights, and inspect emergency AED station.',
+      frequency: 'daily' as TaskScheduleFrequency,
+      priority: 'priority_sop' as TaskPriority,
+      leadTimeMinutes: 15,
+      gracePeriodMinutes: 30,
+      requirePhoto: false,
+      requireGps: true
+    }
+  ];
+
+  const resetTaskForm = () => {
+    setTaskTitle('');
+    setTaskCategory('amenity_lock');
+    setTaskScheduledTime('22:00');
+    setTaskLocationZone('');
+    setTaskInstructions('');
+    setTaskFrequency('daily');
+    setTaskLeadTimeMinutes(15);
+    setTaskGracePeriodMinutes(20);
+    setTaskPriority('priority_sop');
+    setTaskRequirePhoto(true);
+    setTaskRequireGps(true);
+    setIsAddingTaskInline(false);
+    setEditingTaskIndex(null);
+  };
+
+  const handleApplyPreset = (preset: typeof TASK_PRESETS[0]) => {
+    setTaskTitle(preset.title);
+    setTaskCategory(preset.category);
+    setTaskScheduledTime(preset.scheduledTime);
+    setTaskLocationZone(preset.locationZone);
+    setTaskInstructions(preset.instructions);
+    setTaskFrequency(preset.frequency);
+    setTaskPriority(preset.priority);
+    setTaskLeadTimeMinutes(preset.leadTimeMinutes);
+    setTaskGracePeriodMinutes(preset.gracePeriodMinutes);
+    setTaskRequirePhoto(preset.requirePhoto);
+    setTaskRequireGps(preset.requireGps);
+    setIsAddingTaskInline(true);
+  };
+
+  const handleSaveInlineTask = () => {
+    if (!taskTitle.trim() || !taskScheduledTime.trim()) {
+      showToast('Validation Error', 'Task title and scheduled time are required.', 'warning');
+      return;
+    }
+
+    const newTask: TimeSpecificTask = {
+      id: editingTaskIndex !== null ? formTimeSpecificTasks[editingTaskIndex].id : `task-${Date.now().toString().slice(-6)}`,
+      siteId: editingSiteId || 'new-site',
+      title: taskTitle.trim(),
+      category: taskCategory,
+      scheduledTime: taskScheduledTime.trim(),
+      locationZone: taskLocationZone.trim() || 'General Property',
+      instructions: taskInstructions.trim() || 'Perform visual inspection and verify secure status.',
+      frequency: taskFrequency,
+      leadTimeMinutes: Number(taskLeadTimeMinutes) || 15,
+      gracePeriodMinutes: Number(taskGracePeriodMinutes) || 20,
+      priority: taskPriority,
+      requirePhoto: taskRequirePhoto,
+      requireGps: taskRequireGps,
+      isActive: true,
+      createdAt: editingTaskIndex !== null ? formTimeSpecificTasks[editingTaskIndex].createdAt : new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    if (editingTaskIndex !== null) {
+      setFormTimeSpecificTasks((prev) =>
+        prev.map((t, idx) => (idx === editingTaskIndex ? newTask : t))
+      );
+      showToast('Task Updated', `"${newTask.title}" updated in site configuration.`, 'info');
+    } else {
+      setFormTimeSpecificTasks((prev) => [...prev, newTask]);
+      showToast('Task Added', `"${newTask.title}" added at ${newTask.scheduledTime}.`, 'success');
+    }
+
+    resetTaskForm();
+  };
+
+  const handleEditInlineTask = (index: number) => {
+    const task = formTimeSpecificTasks[index];
+    if (!task) return;
+    setEditingTaskIndex(index);
+    setTaskTitle(task.title);
+    setTaskCategory(task.category);
+    setTaskScheduledTime(task.scheduledTime);
+    setTaskLocationZone(task.locationZone);
+    setTaskInstructions(task.instructions);
+    setTaskFrequency(task.frequency);
+    setTaskLeadTimeMinutes(task.leadTimeMinutes || 15);
+    setTaskGracePeriodMinutes(task.gracePeriodMinutes || 20);
+    setTaskPriority(task.priority);
+    setTaskRequirePhoto(!!task.requirePhoto);
+    setTaskRequireGps(!!task.requireGps);
+    setIsAddingTaskInline(true);
+  };
+
+  const handleDeleteInlineTask = (index: number) => {
+    setFormTimeSpecificTasks((prev) => prev.filter((_, idx) => idx !== index));
+    showToast('Task Removed', 'Task removed from site configuration.', 'info');
+  };
+
+  const handleToggleTaskActive = (index: number) => {
+    setFormTimeSpecificTasks((prev) =>
+      prev.map((t, idx) => (idx === index ? { ...t, isActive: !t.isActive } : t))
+    );
+  };
 
   // Master Certifications Pool
   const baseCertifications = [
@@ -331,6 +526,8 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
     setFormGeofenceRadiusMeters(150);
     setFormRequireGeofence(true);
     setFormGeofenceStrictEnforce(false);
+    setFormTimeSpecificTasks([]);
+    resetTaskForm();
     setIsEditModalOpen(true);
   };
 
@@ -368,6 +565,8 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
     setFormGeofenceRadiusMeters(site.geofenceRadiusMeters ?? 150);
     setFormRequireGeofence(site.requireGeofence ?? true);
     setFormGeofenceStrictEnforce(site.geofenceStrictEnforce ?? false);
+    setFormTimeSpecificTasks(site.timeSpecificTasks ? [...site.timeSpecificTasks] : []);
+    resetTaskForm();
     setIsEditModalOpen(true);
   };
 
@@ -440,7 +639,8 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
       longitude: typeof formLongitude === 'number' ? formLongitude : -122.3321,
       geofenceRadiusMeters: Number(formGeofenceRadiusMeters) || 150,
       requireGeofence: formRequireGeofence,
-      geofenceStrictEnforce: formGeofenceStrictEnforce
+      geofenceStrictEnforce: formGeofenceStrictEnforce,
+      timeSpecificTasks: formTimeSpecificTasks
     };
 
     if (editingSiteId) {
@@ -1408,6 +1608,33 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                       </div>
                     )}
 
+                    {/* Time-Specific Scheduled Tasks Snippet */}
+                    {site.timeSpecificTasks && site.timeSpecificTasks.length > 0 && (
+                      <div className="bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-900/50 rounded-lg p-2 text-[11px] space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-1 text-[10px] font-bold text-purple-800 dark:text-purple-300">
+                            <Timer className="w-3 h-3 text-purple-600" />
+                            Timed Amenity SOPs ({site.timeSpecificTasks.length}):
+                          </span>
+                          <span className="text-[10px] font-mono font-bold text-purple-700 dark:text-purple-300">
+                            {site.timeSpecificTasks[0].scheduledTime}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {site.timeSpecificTasks.map((t, idx) => (
+                            <span
+                              key={idx}
+                              className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-800 border border-purple-200 dark:border-purple-800 text-[10px] font-semibold text-purple-900 dark:text-purple-200 flex items-center gap-1 shadow-2xs"
+                              title={`${t.title} (${t.scheduledTime}) - ${t.locationZone}`}
+                            >
+                              <span className="font-mono text-purple-600 dark:text-purple-400 font-bold">{t.scheduledTime}</span>
+                              <span className="truncate max-w-[120px]">{t.title}</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Validation Data Quality Warning Box if Issues Found */}
                     {!validation.isValid && (
                       <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 space-y-1.5">
@@ -1844,6 +2071,81 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                     <span className="font-bold text-amber-700 dark:text-amber-400">Access Gate & Entry Procedures: </span>
                     <span className="text-slate-600 dark:text-slate-300">{viewingDossierSite.accessGateNotes}</span>
                   </div>
+                )}
+              </div>
+
+              {/* Time-Specific Tasks & Amenity Lockout Schedule in Dossier */}
+              <div className="bg-purple-50/50 dark:bg-purple-950/20 p-4 rounded-xl border border-purple-200 dark:border-purple-900/50 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-slate-900 dark:text-white text-xs flex items-center gap-1.5">
+                    <Timer className="w-4 h-4 text-purple-600" />
+                    Time-Specific Tasks & Amenity Lockouts ({viewingDossierSite.timeSpecificTasks?.length || 0})
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const site = viewingDossierSite;
+                      setViewingDossierSite(null);
+                      handleOpenEditModal(site);
+                    }}
+                    className="text-purple-600 dark:text-purple-400 hover:underline text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                  >
+                    <Edit3 className="w-3 h-3" /> Manage Task Schedule &rarr;
+                  </button>
+                </div>
+
+                {viewingDossierSite.timeSpecificTasks && viewingDossierSite.timeSpecificTasks.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                    {viewingDossierSite.timeSpecificTasks.map((task) => (
+                      <div
+                        key={task.id}
+                        className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-purple-100 dark:border-purple-900/40 space-y-1.5 shadow-2xs"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-purple-600 text-white">
+                              {task.scheduledTime}
+                            </span>
+                            <h5 className="font-bold text-slate-900 dark:text-white text-xs">{task.title}</h5>
+                          </div>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${
+                            task.priority === 'mandatory_sla'
+                              ? 'bg-rose-50 text-rose-700 border-rose-200'
+                              : 'bg-blue-50 text-blue-700 border-blue-200'
+                          }`}>
+                            {task.priority === 'mandatory_sla' ? 'Mandatory SLA' : 'Priority SOP'}
+                          </span>
+                        </div>
+
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                          <MapPin className="w-3 h-3 text-rose-500 shrink-0" />
+                          <span>{task.locationZone}</span>
+                          <span>•</span>
+                          <span>{task.frequency === 'daily' ? 'Daily' : task.frequency === 'weekdays_only' ? 'Weekdays' : 'Weekends'}</span>
+                        </p>
+
+                        <p className="text-[11px] text-slate-600 dark:text-slate-300 italic bg-slate-50 dark:bg-slate-800 p-2 rounded border border-slate-100 dark:border-slate-700">
+                          "{task.instructions}"
+                        </p>
+
+                        <div className="flex items-center justify-between pt-1 text-[10px] text-slate-400">
+                          <span>Advance: {task.leadTimeMinutes || 15}m alert</span>
+                          <button
+                            type="button"
+                            onClick={() => triggerTestTaskAlert(task, 'due_now')}
+                            className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 rounded font-bold flex items-center gap-1 cursor-pointer"
+                          >
+                            <Play className="w-2.5 h-2.5 text-amber-600 fill-amber-600" />
+                            <span>Test Alert</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 italic bg-white dark:bg-slate-900 p-3 rounded-lg border border-purple-100 dark:border-purple-900/30">
+                    No time-specific tasks configured for this site. Edit facility to add automated pool closures, laundry locks, or timed sweeps.
+                  </p>
                 )}
               </div>
 
@@ -2686,6 +2988,347 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                       </span>
                     </label>
                   </div>
+                </div>
+              </div>
+
+              {/* Section 6: Time-Specific Tasks & Amenity Lockouts */}
+              <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                      <Timer className="w-3.5 h-3.5 text-purple-500" />
+                      <span>6. Time-Specific Tasks & Amenity Lockouts</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      Automate scheduled notifications in the Guard App for time-sensitive services (e.g. Pool & laundry locks, amenities closures).
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-mono text-purple-600 dark:text-purple-400 font-bold bg-purple-50 dark:bg-purple-950/40 px-2 py-0.5 rounded border border-purple-300 dark:border-purple-800">
+                    {formTimeSpecificTasks.length} Tasks Scheduled
+                  </span>
+                </div>
+
+                {/* Quick Presets Bar */}
+                <div className="p-3 bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/70 dark:border-purple-900/40 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-semibold text-purple-900 dark:text-purple-200 flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                      Quick Amenity SOP Templates:
+                    </span>
+                    {!isAddingTaskInline && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          resetTaskForm();
+                          setIsAddingTaskInline(true);
+                        }}
+                        className="px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                      >
+                        <Plus className="w-3 h-3" /> Custom Task
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {TASK_PRESETS.map((preset, pIdx) => (
+                      <button
+                        key={pIdx}
+                        type="button"
+                        onClick={() => handleApplyPreset(preset)}
+                        className="px-2 py-1 bg-white dark:bg-slate-800 hover:bg-purple-100 dark:hover:bg-purple-900/40 border border-purple-200 dark:border-purple-800 rounded-lg text-[10px] font-medium text-slate-700 dark:text-slate-300 transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
+                      >
+                        <Clock className="w-2.5 h-2.5 text-purple-500" />
+                        <span>{preset.title}</span>
+                        <span className="font-mono text-purple-600 font-bold">({preset.scheduledTime})</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Inline Add / Edit Task Sub-Form */}
+                {isAddingTaskInline && (
+                  <div className="p-4 bg-slate-50 dark:bg-slate-800/90 border-2 border-purple-400 dark:border-purple-700 rounded-xl space-y-3 animate-in fade-in-50 duration-150 shadow-sm">
+                    <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-2">
+                      <span className="font-bold text-xs text-purple-700 dark:text-purple-300 flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5" />
+                        {editingTaskIndex !== null ? 'Edit Scheduled Task' : 'Configure New Time-Specific Task'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={resetTaskForm}
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      <div className="sm:col-span-2">
+                        <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">
+                          Task Name / Operation Title *
+                        </label>
+                        <input
+                          type="text"
+                          value={taskTitle}
+                          onChange={(e) => setTaskTitle(e.target.value)}
+                          placeholder="e.g. Pool & Spa Night Lockout"
+                          className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">
+                          Scheduled Time (24-Hour) *
+                        </label>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="time"
+                            value={taskScheduledTime}
+                            onChange={(e) => setTaskScheduledTime(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white font-mono text-xs font-bold"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      <div>
+                        <label className="block text-slate-700 dark:text-slate-300 font-medium mb-1">
+                          Category
+                        </label>
+                        <select
+                          value={taskCategory}
+                          onChange={(e) => setTaskCategory(e.target.value as TimeSpecificTaskCategory)}
+                          className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-xs"
+                        >
+                          <option value="amenity_lock">Amenity Lock (Pool/Spa/Gym)</option>
+                          <option value="access_control">Access Control / Gate Arming</option>
+                          <option value="perimeter_curfew">Perimeter Curfew / Gate</option>
+                          <option value="hazard_inspection">Hazard / Compactor Inspection</option>
+                          <option value="noise_sweep">Noise / Courtyard Sweep</option>
+                          <option value="lighting_check">Lighting & Mechanical Verification</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-700 dark:text-slate-300 font-medium mb-1">
+                          Location / Zone / Room *
+                        </label>
+                        <input
+                          type="text"
+                          value={taskLocationZone}
+                          onChange={(e) => setTaskLocationZone(e.target.value)}
+                          placeholder="e.g. Pool Deck West Gate & Laundry Wing"
+                          className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-700 dark:text-slate-300 font-medium mb-1">
+                          Frequency
+                        </label>
+                        <select
+                          value={taskFrequency}
+                          onChange={(e) => setTaskFrequency(e.target.value as TaskScheduleFrequency)}
+                          className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-xs"
+                        >
+                          <option value="daily">Daily (Every Day)</option>
+                          <option value="weekdays_only">Weekdays Only (Mon-Fri)</option>
+                          <option value="weekends_only">Weekends Only (Sat-Sun)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 dark:text-slate-300 font-medium mb-1">
+                        Guard Step-by-Step SOP Instructions *
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={taskInstructions}
+                        onChange={(e) => setTaskInstructions(e.target.value)}
+                        placeholder="Evacuate residents from pool/hot tub. Lock padlocks on gates. Turn off amenity lighting. Deadbolt laundry room door."
+                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-xs"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                      <div>
+                        <label className="block text-slate-600 dark:text-slate-400 font-medium mb-0.5 text-[10px]">
+                          Advance Alert (Minutes)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={60}
+                          value={taskLeadTimeMinutes}
+                          onChange={(e) => setTaskLeadTimeMinutes(Number(e.target.value))}
+                          className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-600 dark:text-slate-400 font-medium mb-0.5 text-[10px]">
+                          SLA Grace (Minutes)
+                        </label>
+                        <input
+                          type="number"
+                          min={5}
+                          max={120}
+                          value={taskGracePeriodMinutes}
+                          onChange={(e) => setTaskGracePeriodMinutes(Number(e.target.value))}
+                          className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-600 dark:text-slate-400 font-medium mb-0.5 text-[10px]">
+                          SLA Priority
+                        </label>
+                        <select
+                          value={taskPriority}
+                          onChange={(e) => setTaskPriority(e.target.value as TaskPriority)}
+                          className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs"
+                        >
+                          <option value="routine">Routine</option>
+                          <option value="priority_sop">Priority SOP</option>
+                          <option value="mandatory_sla">Mandatory SLA</option>
+                        </select>
+                      </div>
+                      <div className="flex flex-col justify-end space-y-1">
+                        <label className="flex items-center gap-1.5 text-[10px] text-slate-700 dark:text-slate-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={taskRequirePhoto}
+                            onChange={(e) => setTaskRequirePhoto(e.target.checked)}
+                            className="rounded text-purple-600 focus:ring-purple-500 w-3.5 h-3.5"
+                          />
+                          <span>Require Photo Proof</span>
+                        </label>
+                        <label className="flex items-center gap-1.5 text-[10px] text-slate-700 dark:text-slate-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={taskRequireGps}
+                            onChange={(e) => setTaskRequireGps(e.target.checked)}
+                            className="rounded text-purple-600 focus:ring-purple-500 w-3.5 h-3.5"
+                          />
+                          <span>Require On-Site GPS</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                      <button
+                        type="button"
+                        onClick={resetTaskForm}
+                        className="px-3 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveInlineTask}
+                        className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-bold shadow-2xs"
+                      >
+                        {editingTaskIndex !== null ? 'Save Changes' : 'Add Task to Facility'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Configured Tasks List */}
+                <div className="space-y-2">
+                  {formTimeSpecificTasks.map((task, tIdx) => (
+                    <div
+                      key={task.id || tIdx}
+                      className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all ${
+                        task.isActive
+                          ? 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 shadow-2xs'
+                          : 'bg-slate-100/70 dark:bg-slate-800/40 border-slate-200/60 dark:border-slate-800 opacity-60'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2.5 flex-1">
+                        <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-purple-100 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-purple-900 dark:text-purple-200 shrink-0">
+                          <Clock className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                          <span className="font-mono text-xs font-bold mt-0.5">{task.scheduledTime}</span>
+                        </div>
+
+                        <div className="space-y-1 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-slate-900 dark:text-white text-xs">{task.title}</span>
+                            <span className="text-[10px] font-semibold px-2 py-0.2 rounded-full bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                              {task.category === 'amenity_lock' ? 'Pool / Laundry Lock' : task.category === 'access_control' ? 'Access Control' : 'Timed SOP'}
+                            </span>
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.2 rounded border ${
+                              task.priority === 'mandatory_sla' ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200' : 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200'
+                            }`}>
+                              {task.priority === 'mandatory_sla' ? 'Mandatory SLA' : 'Priority SOP'}
+                            </span>
+                            {!task.isActive && (
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 font-bold">
+                                PAUSED
+                              </span>
+                            )}
+                          </div>
+
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                            <MapPin className="w-3 h-3 text-rose-500 shrink-0" />
+                            <span>{task.locationZone}</span>
+                            <span>•</span>
+                            <span>{task.frequency === 'daily' ? 'Daily' : task.frequency === 'weekdays_only' ? 'Weekdays' : 'Weekends'}</span>
+                            {task.requirePhoto && <span>• 📸 Photo Req</span>}
+                            {task.requireGps && <span>• 📍 GPS Req</span>}
+                          </p>
+
+                          <p className="text-[11px] text-slate-600 dark:text-slate-300 italic bg-slate-50 dark:bg-slate-900/50 p-1.5 rounded border border-slate-100 dark:border-slate-800">
+                            "{task.instructions}"
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                        <button
+                          type="button"
+                          onClick={() => triggerTestTaskAlert(task, 'due_now')}
+                          className="px-2 py-1 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 rounded text-[10px] font-semibold flex items-center gap-1 transition-colors"
+                          title="Trigger immediate test notification with sound on Guard App"
+                        >
+                          <Play className="w-3 h-3 text-amber-600 fill-amber-600" />
+                          <span>Test Alert</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleTaskActive(tIdx)}
+                          className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded"
+                          title={task.isActive ? 'Pause task schedule' : 'Activate task schedule'}
+                        >
+                          {task.isActive ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : <Clock className="w-4 h-4 text-slate-400" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleEditInlineTask(tIdx)}
+                          className="p-1.5 text-slate-400 hover:text-blue-600 rounded"
+                          title="Edit Task parameters"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteInlineTask(tIdx)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 rounded"
+                          title="Delete Task"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {formTimeSpecificTasks.length === 0 && !isAddingTaskInline && (
+                    <div className="p-4 text-center text-slate-400 text-xs border border-dashed border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-800/20">
+                      <Timer className="w-5 h-5 mx-auto mb-1 text-slate-300 dark:text-slate-600" />
+                      No time-specific tasks configured for this site yet. Click a template above to add Pool or Laundry Lockouts.
+                    </div>
+                  )}
                 </div>
               </div>
 

@@ -743,59 +743,120 @@ export const CallsForServicePanel: React.FC = () => {
                   )}
 
                   {/* ROVER FLEET ASSIGNMENT & INTERCEPT STATUS BOX */}
-                  {call.assignedRoverUnit || call.assignedRoverId ? (
-                    <div className="bg-gradient-to-r from-slate-900 via-cyan-950/80 to-slate-900 border border-cyan-500/50 rounded-xl p-3 text-white space-y-2 shadow-sm">
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-2.5">
-                          <div className="p-2 bg-cyan-600/30 text-cyan-400 rounded-lg border border-cyan-400/40 shrink-0">
-                            <Car className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-[10px] font-black uppercase tracking-wider text-cyan-300">
-                                Assigned Rover:
-                              </span>
-                              <span className="bg-cyan-500 text-slate-950 text-[11px] font-mono font-black px-2 py-0.5 rounded-full shadow-xs">
-                                {call.assignedRoverUnit || 'ROVER FLEET'}
-                              </span>
-                              {call.assignedRovingGroup && (
-                                <span className="bg-cyan-950 text-cyan-200 border border-cyan-700/80 text-[10px] font-bold px-1.5 py-0.5 rounded">
-                                  {call.assignedRovingGroup}
-                                </span>
-                              )}
+                  {call.assignedRoverUnit || call.assignedRoverId ? (() => {
+                    const matchedRover = rovers.find(r => r.id === call.assignedRoverId || r.callSign === call.assignedRoverUnit);
+                    const roverStatus = matchedRover?.status || 'intercepting';
+                    
+                    return (
+                      <div className="bg-gradient-to-r from-slate-900 via-cyan-950/80 to-slate-900 border border-cyan-500/50 rounded-xl p-3 text-white space-y-2.5 shadow-sm">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-2 bg-cyan-600/30 text-cyan-400 rounded-lg border border-cyan-400/40 shrink-0">
+                              <Car className="w-4 h-4" />
                             </div>
-                            <p className="text-xs font-bold text-slate-100 mt-0.5">
-                              Responding Officer: <strong>{call.assignedGuardName || 'Roving Officer'}</strong> {call.assignedGuardBadge ? `(${call.assignedGuardBadge})` : ''}
-                            </p>
+                            <div>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[10px] font-black uppercase tracking-wider text-cyan-300">
+                                  Dispatched Rover Unit:
+                                </span>
+                                <span className="bg-cyan-500 text-slate-950 text-[11px] font-mono font-black px-2 py-0.5 rounded-full shadow-xs">
+                                  {call.assignedRoverUnit || matchedRover?.callSign || 'ROVER FLEET'}
+                                </span>
+                                {call.assignedRovingGroup && (
+                                  <span className="bg-cyan-950 text-cyan-200 border border-cyan-700/80 text-[10px] font-bold px-1.5 py-0.5 rounded">
+                                    {call.assignedRovingGroup}
+                                  </span>
+                                )}
+
+                                {/* Visual Rover Assignment & Status Indicator */}
+                                <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border ${
+                                  roverStatus === 'intercepting' || call.status === 'dispatched'
+                                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/60 animate-pulse'
+                                    : call.status === 'en_route'
+                                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/60'
+                                    : roverStatus === 'dwelling' || call.status === 'on_scene'
+                                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/60'
+                                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60'
+                                }`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${
+                                    roverStatus === 'intercepting' ? 'bg-rose-400 animate-ping' : 'bg-emerald-400'
+                                  }`} />
+                                  <span>
+                                    {roverStatus === 'intercepting' 
+                                      ? '🚨 CFS Priority Intercept' 
+                                      : call.status === 'en_route'
+                                      ? '🚙 En Route to Incident'
+                                      : roverStatus === 'dwelling'
+                                      ? '🏢 On Scene Dwelling'
+                                      : '📡 Active Patrol'}
+                                  </span>
+                                </span>
+                              </div>
+                              
+                              <p className="text-xs font-bold text-slate-100 mt-1 flex items-center gap-1.5">
+                                <User className="w-3 h-3 text-cyan-400" />
+                                <span>Responding Officer: <strong>{call.assignedGuardName || matchedRover?.assignedGuardName || 'Roving Officer'}</strong> {call.assignedGuardBadge || matchedRover?.assignedGuardBadge ? `(${call.assignedGuardBadge || matchedRover?.assignedGuardBadge})` : ''}</span>
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span className="bg-rose-950 text-rose-200 border border-rose-500/80 text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1">
+                              <Zap className="w-3 h-3 text-amber-400 animate-pulse" />
+                              ⚡ Stop #1 in Route Queue
+                            </span>
+                            {!isCleared && !isCancelled && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setReassigningCallId(call.id);
+                                  setReassignRoverId(call.assignedRoverId || 'nearest');
+                                }}
+                                className="px-2 py-1 bg-cyan-900/80 hover:bg-cyan-800 text-cyan-200 text-[10px] font-bold rounded-lg border border-cyan-600/60 cursor-pointer transition-colors"
+                              >
+                                Reassign
+                              </button>
+                            )}
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
-                          <span className="bg-rose-950 text-rose-200 border border-rose-500/80 text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1">
-                            <Zap className="w-3 h-3 text-amber-400 animate-pulse" />
-                            ⚡ Stop #1 in Route Queue
-                          </span>
-                          {!isCleared && !isCancelled && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setReassigningCallId(call.id);
-                                setReassignRoverId(call.assignedRoverId || 'nearest');
-                              }}
-                              className="px-2 py-1 bg-cyan-900/80 hover:bg-cyan-800 text-cyan-200 text-[10px] font-bold rounded-lg border border-cyan-600/60 cursor-pointer transition-colors"
-                            >
-                              Reassign
-                            </button>
-                          )}
+                        {/* Live Rover Telemetry Grid */}
+                        {matchedRover && (
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[10px] font-mono bg-slate-950/80 p-2 rounded-lg border border-cyan-900/60">
+                            <div>
+                              <span className="text-slate-400 block">Current Location:</span>
+                              <span className="font-bold text-cyan-200 truncate block">
+                                {matchedRover.currentSiteName || 'Downtown Sector'}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 block">Speed / Telemetry:</span>
+                              <span className="font-bold text-white">
+                                {matchedRover.currentCoords?.speedKmh ? Math.round(matchedRover.currentCoords.speedKmh * 0.621371) : 18} MPH • Heading {matchedRover.currentCoords?.heading || 'NW'}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 block">Fleet Power:</span>
+                              <span className="font-bold text-emerald-400">
+                                🔋 {matchedRover.batteryLevelPct || matchedRover.fuelLevelPct || 88}% Level
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 block">Route Sector:</span>
+                              <span className="font-bold text-cyan-300">
+                                {matchedRover.rovingGroup}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="p-2 bg-slate-950/70 rounded-lg border border-cyan-900/60 text-[11px] text-cyan-200/90 font-mono flex items-center gap-2">
+                          <Navigation className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                          <span>Dynamic Reroute Active: Priority stop injected at index #0 of {call.assignedRoverUnit || matchedRover?.callSign}&apos;s live route sequence.</span>
                         </div>
                       </div>
-
-                      <div className="p-2 bg-slate-950/70 rounded-lg border border-cyan-900/60 text-[11px] text-cyan-200/90 font-mono flex items-center gap-2">
-                        <Navigation className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                        <span>Dynamic Reroute Active: Intercept stop priority pushed to {call.assignedRoverUnit}&apos;s route. Subsequent circuit rounds shifted automatically.</span>
-                      </div>
-                    </div>
-                  ) : !isCleared && !isCancelled ? (
+                    );
+                  })() : !isCleared && !isCancelled ? (
                     <div className="bg-slate-50 dark:bg-slate-950/50 border border-dashed border-slate-300 dark:border-slate-700/80 rounded-xl p-2.5 flex items-center justify-between gap-2 text-xs">
                       <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
                         <Car className="w-4 h-4 text-slate-400 shrink-0" />

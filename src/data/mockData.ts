@@ -12,7 +12,11 @@ import {
   GuardPerformanceStats,
   SiteProfile,
   CallForService,
-  ScheduledShift
+  ScheduledShift,
+  TimeSpecificTask,
+  TaskCompletionLog,
+  ShiftClaimRequest,
+  StandardShiftReport
 } from '../types/shift';
 
 export const OPS_DISPATCH_PHONE = '+1 (800) 555-0199';
@@ -48,7 +52,45 @@ export const INITIAL_SITES: SiteProfile[] = [
     longitude: -122.3533,
     geofenceRadiusMeters: 100,
     requireGeofence: true,
-    geofenceStrictEnforce: false
+    geofenceStrictEnforce: false,
+    timeSpecificTasks: [
+      {
+        id: 'task-p7-01',
+        siteId: 'site-1',
+        siteName: 'Port Authority - Pier 7',
+        title: 'Berth 7 North Security Gate Padlock & Floodlight Audit',
+        category: 'access_control',
+        scheduledTime: '20:00',
+        locationZone: 'Berth 7 North Perimeter Gate',
+        instructions: 'Verify all container staging padlocks are engaged and 4 high-mast floodlight banks are illuminated. Log any blown bulbs in shift log.',
+        frequency: 'daily',
+        leadTimeMinutes: 15,
+        gracePeriodMinutes: 20,
+        priority: 'mandatory_sla',
+        requirePhoto: true,
+        requireGps: true,
+        isActive: true,
+        tags: ['Access Control', 'Lighting', 'Berth 7']
+      },
+      {
+        id: 'task-p7-02',
+        siteId: 'site-1',
+        siteName: 'Port Authority - Pier 7',
+        title: 'Dockmaster Chemical Locker & Fuel Station Lockout',
+        category: 'hazard_inspection',
+        scheduledTime: '22:00',
+        locationZone: 'South Maintenance Dock #4',
+        instructions: 'Check that hazardous material lockers are deadbolted. Secure emergency shutoff valves on marine diesel pumps.',
+        frequency: 'daily',
+        leadTimeMinutes: 15,
+        gracePeriodMinutes: 15,
+        priority: 'mandatory_sla',
+        requirePhoto: false,
+        requireGps: true,
+        isActive: true,
+        tags: ['Hazmat', 'Fuel Station']
+      }
+    ]
   },
   {
     id: 'site-2',
@@ -80,7 +122,63 @@ export const INITIAL_SITES: SiteProfile[] = [
     longitude: -122.1950,
     geofenceRadiusMeters: 120,
     requireGeofence: true,
-    geofenceStrictEnforce: false
+    geofenceStrictEnforce: false,
+    timeSpecificTasks: [
+      {
+        id: 'task-chq-01',
+        siteId: 'site-2',
+        siteName: 'Corporate HQ - Main Tower',
+        title: 'Executive Fitness Center, Sauna & Locker Room Lockup',
+        category: 'amenity_lock',
+        scheduledTime: '21:00',
+        locationZone: 'Level 4 Wellness Suite',
+        instructions: 'Clear any remaining occupants from sauna, steam room, and weight gym. Secure exterior badge-access glass door and turn off overhead sound system.',
+        frequency: 'daily',
+        leadTimeMinutes: 15,
+        gracePeriodMinutes: 15,
+        priority: 'mandatory_sla',
+        requirePhoto: true,
+        requireGps: true,
+        isActive: true,
+        tags: ['Amenity', 'Fitness', 'Sauna']
+      },
+      {
+        id: 'task-chq-02',
+        siteId: 'site-2',
+        siteName: 'Corporate HQ - Main Tower',
+        title: 'Courtyard Terrace BBQ Gas Lines & Pergola Lockout',
+        category: 'amenity_lock',
+        scheduledTime: '22:00',
+        locationZone: 'East Plaza Courtyard',
+        instructions: 'Shut off main propane line valves under outdoor BBQ kitchens. Apply Master padlock #10. Secure patio cushion storage bins.',
+        frequency: 'daily',
+        leadTimeMinutes: 15,
+        gracePeriodMinutes: 15,
+        priority: 'priority',
+        requirePhoto: false,
+        requireGps: true,
+        isActive: true,
+        tags: ['Courtyard', 'Fire Safety', 'Amenity']
+      },
+      {
+        id: 'task-chq-03',
+        siteId: 'site-2',
+        siteName: 'Corporate HQ - Main Tower',
+        title: 'Floor 12 C-Suite Executive Corridor Access Lockup',
+        category: 'access_control',
+        scheduledTime: '20:30',
+        locationZone: 'Floor 12 West Wing',
+        instructions: 'Verify electronic maglocks on Boardroom and C-suite suites. Arm zone 12 partition on the Honeywell alarm panel.',
+        frequency: 'weekdays',
+        leadTimeMinutes: 10,
+        gracePeriodMinutes: 20,
+        priority: 'mandatory_sla',
+        requirePhoto: false,
+        requireGps: false,
+        isActive: true,
+        tags: ['Executive', 'Access Control']
+      }
+    ]
   },
   {
     id: 'site-3',
@@ -112,7 +210,45 @@ export const INITIAL_SITES: SiteProfile[] = [
     longitude: -122.3250,
     geofenceRadiusMeters: 150,
     requireGeofence: true,
-    geofenceStrictEnforce: false
+    geofenceStrictEnforce: false,
+    timeSpecificTasks: [
+      {
+        id: 'task-wmc-01',
+        siteId: 'site-3',
+        siteName: 'West Medical Center - Emergency Dept',
+        title: 'Emergency Dept Ambulance Bay Overhead Door & Barrier Check',
+        category: 'access_control',
+        scheduledTime: '21:00',
+        locationZone: 'Ambulance Bay Gate 2',
+        instructions: 'Confirm high-speed roll-up doors are operational and clear of unauthorized vehicles. Test keycard bypass scanner.',
+        frequency: 'daily',
+        leadTimeMinutes: 15,
+        gracePeriodMinutes: 20,
+        priority: 'mandatory_sla',
+        requirePhoto: true,
+        requireGps: true,
+        isActive: true,
+        tags: ['Ambulance Bay', 'Access Control']
+      },
+      {
+        id: 'task-wmc-02',
+        siteId: 'site-3',
+        siteName: 'West Medical Center - Emergency Dept',
+        title: 'Pharmacy Storage & Narcotics Vault Perimeter Inspection',
+        category: 'hazard_inspection',
+        scheduledTime: '23:30',
+        locationZone: 'Level B1 Pharmacy Staging',
+        instructions: 'Verify dual-badge reader is armed on schedule. Inspect emergency eyewash station and check that safety exits are unobstructed.',
+        frequency: 'daily',
+        leadTimeMinutes: 15,
+        gracePeriodMinutes: 15,
+        priority: 'mandatory_sla',
+        requirePhoto: true,
+        requireGps: true,
+        isActive: true,
+        tags: ['Pharmacy', 'Vault Audit']
+      }
+    ]
   },
   {
     id: 'site-4',
@@ -144,7 +280,27 @@ export const INITIAL_SITES: SiteProfile[] = [
     longitude: -122.3088,
     geofenceRadiusMeters: 200,
     requireGeofence: true,
-    geofenceStrictEnforce: true
+    geofenceStrictEnforce: true,
+    timeSpecificTasks: [
+      {
+        id: 'task-sea-01',
+        siteId: 'site-4',
+        siteName: 'City Airport Gate 4',
+        title: 'Airside Jetway Security Seal & Badging Terminal Audit',
+        category: 'access_control',
+        scheduledTime: '22:00',
+        locationZone: 'Jetway 4B Airside Gate',
+        instructions: 'Check tamper-evident seals on jetway exterior doors. Conduct badge check on tarmac operations personnel.',
+        frequency: 'daily',
+        leadTimeMinutes: 20,
+        gracePeriodMinutes: 15,
+        priority: 'mandatory_sla',
+        requirePhoto: true,
+        requireGps: true,
+        isActive: true,
+        tags: ['TSA Compliance', 'Airside Gate']
+      }
+    ]
   },
   {
     id: 'site-5',
@@ -180,7 +336,45 @@ export const INITIAL_SITES: SiteProfile[] = [
     longitude: -122.3340,
     geofenceRadiusMeters: 100,
     requireGeofence: true,
-    geofenceStrictEnforce: false
+    geofenceStrictEnforce: false,
+    timeSpecificTasks: [
+      {
+        id: 'task-ret-01',
+        siteId: 'site-5',
+        siteName: 'Retail Plaza - Patrol',
+        title: 'Retail Concourse Storefront Curfew & Gate Lockup',
+        category: 'facility_closure',
+        scheduledTime: '21:00',
+        locationZone: 'Central Retail Concourse Gate 1 & 2',
+        instructions: 'Verify all retail boutiques are closed. Drop and padlock steel roll-down security grilles at West entrance.',
+        frequency: 'daily',
+        leadTimeMinutes: 15,
+        gracePeriodMinutes: 15,
+        priority: 'mandatory_sla',
+        requirePhoto: true,
+        requireGps: true,
+        isActive: true,
+        tags: ['Retail', 'Roll-down Gate', 'Closing SOP']
+      },
+      {
+        id: 'task-ret-02',
+        siteId: 'site-5',
+        siteName: 'Retail Plaza - Patrol',
+        title: 'Loading Bay Waste Compactor & Freight Lockout',
+        category: 'hazard_inspection',
+        scheduledTime: '21:30',
+        locationZone: 'Rear Loading Dock Alley',
+        instructions: 'Verify hydraulic waste compactor is keyed off and emergency gate is latched.',
+        frequency: 'daily',
+        leadTimeMinutes: 10,
+        gracePeriodMinutes: 20,
+        priority: 'routine',
+        requirePhoto: false,
+        requireGps: true,
+        isActive: true,
+        tags: ['Dock', 'Compactor']
+      }
+    ]
   },
   {
     id: 'site-6',
@@ -212,7 +406,45 @@ export const INITIAL_SITES: SiteProfile[] = [
     longitude: -122.3380,
     geofenceRadiusMeters: 75,
     requireGeofence: true,
-    geofenceStrictEnforce: true
+    geofenceStrictEnforce: true,
+    timeSpecificTasks: [
+      {
+        id: 'task-tcn-01',
+        siteId: 'site-6',
+        siteName: 'Tech Campus North - Data Center',
+        title: 'Server Pod B Halon Fire Suppression System Inspection',
+        category: 'hazard_inspection',
+        scheduledTime: '20:30',
+        locationZone: 'Data Center Pod B Mantrap',
+        instructions: 'Verify Halon pressure gauges are in the green zone (280-320 PSI). Ensure no equipment blocking emergency exit aisles.',
+        frequency: 'daily',
+        leadTimeMinutes: 15,
+        gracePeriodMinutes: 15,
+        priority: 'mandatory_sla',
+        requirePhoto: true,
+        requireGps: true,
+        isActive: true,
+        tags: ['Server Pod', 'Fire Suppression', 'Critical SLA']
+      },
+      {
+        id: 'task-tcn-02',
+        siteId: 'site-6',
+        siteName: 'Tech Campus North - Data Center',
+        title: 'Exterior Perimeter & Generator Yard Lighting Audit',
+        category: 'lighting_audit',
+        scheduledTime: '21:45',
+        locationZone: 'Backup Generator Yard North',
+        instructions: 'Check all 8 high-output perimeter security lamps and verify emergency generator battery status lights.',
+        frequency: 'daily',
+        leadTimeMinutes: 10,
+        gracePeriodMinutes: 20,
+        priority: 'routine',
+        requirePhoto: false,
+        requireGps: true,
+        isActive: true,
+        tags: ['Generator Yard', 'Lighting Audit']
+      }
+    ]
   },
   {
     id: 'site-7',
@@ -316,7 +548,63 @@ export const INITIAL_SITES: SiteProfile[] = [
     longitude: -122.3210,
     geofenceRadiusMeters: 80,
     requireGeofence: true,
-    geofenceStrictEnforce: false
+    geofenceStrictEnforce: false,
+    timeSpecificTasks: [
+      {
+        id: 'task-htl-01',
+        siteId: 'site-9',
+        siteName: 'Hotel Grand Lobby & Concierge',
+        title: 'Heated Indoor Pool & Jacuzzi Amenity Lockup',
+        category: 'amenity_lock',
+        scheduledTime: '22:00',
+        locationZone: '3rd Floor Aquatic Pavilion',
+        instructions: 'Clear all hotel guests from pool, whirlpool spa, and towel stations. Engage electronic maglock override and deadbolt chemical pump room.',
+        frequency: 'daily',
+        leadTimeMinutes: 15,
+        gracePeriodMinutes: 15,
+        priority: 'mandatory_sla',
+        requirePhoto: true,
+        requireGps: true,
+        isActive: true,
+        tags: ['Pool Lockup', 'Amenity', 'Aquatics']
+      },
+      {
+        id: 'task-htl-02',
+        siteId: 'site-9',
+        siteName: 'Hotel Grand Lobby & Concierge',
+        title: 'Guest Laundry Suites Keypad Lockout & Linen Inspection',
+        category: 'facility_closure',
+        scheduledTime: '21:00',
+        locationZone: 'Floors 4, 7, 10 Guest Laundry Rooms',
+        instructions: 'Check that laundry dryers are empty of running cycles. Lock exterior suite access doors with physical master key #3.',
+        frequency: 'daily',
+        leadTimeMinutes: 15,
+        gracePeriodMinutes: 20,
+        priority: 'mandatory_sla',
+        requirePhoto: false,
+        requireGps: true,
+        isActive: true,
+        tags: ['Laundry Closure', 'Facility']
+      },
+      {
+        id: 'task-htl-03',
+        siteId: 'site-9',
+        siteName: 'Hotel Grand Lobby & Concierge',
+        title: 'Rooftop Sky Lounge & Fire Terrace Closure',
+        category: 'amenity_lock',
+        scheduledTime: '23:00',
+        locationZone: '18th Floor Terrace Lounge',
+        instructions: 'Clear lingering lounge patrons, shut down natural gas fire pit master valves, and secure exterior patio glass sliding doors.',
+        frequency: 'daily',
+        leadTimeMinutes: 20,
+        gracePeriodMinutes: 15,
+        priority: 'mandatory_sla',
+        requirePhoto: true,
+        requireGps: true,
+        isActive: true,
+        tags: ['Rooftop Closure', 'Fire Pit Lockout']
+      }
+    ]
   },
   {
     id: 'site-10',
@@ -384,7 +672,45 @@ export const INITIAL_SITES: SiteProfile[] = [
     longitude: -122.3520,
     geofenceRadiusMeters: 150,
     requireGeofence: true,
-    geofenceStrictEnforce: true
+    geofenceStrictEnforce: true,
+    timeSpecificTasks: [
+      {
+        id: 'task-wcp-01',
+        siteId: 'site-11',
+        siteName: 'Waterfront Chemical Plant',
+        title: 'Storage Tank Farm Valve Integrity & Vapor Barrier Check',
+        category: 'hazard_inspection',
+        scheduledTime: '21:00',
+        locationZone: 'Zone 3 Chemical Tank Farm',
+        instructions: 'Check primary and secondary vapor scrubbers. Verify all pressure relief safety vents are unblocked.',
+        frequency: 'daily',
+        leadTimeMinutes: 15,
+        gracePeriodMinutes: 15,
+        priority: 'mandatory_sla',
+        requirePhoto: true,
+        requireGps: true,
+        isActive: true,
+        tags: ['Hazmat', 'Tank Farm', 'SLA Critical']
+      },
+      {
+        id: 'task-wcp-02',
+        siteId: 'site-11',
+        siteName: 'Waterfront Chemical Plant',
+        title: 'Security Perimeter South Fence Infrared Beam Test',
+        category: 'access_control',
+        scheduledTime: '23:00',
+        locationZone: 'South Rail Siding Perimeter Gate 8',
+        instructions: 'Test photoelectric perimeter sensors. Check security razor wire alignment along rail siding.',
+        frequency: 'daily',
+        leadTimeMinutes: 10,
+        gracePeriodMinutes: 20,
+        priority: 'mandatory_sla',
+        requirePhoto: false,
+        requireGps: true,
+        isActive: true,
+        tags: ['Infrared Beam', 'Perimeter']
+      }
+    ]
   },
   {
     id: 'site-12',
@@ -420,7 +746,63 @@ export const INITIAL_SITES: SiteProfile[] = [
     longitude: -122.3350,
     geofenceRadiusMeters: 90,
     requireGeofence: true,
-    geofenceStrictEnforce: false
+    geofenceStrictEnforce: false,
+    timeSpecificTasks: [
+      {
+        id: 'task-mid-01',
+        siteId: 'site-12',
+        siteName: 'Midtown Commercial Lofts',
+        title: 'Resident Laundry Facility Closure & Keycard Audit',
+        category: 'facility_closure',
+        scheduledTime: '21:00',
+        locationZone: '2nd Floor Resident Amenities Wing',
+        instructions: 'Arm electronic card reader on laundry room entryway door. Confirm all washers/dryers have finished spin cycles.',
+        frequency: 'daily',
+        leadTimeMinutes: 15,
+        gracePeriodMinutes: 20,
+        priority: 'mandatory_sla',
+        requirePhoto: true,
+        requireGps: true,
+        isActive: true,
+        tags: ['Laundry Closure', 'Resident Amenity']
+      },
+      {
+        id: 'task-mid-02',
+        siteId: 'site-12',
+        siteName: 'Midtown Commercial Lofts',
+        title: 'Rooftop Sundeck & Community BBQ Gas Lockout',
+        category: 'amenity_lock',
+        scheduledTime: '22:00',
+        locationZone: 'Rooftop Level 8 Terrace',
+        instructions: 'Clear any resident gatherings from terrace deck. Lock safety latch on natural gas grill bank and deadbolt terrace glass slider.',
+        frequency: 'daily',
+        leadTimeMinutes: 15,
+        gracePeriodMinutes: 15,
+        priority: 'mandatory_sla',
+        requirePhoto: false,
+        requireGps: true,
+        isActive: true,
+        tags: ['Rooftop', 'BBQ Grills', 'Amenity Lock']
+      },
+      {
+        id: 'task-mid-03',
+        siteId: 'site-12',
+        siteName: 'Midtown Commercial Lofts',
+        title: 'Subterranean Garage Roll-up Gate Night Arming',
+        category: 'access_control',
+        scheduledTime: '23:30',
+        locationZone: 'Level B1 Alley Garage Ramp',
+        instructions: 'Switch automatic garage gate sensor to night badge-only mode. Perform visual check of vehicle clearance zone.',
+        frequency: 'daily',
+        leadTimeMinutes: 10,
+        gracePeriodMinutes: 20,
+        priority: 'routine',
+        requirePhoto: false,
+        requireGps: false,
+        isActive: true,
+        tags: ['Garage Gate', 'Access Control']
+      }
+    ]
   },
   {
     id: 'site-13',
@@ -2262,6 +2644,428 @@ export const INITIAL_SCHEDULED_SHIFTS: ScheduledShift[] = [
     createdAt: '2026-08-23T09:00:00Z'
   }
 ];
+
+export const INITIAL_CLAIM_REQUESTS: ShiftClaimRequest[] = [
+  {
+    id: 'CLAIM-DEMO-01',
+    shiftId: 'shift-urg-24h-03',
+    shift: {
+      id: 'shift-urg-24h-03',
+      siteName: 'Port Authority - Pier 7',
+      address: '2200 Alaskan Way, Pier 7, Seattle, WA 98121',
+      location: 'Docklands Gate B, Berth 4 Cargo Scale',
+      date: getTodayDateStr(1),
+      startTime: '07:00',
+      endTime: '15:00',
+      hours: 8,
+      urgency: 'emergency',
+      status: 'open',
+      requiredCertifications: ['TWIC Card', 'Armed Endorsement'],
+      notes: 'Priority morning maritime convoy scale post. TWIC required.',
+      createdAt: new Date(Date.now() - 120 * 60 * 1000).toISOString(),
+      bidsCount: 0,
+    },
+    guardId: 'guard-102',
+    guardName: 'Mike Chen',
+    guardBadge: 'SEC-9104',
+    guardPhone: '+1 (555) 456-7890',
+    guardProfile: GUARDS_LIST.find(g => g.id === 'guard-102') || CURRENT_GUARD,
+    claimTimestamp: new Date(Date.now() - 35 * 60 * 1000).toISOString(),
+    status: 'pending_approval',
+    requiresAdminApproval: true,
+    failedChecks: ['site_training'],
+    violationDetails: {
+      isSiteTrained: false,
+      siteTrainingDetails: 'Officer Mike Chen (SEC-9104) is not OJT-certified/trained for "Port Authority - Pier 7". Qualified sites: Industrial Warehouse, Retail Plaza.',
+      isRestBufferValid: true,
+      restBufferDetails: '14.0h rest buffer compliant.',
+      restHours: 14,
+      isOvertimeCompliant: true,
+      overtimeDetails: 'Regular hours compliant (32.0h / 40.0h max).',
+      currentWeeklyHours: 24,
+      shiftHours: 8,
+      projectedWeeklyHours: 32,
+      overtimeHours: 0
+    }
+  },
+  {
+    id: 'CLAIM-DEMO-02',
+    shiftId: 'shift-102',
+    shift: {
+      id: 'shift-102',
+      siteName: 'Corporate HQ - Main Tower',
+      address: '500 Executive Blvd, Main Tower, Bellevue, WA 98004',
+      location: 'Executive Tower Night Patrol & Concierge',
+      date: getTodayDateStr(1),
+      startTime: '20:00',
+      endTime: '04:00',
+      hours: 8,
+      urgency: 'standard',
+      status: 'open',
+      requiredCertifications: ['Access Control', 'CPR/AED'],
+      notes: 'Standard graveyard patrol. Floor-by-floor access audits.',
+      createdAt: '2026-08-21T10:00:00Z',
+      bidsCount: 1,
+    },
+    guardId: 'guard-104',
+    guardName: 'Elena Rostova',
+    guardBadge: 'SEC-4199',
+    guardPhone: '+1 (555) 678-9012',
+    guardProfile: GUARDS_LIST.find(g => g.id === 'guard-104') || CURRENT_GUARD,
+    claimTimestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+    status: 'pending_approval',
+    requiresAdminApproval: true,
+    failedChecks: ['overtime'],
+    violationDetails: {
+      isSiteTrained: true,
+      siteTrainingDetails: 'OJT verified for Corporate HQ.',
+      isRestBufferValid: true,
+      restBufferDetails: '16.0h rest buffer compliant.',
+      restHours: 16,
+      isOvertimeCompliant: false,
+      overtimeDetails: 'Overtime threshold exceeded: Officer currently has 36.0h scheduled this week. Adding this 8.0h shift brings total to 44.0h (4.0h Overtime).',
+      currentWeeklyHours: 36,
+      shiftHours: 8,
+      projectedWeeklyHours: 44,
+      overtimeHours: 4
+    }
+  }
+];
+
+export const INITIAL_TASK_COMPLETION_LOGS: TaskCompletionLog[] = [
+  {
+    id: 'log-p7-01',
+    taskId: 'task-p7-01',
+    taskTitle: 'Berth 7 North Security Gate Padlock & Floodlight Audit',
+    siteId: 'site-1',
+    siteName: 'Port Authority - Pier 7',
+    scheduledTime: '20:00',
+    completedAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString(),
+    guardId: 'guard-1',
+    guardName: 'Alex Mercer',
+    guardBadge: 'SEC-8821',
+    status: 'verified',
+    notes: 'All 4 container staging padlocks engaged. Floodlight bank #2 and #4 tested normal.',
+    photoUrl: 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=400&auto=format&fit=crop&q=80',
+    gpsCoords: { latitude: 47.6117, longitude: -122.3533 },
+    completedWithinSla: true
+  },
+  {
+    id: 'log-chq-01',
+    taskId: 'task-chq-01',
+    taskTitle: 'Executive Fitness Center, Sauna & Locker Room Lockup',
+    siteId: 'site-2',
+    siteName: 'Corporate HQ - Main Tower',
+    scheduledTime: '21:00',
+    completedAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
+    guardId: 'guard-104',
+    guardName: 'Elena Rostova',
+    guardBadge: 'SEC-4199',
+    status: 'completed',
+    notes: 'Sauna verified empty. Sound system shut down and RFID card reader armed.',
+    photoUrl: 'https://images.unsplash.com/photo-1540497077202-7c8a3999166f?w=400&auto=format&fit=crop&q=80',
+    gpsCoords: { latitude: 47.6150, longitude: -122.1950 },
+    completedWithinSla: true
+  },
+  {
+    id: 'log-ret-01',
+    taskId: 'task-ret-01',
+    taskTitle: 'Retail Concourse Storefront Curfew & Gate Lockup',
+    siteId: 'site-5',
+    siteName: 'Retail Plaza - Patrol',
+    scheduledTime: '21:00',
+    completedAt: new Date(Date.now() - 2.8 * 3600 * 1000).toISOString(),
+    guardId: 'guard-102',
+    guardName: 'Mike Chen',
+    guardBadge: 'SEC-3091',
+    status: 'flagged_issue',
+    notes: 'West security grille was jammed by litter in bottom track. Cleared track and padlocked successfully.',
+    photoUrl: 'https://images.unsplash.com/photo-1567449303078-57ad995bd301?w=400&auto=format&fit=crop&q=80',
+    gpsCoords: { latitude: 47.6125, longitude: -122.3340 },
+    completedWithinSla: true
+  },
+  {
+    id: 'log-tcn-01',
+    taskId: 'task-tcn-01',
+    taskTitle: 'Server Pod B Halon Fire Suppression System Inspection',
+    siteId: 'site-6',
+    siteName: 'Tech Campus North - Data Center',
+    scheduledTime: '20:30',
+    completedAt: new Date(Date.now() - 3.5 * 3600 * 1000).toISOString(),
+    guardId: 'guard-103',
+    guardName: 'Marcus Wright',
+    guardBadge: 'SEC-9942',
+    status: 'verified',
+    notes: 'Halon gauge green at 305 PSI. Mantrap door sensors tested with biometric credential.',
+    photoUrl: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=400&auto=format&fit=crop&q=80',
+    gpsCoords: { latitude: 47.6110, longitude: -122.3380 },
+    completedWithinSla: true
+  },
+  {
+    id: 'log-wmc-01',
+    taskId: 'task-wmc-01',
+    taskTitle: 'Emergency Dept Ambulance Bay Overhead Door & Barrier Check',
+    siteId: 'site-3',
+    siteName: 'West Medical Center - Emergency Dept',
+    scheduledTime: '21:00',
+    completedAt: new Date(Date.now() - 2.5 * 3600 * 1000).toISOString(),
+    guardId: 'guard-105',
+    guardName: 'David Silva',
+    guardBadge: 'SEC-7712',
+    status: 'verified',
+    notes: 'Ambulance bay gates cycled and sensors clear. Tested RFID bypass for paramedics.',
+    photoUrl: 'https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=400&auto=format&fit=crop&q=80',
+    gpsCoords: { latitude: 47.6075, longitude: -122.3250 },
+    completedWithinSla: true
+  },
+  {
+    id: 'log-mid-01',
+    taskId: 'task-mid-01',
+    taskTitle: 'Resident Laundry Facility Closure & Keycard Audit',
+    siteId: 'site-12',
+    siteName: 'Midtown Commercial Lofts',
+    scheduledTime: '21:00',
+    completedAt: new Date(Date.now() - 2.9 * 3600 * 1000).toISOString(),
+    guardId: 'guard-101',
+    guardName: 'Sarah Jenkins',
+    guardBadge: 'SEC-5520',
+    status: 'completed',
+    notes: 'All 6 washers cycled off. Access door lock engaged on electronic strike.',
+    gpsCoords: { latitude: 47.6090, longitude: -122.3350 },
+    completedWithinSla: true
+  }
+];
+
+export const INITIAL_STANDARD_REPORTS: StandardShiftReport[] = [
+  {
+    id: 'rpt-act-001',
+    reportNumber: 'DAR-2026-0829-01',
+    reportType: 'activity',
+    shiftId: 'sched-101',
+    siteId: 'site-1',
+    siteName: 'Port Authority - Pier 7',
+    siteAddress: '2200 Alaskan Way, Pier 7, Seattle, WA 98121',
+    guardId: 'guard-101',
+    guardName: 'Sarah Jenkins',
+    guardBadge: 'SEC-5520',
+    guardPhone: '+1 (555) 234-5678',
+    timestamp: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
+    gpsCoordinates: { latitude: 47.6117, longitude: -122.3533, accuracy: 4.2 },
+    media: [
+      {
+        id: 'med-act-01',
+        type: 'photo',
+        url: 'https://images.unsplash.com/photo-1541888946425-d0fbb18f156f?w=800&auto=format&fit=crop&q=80',
+        caption: 'North Berth 4 Container Staging - Clear & Padlocks Verified',
+        capturedAt: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
+        fileName: 'pier7_berth4_check.jpg',
+        fileSizeMb: 1.8,
+        gpsCoordinates: { latitude: 47.6117, longitude: -122.3533 }
+      }
+    ],
+    activityDetails: {
+      patrolType: 'foot_patrol',
+      zoneChecked: 'Zone A - Berth 4 Staging & Perimeter Fence',
+      status: 'all_clear',
+      observationNotes: '30-Minute Routine Patrol complete. All container staging gates locked, security seals intact on Berth 4 reefers. No unauthorized pedestrians or vehicles observed.',
+      isThirtyMinCheckin: true,
+      intervalSequence: 3,
+      doorsCheckedCount: 6,
+      lightsCheckedCount: 12
+    },
+    status: 'reviewed',
+    reviewedByAdmin: {
+      adminName: 'Capt. Marcus Vance',
+      adminBadge: 'OPS-LEAD-01',
+      reviewedAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+      notes: 'Routine DAR check verified on-time.'
+    },
+    createdAt: new Date(Date.now() - 25 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'rpt-maint-001',
+    reportNumber: 'MNT-2026-0829-02',
+    reportType: 'maintenance',
+    shiftId: 'sched-101',
+    siteId: 'site-1',
+    siteName: 'Port Authority - Pier 7',
+    siteAddress: '2200 Alaskan Way, Pier 7, Seattle, WA 98121',
+    guardId: 'guard-101',
+    guardName: 'Sarah Jenkins',
+    guardBadge: 'SEC-5520',
+    guardPhone: '+1 (555) 234-5678',
+    timestamp: new Date(Date.now() - 55 * 60 * 1000).toISOString(),
+    gpsCoordinates: { latitude: 47.6121, longitude: -122.3538, accuracy: 5.1 },
+    media: [
+      {
+        id: 'med-mnt-01',
+        type: 'photo',
+        url: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=800&auto=format&fit=crop&q=80',
+        caption: 'High-mast floodlight bank #3 ballast flickering and 2 lamps burned out',
+        capturedAt: new Date(Date.now() - 55 * 60 * 1000).toISOString(),
+        fileName: 'lighting_ballast_pier7.jpg',
+        fileSizeMb: 2.3,
+        gpsCoordinates: { latitude: 47.6121, longitude: -122.3538 }
+      }
+    ],
+    maintenanceDetails: {
+      issueCategory: 'lighting_electrical',
+      severity: 'urgent',
+      specificLocation: 'Berth 7 North Apron - Floodlight Pole #3',
+      issueTitle: 'Perimeter Floodlight Bank #3 Ballast Malfunction & Outage',
+      detailedDescription: 'During the 20:00 perimeter sweep, observed floodlight pole #3 making buzzing noise with 2 lamps out and 2 lamps flickering heavily. Causes dark zone across the security fence line.',
+      safetyHazard: true,
+      propertyStaffNotified: true,
+      notifiedPersonName: 'Dockmaster On-Duty Night Lead (D. Vance)',
+      suggestedAction: 'Dispatch electrical contractor or facility maintenance to replace ballast and bulbs prior to 04:00 cargo vessel arrival.',
+      workOrderStatus: 'work_order_created',
+      workOrderNumber: 'WO-PORT-8891'
+    },
+    status: 'reviewed',
+    reviewedByAdmin: {
+      adminName: 'Lt. Evelyn Brooks',
+      adminBadge: 'OPS-DISP-02',
+      reviewedAt: new Date(Date.now() - 40 * 60 * 1000).toISOString(),
+      notes: 'Forwarded priority work order to Port Facilities dispatch team.'
+    },
+    createdAt: new Date(Date.now() - 55 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'rpt-inc-001',
+    reportNumber: 'INC-2026-0829-03',
+    reportType: 'incident',
+    shiftId: 'sched-102',
+    siteId: 'site-2',
+    siteName: 'Corporate HQ - Main Tower',
+    siteAddress: '500 Executive Blvd, Main Tower, Bellevue, WA 98004',
+    guardId: 'guard-102',
+    guardName: 'Alex Rivera',
+    guardBadge: 'SEC-8831',
+    guardPhone: '+1 (555) 345-6789',
+    timestamp: new Date(Date.now() - 95 * 60 * 1000).toISOString(),
+    gpsCoordinates: { latitude: 47.6154, longitude: -122.1965, accuracy: 3.8 },
+    media: [
+      {
+        id: 'med-inc-01',
+        type: 'photo',
+        url: 'https://images.unsplash.com/photo-1590674899484-d5640e854abe?w=800&auto=format&fit=crop&q=80',
+        caption: 'South Courtyard Fountain Perimeter - Trespassing subject directed to vacate',
+        capturedAt: new Date(Date.now() - 95 * 60 * 1000).toISOString(),
+        fileName: 'courtyard_trespass_scene.jpg',
+        fileSizeMb: 2.1,
+        gpsCoordinates: { latitude: 47.6154, longitude: -122.1965 }
+      }
+    ],
+    incidentDetails: {
+      incidentCategory: 'trespassing',
+      severity: 'medium',
+      incidentTitle: 'Unauthorized Individual Attempting After-Hours Access at South Courtyard',
+      summary: 'Adult male found attempting to open locked south courtyard employee badge doors at 21:15.',
+      detailedTimeline: '21:15 - Guard observed subject rattling door handles on CCTV and responded on foot.\n21:17 - Guard approached subject, identified as Corporate Security.\n21:19 - Subject claimed looking for unlocked restroom. Guard advised building closed to public.\n21:22 - Subject complied with request to vacate premises via 108th Ave NE exit.',
+      actionTakenByGuard: 'Confronted subject, stated property boundaries, issued formal verbal warning against after-hours trespassing, escorted subject off property without physical contact.',
+      partiesInvolved: [
+        {
+          id: 'pty-1',
+          name: 'Unidentified Male (~30-35 yrs)',
+          role: 'suspect',
+          description: 'Wearing dark gray hoodie, denim jeans, carrying blue backpack',
+          refusedIdentification: true
+        }
+      ],
+      trespassNoticeIssued: true,
+      escalatedToEmergencyServices: false,
+      supervisorNotified: true,
+      supervisorName: 'Supervisor Marcus Vance'
+    },
+    status: 'reviewed',
+    reviewedByAdmin: {
+      adminName: 'Capt. Marcus Vance',
+      adminBadge: 'OPS-LEAD-01',
+      reviewedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      notes: 'Logged into building trespass log. No further action needed unless subject returns.'
+    },
+    createdAt: new Date(Date.now() - 95 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'rpt-inc-002',
+    reportNumber: 'INC-2026-0829-04',
+    reportType: 'incident',
+    shiftId: 'sched-103',
+    siteId: 'site-3',
+    siteName: 'West Medical Center - Emergency Dept',
+    siteAddress: '1100 9th Ave, Seattle, WA 98101',
+    guardId: 'guard-105',
+    guardName: 'David Silva',
+    guardBadge: 'SEC-7712',
+    guardPhone: '+1 (555) 678-9012',
+    timestamp: new Date(Date.now() - 140 * 60 * 1000).toISOString(),
+    gpsCoordinates: { latitude: 47.6075, longitude: -122.3250, accuracy: 3.5 },
+    media: [
+      {
+        id: 'med-inc-02',
+        type: 'photo',
+        url: 'https://images.unsplash.com/photo-1516549655169-df83a0774514?w=800&auto=format&fit=crop&q=80',
+        caption: 'Ambulance Bay Entrance - Seattle Police & Paramedics on scene',
+        capturedAt: new Date(Date.now() - 140 * 60 * 1000).toISOString(),
+        fileName: 'ambulance_bay_escalation.jpg',
+        fileSizeMb: 2.7,
+        gpsCoordinates: { latitude: 47.6075, longitude: -122.3250 }
+      },
+      {
+        id: 'med-inc-03',
+        type: 'photo',
+        url: 'https://images.unsplash.com/photo-1584036561566-baf8f5f1b144?w=800&auto=format&fit=crop&q=80',
+        caption: 'Security Perimeter barrier deployed during paramedic stabilization',
+        capturedAt: new Date(Date.now() - 138 * 60 * 1000).toISOString(),
+        fileName: 'bay_barrier_photo.jpg',
+        fileSizeMb: 1.9,
+        gpsCoordinates: { latitude: 47.6075, longitude: -122.3250 }
+      }
+    ],
+    incidentDetails: {
+      incidentCategory: 'medical_emergency',
+      severity: 'critical',
+      incidentTitle: 'Medical Emergency & Physical Altercation in Ambulance Bay - Emergency Services Escalated',
+      summary: 'Non-patient individual collapsed near ambulance bay driveway while exhibiting aggressive disorientation, requiring emergency medical triage and law enforcement response.',
+      detailedTimeline: '20:10 - Officer noticed individual stumbling into active emergency vehicle lane.\n20:11 - Guard rendered immediate crowd control and safety barrier.\n20:12 - Subject became combative with ED triage nurse and lost consciousness.\n20:13 - Guard contacted 911 / Seattle Police and alerted ED Trauma Staff.\n20:17 - Seattle PD Unit 214 and Medic 1 arrived on scene.\n20:25 - Subject stabilized and transferred into ED Trauma Bay 2.',
+      actionTakenByGuard: 'Established physical safety buffer around individual, prevented traffic collision in ambulance turnaround, contacted 911 Emergency Dispatch, provided security escort for trauma team, provided witness statement to SPD.',
+      partiesInvolved: [
+        {
+          id: 'pty-med-1',
+          name: 'Subject John Doe (Male ~45)',
+          role: 'victim',
+          description: 'Disoriented individual requiring immediate trauma care',
+          phoneOrContact: 'Transferred to ED Trauma Bay 2'
+        },
+        {
+          id: 'pty-med-2',
+          name: 'Nurse Karen Phillips (RN)',
+          role: 'witness',
+          description: 'Triage staff member on duty'
+        }
+      ],
+      policeReportNumber: 'SPD-2026-099412',
+      escalatedToEmergencyServices: true,
+      emergencyServicesContacted: ['police_911', 'ems_paramedics', 'operations_supervisor_onscene'],
+      emergencyContactTime: '20:13',
+      cadIncidentNumber: 'CAD-911-884321',
+      respondingUnits: 'Seattle Police Dept Unit 214 (Ofc. Henderson #7821), Seattle Fire Medic 1',
+      emergencyOutcome: 'Subject safely transported into Emergency Trauma Suite. Ambulance lane cleared for emergency transports. SPD Case #SPD-2026-099412 filed.',
+      supervisorNotified: true,
+      supervisorName: 'Supervisor Marcus Vance'
+    },
+    status: 'flagged_for_client',
+    reviewedByAdmin: {
+      adminName: 'Capt. Marcus Vance',
+      adminBadge: 'OPS-LEAD-01',
+      reviewedAt: new Date(Date.now() - 110 * 60 * 1000).toISOString(),
+      notes: 'Critical incident review complete. All bodycam and incident files archived for Hospital Risk Management.'
+    },
+    createdAt: new Date(Date.now() - 140 * 60 * 1000).toISOString()
+  }
+];
+
+
 
 
 

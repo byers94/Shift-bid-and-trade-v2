@@ -8,13 +8,20 @@ let audioCtx: AudioContext | null = null;
 function getAudioContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
   if (!audioCtx) {
-    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-    if (AudioContextClass) {
-      audioCtx = new AudioContextClass();
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioContextClass && typeof AudioContextClass === 'function') {
+        audioCtx = new AudioContextClass();
+      }
+    } catch (e) {
+      console.warn('AudioContext could not be initialized:', e);
+      return null;
     }
   }
   if (audioCtx && audioCtx.state === 'suspended') {
-    audioCtx.resume().catch(() => {});
+    try {
+      audioCtx.resume().catch(() => {});
+    } catch (e) {}
   }
   return audioCtx;
 }
@@ -410,6 +417,170 @@ export function playPriorityShiftAlertSound() {
     });
   } catch (e) {
     console.warn('Priority shift audio could not be played:', e);
+  }
+}
+
+/**
+ * Scheduled Post Order & Time-Specific Task Notification Tone
+ * Two-tone alert chime (F5 -> A5 -> D6) for upcoming pool locks, laundry closures, amenities checks
+ */
+export function playTaskAlertSound(urgency: 'approaching' | 'due_now' | 'overdue' = 'due_now') {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+
+    if (urgency === 'overdue') {
+      // Urgent double beep
+      [0, 0.22].forEach((offset) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(880, now + offset);
+        gain.gain.setValueAtTime(0.18, now + offset);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.18);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(now + offset);
+        osc.stop(now + offset + 0.18);
+      });
+    } else if (urgency === 'due_now') {
+      // 3-tone bright chime
+      const tones = [587.33, 739.99, 880.00]; // D5, F#5, A5
+      tones.forEach((freq, idx) => {
+        const offset = idx * 0.12;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now + offset);
+        gain.gain.setValueAtTime(0.22, now + offset);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.3);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(now + offset);
+        osc.stop(now + offset + 0.3);
+      });
+    } else {
+      // Approaching gentle chime (E5 -> B5)
+      const tones = [659.25, 987.77];
+      tones.forEach((freq, idx) => {
+        const offset = idx * 0.14;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + offset);
+        gain.gain.setValueAtTime(0.16, now + offset);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.35);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(now + offset);
+        osc.stop(now + offset + 0.35);
+      });
+    }
+  } catch (e) {
+    console.warn('Task alert audio could not be played:', e);
+  }
+}
+
+/**
+ * Task Completion Confirmation Chime
+ */
+export function playTaskCompletedSound() {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const notes = [523.25, 659.25, 783.99, 1046.50]; // C5 - E5 - G5 - C6
+    notes.forEach((freq, i) => {
+      const offset = i * 0.06;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + offset);
+      gain.gain.setValueAtTime(0.18, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.22);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.22);
+    });
+  } catch (e) {
+    console.warn('Task completion audio could not be played:', e);
+  }
+}
+
+/**
+ * Standard Duty Report Submission Confirmation (Tri-tone affirmation)
+ */
+export function playReportSubmittedSound() {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const notes = [440, 554.37, 659.25]; // A4, C#5, E5
+    notes.forEach((freq, i) => {
+      const offset = i * 0.07;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + offset);
+      gain.gain.setValueAtTime(0.18, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.25);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.25);
+    });
+  } catch (e) {
+    console.warn('Report submission audio could not be played:', e);
+  }
+}
+
+/**
+ * Critical Incident Emergency Escalation Sound (Urgent multi-frequency beacon)
+ */
+export function playEmergencyEscalationSound() {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    // Rapid alternating high-alert pulses
+    [0, 0.15, 0.3, 0.45].forEach((offset, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = idx % 2 === 0 ? 'sawtooth' : 'triangle';
+      osc.frequency.setValueAtTime(idx % 2 === 0 ? 987.77 : 783.99, now + offset); // B5 / G5
+      gain.gain.setValueAtTime(0.25, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + offset + 0.12);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.12);
+    });
+  } catch (e) {
+    console.warn('Emergency escalation audio could not be played:', e);
   }
 }
 
