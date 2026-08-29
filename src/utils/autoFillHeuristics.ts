@@ -1,4 +1,4 @@
-import { Shift, GuardProfile, BidRecord, SiteProfile } from '../types/shift';
+import { Shift, GuardProfile, BidRecord, SiteProfile, SetSchedule, TimeOffRequest, SetScheduleAiSuggestion, DayOfWeek } from '../types/shift';
 import { INITIAL_SITES } from '../data/mockData';
 
 export interface GuardCandidateEvaluation {
@@ -29,6 +29,8 @@ export interface GuardCandidateEvaluation {
   missingClearances: string[];
   isSiteClearanceMet: boolean;
   reasons: string[];
+  isTimeOffConflict?: boolean;
+  availabilityMatchNote?: string;
 }
 
 export interface BatchAutoFillItem {
@@ -43,27 +45,27 @@ export interface BatchAutoFillItem {
 /**
  * Robust facility lookup that resolves site names or codes against the Site Directory.
  */
-export function findSiteProfile(siteNameOrCode: string, sitesList: SiteProfile[] = INITIAL_SITES): SiteProfile | undefined {
+export function findSiteProfile(siteNameOrCode?: string, sitesList: SiteProfile[] = INITIAL_SITES): SiteProfile | undefined {
   if (!siteNameOrCode) return undefined;
-  const targetClean = siteNameOrCode.toLowerCase().trim();
+  const targetClean = (siteNameOrCode || '').toLowerCase().trim();
 
   // 1. Exact match by name or code
   let match = sitesList.find(
-    (s) => s.name.toLowerCase() === targetClean || s.code.toLowerCase() === targetClean || s.id.toLowerCase() === targetClean
+    (s) => (s.name || '').toLowerCase() === targetClean || (s.code || '').toLowerCase() === targetClean || (s.id || '').toLowerCase() === targetClean
   );
   if (match) return match;
 
   // 2. Substring matching
   match = sitesList.find((s) => {
-    const sName = s.name.toLowerCase();
-    const sCode = s.code.toLowerCase();
+    const sName = (s.name || '').toLowerCase();
+    const sCode = (s.code || '').toLowerCase();
     return sName.includes(targetClean) || targetClean.includes(sName) || sCode.includes(targetClean);
   });
   if (match) return match;
 
   // 3. Keyword / alias matching for specialized facilities
   return sitesList.find((s) => {
-    const sName = s.name.toLowerCase();
+    const sName = (s.name || '').toLowerCase();
     if (targetClean.includes('port') && sName.includes('port')) return true;
     if (targetClean.includes('airport') && sName.includes('airport')) return true;
     if (targetClean.includes('corporate') && sName.includes('corporate')) return true;
@@ -83,14 +85,15 @@ export function findSiteProfile(siteNameOrCode: string, sitesList: SiteProfile[]
 /**
  * Checks if a guard's OJT sites match the target shift site name or site code.
  */
-export function isGuardSiteTrained(guard: GuardProfile, siteName: string, siteProfile?: SiteProfile): boolean {
-  if (!guard.ojtSites || guard.ojtSites.length === 0) return false;
-  const targetClean = siteName.toLowerCase().trim();
-  const siteCode = siteProfile?.code.toLowerCase().trim();
-  const siteFullName = siteProfile?.name.toLowerCase().trim();
+export function isGuardSiteTrained(guard: GuardProfile, siteName?: string, siteProfile?: SiteProfile): boolean {
+  if (!guard.ojtSites || guard.ojtSites.length === 0 || !siteName) return false;
+  const targetClean = (siteName || '').toLowerCase().trim();
+  const siteCode = (siteProfile?.code || '').toLowerCase().trim();
+  const siteFullName = (siteProfile?.name || '').toLowerCase().trim();
   
   return guard.ojtSites.some((site) => {
-    const siteClean = site.toLowerCase().trim();
+    if (!site) return false;
+    const siteClean = (site || '').toLowerCase().trim();
     if (siteClean === targetClean) return true;
     if (siteCode && siteClean === siteCode) return true;
     if (siteFullName && (siteClean === siteFullName || siteFullName.includes(siteClean) || siteClean.includes(siteFullName))) return true;
@@ -131,14 +134,15 @@ function getDaysDifference(targetDateStr: string, pastDateStr: string): number |
 
 /**
  * Evaluates a single guard for a target open shift using Site Directory requiredClearances,
- * OJT verification, rest recency, schedule conflicts, and active bids.
+ * OJT verification, rest recency, schedule conflicts, availability tracker, time-off requests, and active bids.
  */
 export function evaluateGuardForShift(
   shift: Shift,
   guard: GuardProfile,
   allShifts: Shift[],
   allBids: BidRecord[] = [],
-  sitesList: SiteProfile[] = INITIAL_SITES
+  sitesList: SiteProfile[] = INITIAL_SITES,
+  timeOffRequests: TimeOffRequest[] = []
 ): GuardCandidateEvaluation {
   const reasons: string[] = [];
   let score = 40; // Base baseline score
@@ -228,7 +232,67 @@ export function evaluateGuardForShift(
     score -= 10;
   }
 
-  // 4. Find Last Worked Shift & Past Activity
+  // 4. Time-Off / Leave Check
+  let isTimeOffConflict = false;
+  let hasScheduleConflict = false;
+  let conflictReason: string | undefined = undefined;
+
+  const approvedTimeOff = timeOffRequests.find(
+    (to) =>
+      to.guardId === guard.id &&
+      to.status === 'approved' &&
+      shift.date >= to.startDate &&
+      shift.date <= to.endDate
+  );
+
+  if (approvedTimeOff) {
+    isTimeOffConflict = true;
+    hasScheduleConflict = true;
+    conflictReason = `Approved Time-Off (${approvedTimeOff.type.toUpperCase()}): ${approvedTimeOff.reason}`;
+    score -= 75;
+    reasons.unshift(`⛔ Time-Off: ${conflictReason}`);
+  }
+
+  // 5. Weekly Availability Tracker Evaluation
+  let availabilityMatchNote: string | undefined = undefined;
+  if (shift.date) {
+    try {
+      const shiftDateObj = new Date(shift.date + 'T00:00:00');
+      const dayOfWeek = shiftDateObj.getDay() as DayOfWeek;
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const dayLabel = dayNames[dayOfWeek] || 'Day';
+
+      if (guard.availability?.weeklyRules && guard.availability.weeklyRules.length > 0) {
+        const dayRule = guard.availability.weeklyRules.find((r) => r.dayOfWeek === dayOfWeek);
+        if (dayRule) {
+          if (!dayRule.isAvailable) {
+            score -= 40;
+            reasons.push(`⚠️ Guard marked UNAVAILABLE on ${dayLabel}s in Availability Tracker`);
+            availabilityMatchNote = `Unavailable on ${dayLabel}s`;
+          } else {
+            score += 15;
+            reasons.push(`✅ Active Availability on ${dayLabel}s (${dayRule.startTime || '00:00'} - ${dayRule.endTime || '23:59'})`);
+            availabilityMatchNote = `Available on ${dayLabel}s`;
+          }
+        }
+      }
+
+      // Check Preferred Sites & Service Types
+      if (guard.availability?.preferredSites && guard.availability.preferredSites.some((ps) => ps.toLowerCase().includes(shift.siteName.toLowerCase()) || shift.siteName.toLowerCase().includes(ps.toLowerCase()))) {
+        score += 12;
+        reasons.push(`🌟 Guard designated ${siteDisplayName} as a Preferred Site`);
+      }
+
+      if (siteProfile?.serviceType === 'roving' && (guard.isRovingGuard || guard.availability?.preferredServiceTypes?.includes('roving'))) {
+        score += 15;
+        reasons.push(`🚗 Certified Roving Patrol Officer (${siteProfile.rovingGroup || 'Mobile Unit'})`);
+      }
+    } catch {
+      // Date parse fallback
+    }
+  }
+
+  // 6. Find Last Worked Shift & Past Activity
   const guardFilledShifts = allShifts
     .filter(
       (s) =>
@@ -259,19 +323,18 @@ export function evaluateGuardForShift(
     };
   }
 
-  // 5. Scheduling Conflict Check (Same date assigned shift)
-  const sameDayShift = guardFilledShifts.find((s) => s.date === shift.date && s.id !== shift.id);
-  let hasScheduleConflict = false;
-  let conflictReason: string | undefined = undefined;
-
-  if (sameDayShift) {
-    hasScheduleConflict = true;
-    conflictReason = `Already assigned to ${sameDayShift.siteName} (${sameDayShift.startTime}-${sameDayShift.endTime})`;
-    score -= 60;
-    reasons.unshift(`⚠️ Conflict: ${conflictReason}`);
+  // 7. Scheduling Conflict Check (Same date assigned shift)
+  if (!hasScheduleConflict) {
+    const sameDayShift = guardFilledShifts.find((s) => s.date === shift.date && s.id !== shift.id);
+    if (sameDayShift) {
+      hasScheduleConflict = true;
+      conflictReason = `Already assigned to ${sameDayShift.siteName} (${sameDayShift.startTime}-${sameDayShift.endTime})`;
+      score -= 60;
+      reasons.unshift(`⚠️ Conflict: ${conflictReason}`);
+    }
   }
 
-  // 6. Rest / Equitable Distribution Heuristic
+  // 8. Rest / Equitable Distribution Heuristic
   if (!hasScheduleConflict) {
     if (daysSinceLastWorked === null) {
       score += 18;
@@ -294,7 +357,7 @@ export function evaluateGuardForShift(
     }
   }
 
-  // 7. Active Bid Bonus
+  // 9. Active Bid Bonus
   const guardBid = allBids.find(
     (b) =>
       b.shiftId === shift.id &&
@@ -310,7 +373,7 @@ export function evaluateGuardForShift(
   // Clamp score between 5 and 99
   const finalScore = Math.max(5, Math.min(99, Math.round(score)));
 
-  // 8. Match Grade Calculation
+  // 10. Match Grade Calculation
   let matchGrade: GuardCandidateEvaluation['matchGrade'] = 'moderate';
   if (hasScheduleConflict) {
     matchGrade = 'conflict';
@@ -341,22 +404,25 @@ export function evaluateGuardForShift(
     matchedClearances,
     missingClearances,
     isSiteClearanceMet,
-    reasons
+    reasons,
+    isTimeOffConflict,
+    availabilityMatchNote
   };
 }
 
 /**
- * Returns ranked guard candidates for a specific shift against the Site Directory.
+ * Returns ranked guard candidates for a specific shift against the Site Directory, availability tracker, and time off.
  */
 export function suggestGuardsForShift(
   shift: Shift,
   guardsList: GuardProfile[],
   allShifts: Shift[],
   allBids: BidRecord[] = [],
-  sitesList: SiteProfile[] = INITIAL_SITES
+  sitesList: SiteProfile[] = INITIAL_SITES,
+  timeOffRequests: TimeOffRequest[] = []
 ): GuardCandidateEvaluation[] {
   return guardsList
-    .map((guard) => evaluateGuardForShift(shift, guard, allShifts, allBids, sitesList))
+    .map((guard) => evaluateGuardForShift(shift, guard, allShifts, allBids, sitesList, timeOffRequests))
     .sort((a, b) => {
       // Conflicts always last
       if (a.hasScheduleConflict && !b.hasScheduleConflict) return 1;
@@ -364,6 +430,146 @@ export function suggestGuardsForShift(
       // Primary: Score descending
       return b.score - a.score;
     });
+}
+
+/**
+ * AI Auto-Fill Engine for Set Schedules & Standing Shift Templates.
+ * Analyzes recurring days of week, time window, site clearances, guard weekly availability,
+ * and current assignments to recommend best-fit regular guards.
+ */
+export function generateSetScheduleAiSuggestions(
+  setSchedule: SetSchedule,
+  guardsList: GuardProfile[],
+  allShifts: Shift[] = [],
+  timeOffRequests: TimeOffRequest[] = [],
+  sitesList: SiteProfile[] = INITIAL_SITES
+): SetScheduleAiSuggestion[] {
+  const siteProfile = findSiteProfile(setSchedule.siteName, sitesList) || sitesList.find(s => s.id === setSchedule.siteId);
+  const requiredClearances = Array.from(
+    new Set([
+      ...(siteProfile?.requiredClearances || []),
+      ...(siteProfile?.requiredCertifications || []),
+      ...(setSchedule.requiredCertifications || [])
+    ])
+  );
+
+  return guardsList
+    .map((guard) => {
+      let score = 50;
+      const reasons: string[] = [];
+      const guardCerts = (guard.certifications || []).map(c => c.toLowerCase().trim());
+      const missingCerts: string[] = [];
+      const matchedCerts: string[] = [];
+
+      // 1. Check Site Clearances
+      if (requiredClearances.length > 0) {
+        requiredClearances.forEach((req) => {
+          const reqClean = req.toLowerCase().trim();
+          const isMet = guardCerts.some(gc => gc.includes(reqClean) || reqClean.includes(gc));
+          if (isMet) matchedCerts.push(req);
+          else missingCerts.push(req);
+        });
+
+        if (missingCerts.length === 0) {
+          score += 25;
+          reasons.push(`100% Certified for ${setSchedule.siteName} (${matchedCerts.join(', ')})`);
+        } else {
+          score -= 30;
+          reasons.push(`Missing certifications: ${missingCerts.join(', ')}`);
+        }
+      }
+
+      // 2. Check OJT Qualifications
+      const isTrained = isGuardSiteTrained(guard, setSchedule.siteName, siteProfile);
+      if (isTrained) {
+        score += 20;
+        reasons.push(`OJT Trained & Qualified at ${setSchedule.siteName}`);
+      } else if (guard.role === 'lead' || guard.role === 'supervisor') {
+        score += 10;
+        reasons.push(`${guard.role.toUpperCase()} credentials (Fast-track site orientation)`);
+      } else {
+        score -= 15;
+        reasons.push(`Pending OJT orientation at ${setSchedule.siteName}`);
+      }
+
+      // 3. Weekly Availability Alignment for required days
+      const daysOfWeek = setSchedule.daysOfWeek || [];
+      const weeklyRules = guard.availability?.weeklyRules || [];
+      let availableDaysCount = 0;
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+      daysOfWeek.forEach((dayNum) => {
+        const rule = weeklyRules.find(r => r.dayOfWeek === dayNum);
+        if (!rule || rule.isAvailable) {
+          availableDaysCount++;
+        }
+      });
+
+      const dayAvailabilityPct = daysOfWeek.length > 0 ? (availableDaysCount / daysOfWeek.length) : 1;
+
+      if (dayAvailabilityPct === 1) {
+        score += 20;
+        reasons.push(`Full weekly availability match for ${setSchedule.daysPatternLabel || 'all required days'}`);
+      } else if (dayAvailabilityPct >= 0.6) {
+        score += 5;
+        reasons.push(`Partial availability (${availableDaysCount}/${daysOfWeek.length} days match)`);
+      } else {
+        score -= 25;
+        reasons.push(`Availability mismatch (Unavailable on ${daysOfWeek.length - availableDaysCount} required days)`);
+      }
+
+      // 4. Preferred Sites & Service Type
+      if (guard.availability?.preferredSites?.some(ps => ps.toLowerCase().includes(setSchedule.siteName.toLowerCase()))) {
+        score += 10;
+        reasons.push(`Designated preferred site by guard`);
+      }
+
+      if (setSchedule.serviceType === 'roving' && (guard.isRovingGuard || guard.availability?.preferredServiceTypes?.includes('roving'))) {
+        score += 15;
+        reasons.push(`Rover specialist (${setSchedule.rovingGroup || 'Mobile Unit'})`);
+      }
+
+      // 5. Total Weekly Hours Capacity
+      const weeklySetHours = (setSchedule.hours || 8) * daysOfWeek.length;
+      const maxHours = guard.availability?.maxWeeklyHours || 40;
+      if (weeklySetHours <= maxHours) {
+        score += 5;
+        reasons.push(`Fits weekly target capacity (${weeklySetHours}h / max ${maxHours}h)`);
+      } else {
+        score -= 15;
+        reasons.push(`Exceeds guard weekly cap (${weeklySetHours}h > ${maxHours}h limit)`);
+      }
+
+      // Final Score & Grade
+      const finalScore = Math.max(10, Math.min(99, Math.round(score)));
+      let matchGrade: 'top' | 'strong' | 'moderate' | 'needs_ojt' | 'conflict' = 'moderate';
+
+      if (dayAvailabilityPct < 0.5) {
+        matchGrade = 'conflict';
+      } else if (finalScore >= 80 && isTrained && missingCerts.length === 0) {
+        matchGrade = 'top';
+      } else if (finalScore >= 65 && missingCerts.length === 0) {
+        matchGrade = 'strong';
+      } else if (!isTrained || missingCerts.length > 0) {
+        matchGrade = 'needs_ojt';
+      }
+
+      return {
+        guardId: guard.id,
+        guardName: guard.name,
+        guardBadge: guard.badgeNumber,
+        guardPhone: guard.phone,
+        suitabilityScore: finalScore,
+        matchGrade,
+        isSiteTrained: isTrained,
+        missingCertifications: missingCerts,
+        matchedCertifications: matchedCerts,
+        weeklyAvailabilityMatch: `${Math.round(dayAvailabilityPct * 100)}% (${availableDaysCount}/${daysOfWeek.length} days)`,
+        reasons,
+        suggestedAssignmentNote: `Recommended for ${setSchedule.title} (${finalScore}% match)`
+      };
+    })
+    .sort((a, b) => b.suitabilityScore - a.suitabilityScore);
 }
 
 /**

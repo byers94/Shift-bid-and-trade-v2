@@ -25,9 +25,11 @@ import {
   Car,
   Navigation,
   Zap,
-  ShieldCheck,
-  Check
+  ShieldCheck, 
+  Check,
+  PhoneOff
 } from 'lucide-react';
+import { GuardCallOffModal } from './GuardCallOffModal';
 
 interface ShiftSchedulingCalendarProps {
   initialGuardId?: string | null;
@@ -71,6 +73,7 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
   const [selectedShiftForDetail, setSelectedShiftForDetail] = useState<ScheduledShift | null>(null);
   const [isReassignModalOpen, setIsReassignModalOpen] = useState(false);
   const [reassignTargetGuardId, setReassignTargetGuardId] = useState<string>('');
+  const [isCallOffModalOpen, setIsCallOffModalOpen] = useState(false);
 
   // Form State for creating new scheduled shift
   const [formShiftType, setFormShiftType] = useState<'static' | 'roving'>('static');
@@ -987,18 +990,31 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
             </div>
 
             {/* Modal Actions */}
-            <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => {
-                  deleteScheduledShift(selectedShiftForDetail.id);
-                  setSelectedShiftForDetail(null);
-                }}
-                className="px-3 py-2 bg-red-50 dark:bg-red-950/60 hover:bg-red-100 text-red-700 dark:text-red-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Remove Shift</span>
-              </button>
+            <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-100 dark:border-slate-800 flex-wrap">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    deleteScheduledShift(selectedShiftForDetail.id);
+                    setSelectedShiftForDetail(null);
+                  }}
+                  className="px-3 py-2 bg-red-50 dark:bg-red-950/60 hover:bg-red-100 text-red-700 dark:text-red-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Remove</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCallOffModalOpen(true);
+                  }}
+                  className="px-3 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                >
+                  <PhoneOff className="w-3.5 h-3.5" />
+                  <span>Record Call-Off</span>
+                </button>
+              </div>
 
               <div className="flex items-center gap-2">
                 <button
@@ -1359,6 +1375,20 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
             </form>
           </div>
         </div>
+      )}
+
+      {/* Guard Call-Off Modal */}
+      {isCallOffModalOpen && (
+        <GuardCallOffModal
+          isOpen={isCallOffModalOpen}
+          onClose={() => {
+            setIsCallOffModalOpen(false);
+            if (selectedShiftForDetail) {
+              setSelectedShiftForDetail(null);
+            }
+          }}
+          prefillShiftId={selectedShiftForDetail?.id}
+        />
       )}
     </div>
   );

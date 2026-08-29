@@ -62,6 +62,9 @@ export interface GuardProfile {
   // Rover Fleet Circuit Assignment
   isRovingGuard?: boolean;
   rovingGroup?: RovingGroup;
+
+  // Guard Availability & Standing Schedule Preferences
+  availability?: GuardWeeklyAvailability;
 }
 
 export interface SwapProposal {
@@ -207,6 +210,7 @@ export type AdminActionType =
   | 'shift_filled'
   | 'shift_reopened'
   | 'shift_deleted'
+  | 'shift_cancelled'
   | 'bulk_imported'
   | 'trade_approved'
   | 'trade_denied'
@@ -348,7 +352,9 @@ export interface PriorityPushNotification {
   id: string;
   shiftId: string;
   shift: Shift;
-  match: PriorityShiftMatch;
+  match?: PriorityShiftMatch;
+  title?: string;
+  message?: string;
   broadcastAt: string;
   dismissed: boolean;
   isSnoozed?: boolean;
@@ -1146,5 +1152,288 @@ export interface GuardLiveTrackingItem {
   geofenceDistanceMeters?: number;
 }
 
+// ----------------------------------------------------
+// Guard Availability & Standing Schedule Preferences
+// ----------------------------------------------------
 
+export type DayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6; // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
 
+export interface DayOfWeekInfo {
+  day: DayOfWeek;
+  name: string;
+  short: string;
+  letter: string;
+}
+
+export const DAYS_OF_WEEK: DayOfWeekInfo[] = [
+  { day: 0, name: 'Sunday', short: 'Sun', letter: 'S' },
+  { day: 1, name: 'Monday', short: 'Mon', letter: 'M' },
+  { day: 2, name: 'Tuesday', short: 'Tue', letter: 'T' },
+  { day: 3, name: 'Wednesday', short: 'Wed', letter: 'W' },
+  { day: 4, name: 'Thursday', short: 'Thu', letter: 'T' },
+  { day: 5, name: 'Friday', short: 'Fri', letter: 'F' },
+  { day: 6, name: 'Saturday', short: 'Sat', letter: 'S' }
+];
+
+export const DAY_NAMES: Record<DayOfWeek, { short: string; full: string; letter: string }> = {
+  0: { short: 'Sun', full: 'Sunday', letter: 'S' },
+  1: { short: 'Mon', full: 'Monday', letter: 'M' },
+  2: { short: 'Tue', full: 'Tuesday', letter: 'T' },
+  3: { short: 'Wed', full: 'Wednesday', letter: 'W' },
+  4: { short: 'Thu', full: 'Thursday', letter: 'T' },
+  5: { short: 'Fri', full: 'Friday', letter: 'F' },
+  6: { short: 'Sat', full: 'Saturday', letter: 'S' }
+};
+
+export interface DailyAvailabilityRule {
+  dayOfWeek: DayOfWeek;
+  dayLabel: string; // "Monday", "Tuesday", etc.
+  isAvailable: boolean;
+  status?: 'available' | 'preferred' | 'unavailable';
+  preferredShift?: 'any' | 'morning' | 'swing' | 'graveyard' | 'custom';
+  startTime?: string; // "00:00" or "07:00"
+  endTime?: string; // "23:59" or "19:00"
+  preferredShiftTypes?: ('day' | 'swing' | 'grave' | 'roving')[];
+  notes?: string;
+}
+
+export type TimeOffType = 'vacation' | 'sick' | 'personal' | 'military' | 'bereavement' | 'training' | 'other';
+export type TimeOffReason = TimeOffType;
+export type TimeOffStatus = 'pending' | 'approved' | 'denied' | 'cancelled';
+
+export interface TimeOffRequest {
+  id: string;
+  guardId: string;
+  guardName: string;
+  guardBadge: string;
+  guardPhone?: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  type: TimeOffType;
+  reason: string;
+  status: TimeOffStatus | 'rejected';
+  requestedAt: string; // ISO
+  totalDays?: number;
+  notes?: string;
+  resolvedAt?: string;
+  resolvedByAdminName?: string;
+  resolvedByAdminBadge?: string;
+  resolutionNote?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  adminNotes?: string;
+}
+
+export type CallOffReason = 
+  | 'called_out_sick' 
+  | 'family_emergency' 
+  | 'transportation_issue' 
+  | 'personal_emergency' 
+  | 'weather_hazard' 
+  | 'no_show_unresponsive' 
+  | 'bereavement' 
+  | 'other';
+
+export interface CallOffRecord {
+  id: string;
+  guardId: string;
+  guardName: string;
+  guardBadge: string;
+  guardPhone?: string;
+  scheduledShiftId?: string;
+  siteName: string;
+  shiftDate: string; // YYYY-MM-DD
+  shiftStartTime: string; // "08:00"
+  shiftEndTime: string; // "16:00"
+  startTime?: string;
+  endTime?: string;
+  hours?: number;
+  reason: string; // e.g. "Sudden flu / fever", "Family emergency", "Vehicle mechanical breakdown"
+  calledOffAt: string; // ISO timestamp
+  loggedAt?: string;
+  reportedAt?: string;
+  reportedBy?: string;
+  isNoShow: boolean;
+  convertedToUrgentBid: boolean;
+  urgentShiftId?: string;
+  postedToBiddingQueue?: boolean;
+  pushNotificationSent?: boolean;
+  status?: string;
+  replacementGuardId?: string;
+  replacementGuardName?: string;
+  replacementGuardBadge?: string;
+  replacementShiftId?: string;
+  acknowledgedByAdmin?: string;
+  resolutionNote?: string;
+  notes?: string;
+}
+
+export type GuardCallOffRecord = CallOffRecord;
+
+export interface GuardWeeklyAvailability {
+  guardId: string;
+  weeklyRules: DailyAvailabilityRule[];
+  rules?: DailyAvailabilityRule[];
+  maxWeeklyHours: number; // default 40
+  overtimeWilling?: boolean;
+  preferredSites?: string[];
+  preferredServiceTypes?: ('dedicated' | 'roving')[];
+  notes?: string;
+  updatedAt?: string;
+  lastUpdated?: string;
+}
+
+export type GuardAvailability = GuardWeeklyAvailability;
+
+// ----------------------------------------------------
+// Set, Long-Term Recurring Schedules for Sites & Roving
+// ----------------------------------------------------
+
+export interface SetSchedule {
+  id: string;
+  name?: string; // friendly name
+  title?: string; // e.g. "Pier 7 Maritime Scale Gate - Mon-Fri Day"
+  siteId?: string;
+  siteName: string;
+  siteAddress?: string;
+  serviceType?: SiteServiceType; // 'dedicated' | 'roving'
+  isRoving?: boolean;
+  rovingGroup?: RovingGroup;
+  assignedRoverUnit?: string;
+  daysOfWeek: DayOfWeek[]; // e.g. [1, 2, 3, 4, 5] for Mon-Fri
+  daysPatternLabel?: string; // e.g. "Mon - Fri", "Sat - Sun", "Sun - Thu"
+  startTime: string; // "08:00"
+  endTime: string; // "16:00"
+  hours: number;
+  postRole: string; // e.g. "Access Control & Weigh Scale Lead"
+  postInstructions?: string;
+  requiredCertifications?: string[];
+  urgency?: UrgencyType; // 'standard' | 'emergency'
+  
+  // Regular Long-Term Assigned Guard (both aliases supported)
+  assignedGuardId?: string;
+  assignedGuardName?: string;
+  assignedGuardBadge?: string;
+  regularGuardId?: string;
+  regularGuardName?: string;
+  regularGuardBadge?: string;
+  regularGuardPhone?: string;
+  
+  isActive: boolean;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface GenerateSetSchedulesOptions {
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  selectedScheduleIds?: string[];
+  scheduleIds?: string[];
+  autoPushUnassignedToBidding?: boolean;
+  autoPushUnassignedToBiddingQueue?: boolean;
+  autoPopulateOpenShiftsToBiddingQueue?: boolean;
+  checkGuardAvailability?: boolean;
+  respectGuardTimeOffRequests?: boolean;
+  respectTimeOff?: boolean;
+  surgeUrgencyOnTimeOff?: boolean;
+  overwriteExisting?: boolean;
+}
+
+export interface GeneratedScheduleEntry {
+  id?: string;
+  setScheduleId: string;
+  date: string;
+  dayOfWeek?: number;
+  siteName: string;
+  serviceType?: SiteServiceType;
+  startTime: string;
+  endTime: string;
+  hours: number;
+  postRole?: string;
+  status: 'assigned' | 'open_bidding' | 'time_off_vacated' | 'availability_conflict' | 'time_off_replacement' | 'unassigned_open';
+  assignedGuardId?: string;
+  assignedGuardName?: string;
+  assignedGuardBadge?: string;
+  regularGuardName?: string;
+  isTimeOffReplacement?: boolean;
+  timeOffReason?: string;
+  actionTaken?: string;
+  biddingShiftId?: string;
+  scheduledShiftId?: string;
+  notes?: string;
+}
+
+export interface GenerateSetSchedulesResult {
+  generatedCount?: number;
+  totalGenerated?: number;
+  assignedCount?: number;
+  assignedShiftsCount?: number;
+  openBiddingCount?: number;
+  openBiddingShiftsCount?: number;
+  timeOffVacatedCount?: number;
+  timeOffReplacementsCount?: number;
+  conflictVacatedCount?: number;
+  createdScheduledShiftIds?: string[];
+  createdBiddingShiftIds?: string[];
+  entries?: GeneratedScheduleEntry[];
+  startDate?: string;
+  endDate?: string;
+  assignedShifts?: ScheduledShift[];
+  openShifts?: Shift[];
+  timeOffReplacementEntries?: GeneratedScheduleEntry[];
+  unassignedEntries?: GeneratedScheduleEntry[];
+  generatedShifts?: (ScheduledShift | Shift)[];
+  unassignedPushedToBidding?: Shift[];
+  timeOffConflicts?: GeneratedScheduleEntry[];
+}
+
+export interface SetScheduleAiSuggestion {
+  guardId: string;
+  guardName: string;
+  guardBadge: string;
+  guardPhone: string;
+  suitabilityScore: number;
+  matchGrade: 'top' | 'strong' | 'moderate' | 'needs_ojt' | 'conflict';
+  isSiteTrained: boolean;
+  missingCertifications: string[];
+  matchedCertifications: string[];
+  weeklyAvailabilityMatch: string;
+  reasons: string[];
+  suggestedAssignmentNote: string;
+  // Compatibility properties
+  fitScore?: number;
+  guard?: {
+    id: string;
+    name: string;
+    badgeNumber: string;
+    phone: string;
+    role?: string;
+  };
+  availabilityMatch?: string;
+  currentWeeklyHours?: number;
+  setScheduleId?: string;
+  setScheduleTitle?: string;
+  siteName?: string;
+  daysPattern?: string;
+  candidate?: {
+    guardId: string;
+    guardName: string;
+    guardBadge: string;
+    guardPhone: string;
+    role: string;
+    score: number;
+    isSiteTrained: boolean;
+    isAvailableAllDays: boolean;
+    missingAvailabilityDays?: string[];
+    certificationsMatched: string[];
+    reasons: string[];
+  } | null;
+  alternativeCandidates?: {
+    guardId: string;
+    guardName: string;
+    guardBadge: string;
+    score: number;
+    isAvailableAllDays: boolean;
+  }[];
+}

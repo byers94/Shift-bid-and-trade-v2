@@ -16,7 +16,13 @@ import {
   TimeSpecificTask,
   TaskCompletionLog,
   ShiftClaimRequest,
-  StandardShiftReport
+  StandardShiftReport,
+  SetSchedule,
+  TimeOffRequest,
+  GuardCallOffRecord,
+  GuardWeeklyAvailability,
+  DailyAvailabilityRule,
+  DayOfWeek
 } from '../types/shift';
 
 export const OPS_DISPATCH_PHONE = '+1 (800) 555-0199';
@@ -1157,6 +1163,35 @@ export const INITIAL_ADMIN_USERS: AdminUser[] = [
   }
 ];
 
+export const createStandardWeeklyRules = (
+  availableDays: DayOfWeek[] = [1, 2, 3, 4, 5],
+  startTime: string = '00:00',
+  endTime: string = '23:59',
+  preferredShiftTypes: ('day' | 'swing' | 'grave' | 'roving')[] = ['day', 'swing']
+): DailyAvailabilityRule[] => {
+  const days: { day: DayOfWeek; label: string }[] = [
+    { day: 0, label: 'Sunday' },
+    { day: 1, label: 'Monday' },
+    { day: 2, label: 'Tuesday' },
+    { day: 3, label: 'Wednesday' },
+    { day: 4, label: 'Thursday' },
+    { day: 5, label: 'Friday' },
+    { day: 6, label: 'Saturday' }
+  ];
+
+  return days.map(({ day, label }) => {
+    const isAvail = availableDays.includes(day);
+    return {
+      dayOfWeek: day,
+      dayLabel: label,
+      isAvailable: isAvail,
+      startTime: isAvail ? startTime : undefined,
+      endTime: isAvail ? endTime : undefined,
+      preferredShiftTypes: isAvail ? preferredShiftTypes : []
+    };
+  });
+};
+
 export const CURRENT_GUARD: GuardProfile = {
   id: 'guard-current',
   name: 'Alex Mercer',
@@ -1174,7 +1209,15 @@ export const CURRENT_GUARD: GuardProfile = {
   pin: '8842',
   biometricsEnabled: true,
   biometricCredentialId: 'bio-cred-8842',
-  lastLogin: '2026-08-27T06:30:00Z'
+  lastLogin: '2026-08-27T06:30:00Z',
+  availability: {
+    guardId: 'guard-current',
+    weeklyRules: createStandardWeeklyRules([1, 2, 3, 4, 5], '06:00', '18:00', ['day']),
+    maxWeeklyHours: 40,
+    preferredSites: ['Port Authority - Pier 7', 'Corporate HQ - Main Tower'],
+    preferredServiceTypes: ['dedicated'],
+    notes: 'Available Mon-Fri Day Shifts. Prefers maritime and commercial critical infrastructure.'
+  }
 };
 
 export const GUARDS_LIST: GuardProfile[] = [
@@ -1196,7 +1239,15 @@ export const GUARDS_LIST: GuardProfile[] = [
     pin: '7721',
     biometricsEnabled: true,
     biometricCredentialId: 'bio-cred-7721',
-    lastLogin: '2026-08-26T22:15:00Z'
+    lastLogin: '2026-08-26T22:15:00Z',
+    availability: {
+      guardId: 'guard-101',
+      weeklyRules: createStandardWeeklyRules([1, 2, 3, 4, 5, 6], '14:00', '00:00', ['swing', 'day']),
+      maxWeeklyHours: 40,
+      preferredSites: ['Corporate HQ - Main Tower', 'Hotel Grand Lobby & Concierge'],
+      preferredServiceTypes: ['dedicated'],
+      notes: 'Available afternoon/evening swing shifts. Experienced in executive concierge.'
+    }
   },
   {
     id: 'guard-102',
@@ -1214,7 +1265,15 @@ export const GUARDS_LIST: GuardProfile[] = [
     password: 'password123',
     pin: '9104',
     biometricsEnabled: false,
-    lastLogin: '2026-08-25T18:00:00Z'
+    lastLogin: '2026-08-25T18:00:00Z',
+    availability: {
+      guardId: 'guard-102',
+      weeklyRules: createStandardWeeklyRules([4, 5, 6, 0, 1], '16:00', '04:00', ['swing', 'grave']),
+      maxWeeklyHours: 36,
+      preferredSites: ['Industrial Warehouse Night Watch', 'Retail Plaza - Patrol'],
+      preferredServiceTypes: ['dedicated', 'roving'],
+      notes: 'Available Thu-Mon evenings. Enrolled in daytime vocational college.'
+    }
   },
   {
     id: 'guard-103',
@@ -1233,7 +1292,17 @@ export const GUARDS_LIST: GuardProfile[] = [
     pin: '6340',
     biometricsEnabled: true,
     biometricCredentialId: 'bio-cred-6340',
-    lastLogin: '2026-08-27T05:00:00Z'
+    lastLogin: '2026-08-27T05:00:00Z',
+    isRovingGuard: true,
+    rovingGroup: 'Alpha Group',
+    availability: {
+      guardId: 'guard-103',
+      weeklyRules: createStandardWeeklyRules([0, 1, 2, 3, 4, 5, 6], '00:00', '23:59', ['day', 'swing', 'grave', 'roving']),
+      maxWeeklyHours: 48,
+      preferredSites: ['City Airport Gate 4', 'Midtown Commercial Lofts', 'Port Authority - Pier 7'],
+      preferredServiceTypes: ['roving', 'dedicated'],
+      notes: 'Lead Officer. Open 24/7 availability for emergency dispatch and rover supervision.'
+    }
   },
   {
     id: 'guard-104',
@@ -1252,7 +1321,15 @@ export const GUARDS_LIST: GuardProfile[] = [
     pin: '4199',
     biometricsEnabled: true,
     biometricCredentialId: 'bio-cred-4199',
-    lastLogin: '2026-08-26T14:45:00Z'
+    lastLogin: '2026-08-26T14:45:00Z',
+    availability: {
+      guardId: 'guard-104',
+      weeklyRules: createStandardWeeklyRules([1, 2, 3, 4, 5], '00:00', '12:00', ['grave', 'day']),
+      maxWeeklyHours: 40,
+      preferredSites: ['Tech Campus North - Data Center', 'City Airport Gate 4'],
+      preferredServiceTypes: ['dedicated'],
+      notes: 'Specialist in critical infrastructure & server pod access.'
+    }
   },
   {
     id: 'guard-105',
@@ -1270,7 +1347,15 @@ export const GUARDS_LIST: GuardProfile[] = [
     password: 'password123',
     pin: '5510',
     biometricsEnabled: false,
-    lastLogin: '2026-08-24T19:20:00Z'
+    lastLogin: '2026-08-24T19:20:00Z',
+    availability: {
+      guardId: 'guard-105',
+      weeklyRules: createStandardWeeklyRules([3, 4, 5, 6, 0], '18:00', '06:00', ['grave']),
+      maxWeeklyHours: 44,
+      preferredSites: ['Waterfront Chemical Plant', 'Port Authority - Pier 7', 'Industrial Warehouse Night Watch'],
+      preferredServiceTypes: ['dedicated'],
+      notes: 'Graveyard shift specialist. Available Wed-Sun overnights.'
+    }
   },
   {
     id: 'guard-106',
@@ -1288,7 +1373,15 @@ export const GUARDS_LIST: GuardProfile[] = [
     password: 'password123',
     pin: '3820',
     biometricsEnabled: false,
-    lastLogin: '2026-08-23T08:10:00Z'
+    lastLogin: '2026-08-23T08:10:00Z',
+    availability: {
+      guardId: 'guard-106',
+      weeklyRules: createStandardWeeklyRules([5, 6, 0], '08:00', '22:00', ['day', 'swing']),
+      maxWeeklyHours: 24,
+      preferredSites: ['Retail Plaza - Patrol'],
+      preferredServiceTypes: ['dedicated'],
+      notes: 'Weekend part-time availability (Fri, Sat, Sun).'
+    }
   },
   {
     id: 'guard-107',
@@ -1316,7 +1409,15 @@ export const GUARDS_LIST: GuardProfile[] = [
     pin: '1102',
     biometricsEnabled: true,
     biometricCredentialId: 'bio-cred-1102',
-    lastLogin: '2026-08-27T04:15:00Z'
+    lastLogin: '2026-08-27T04:15:00Z',
+    availability: {
+      guardId: 'guard-107',
+      weeklyRules: createStandardWeeklyRules([1, 2, 3, 4, 5], '06:00', '18:00', ['day', 'swing']),
+      maxWeeklyHours: 40,
+      preferredSites: ['West Medical Center - Emergency Dept', 'Corporate HQ - Main Tower'],
+      preferredServiceTypes: ['dedicated'],
+      notes: 'Supervisor daylight command. Available Mon-Fri.'
+    }
   }
 ];
 
@@ -3065,9 +3166,236 @@ export const INITIAL_STANDARD_REPORTS: StandardShiftReport[] = [
   }
 ];
 
+export const INITIAL_SET_SCHEDULES: SetSchedule[] = [
+  {
+    id: 'SETSCHED-01',
+    title: 'Pier 7 Maritime Scale Gate - Mon-Fri Day Shift',
+    siteId: 'site-1',
+    siteName: 'Port Authority - Pier 7',
+    siteAddress: '2200 Alaskan Way, Pier 7, Seattle, WA 98121',
+    serviceType: 'dedicated',
+    daysOfWeek: [1, 2, 3, 4, 5],
+    daysPatternLabel: 'Mon - Fri',
+    startTime: '08:00',
+    endTime: '16:00',
+    hours: 8,
+    postRole: 'Berth 4 Access Control & Truck Scale Gate Lead',
+    postInstructions: 'Mandatory TWIC badge check for all freight truck drivers entering Berth 4 & 7. Conduct bi-hourly perimeter scans.',
+    requiredCertifications: ['TWIC Card', 'Armed Endorsement', 'CPR/AED'],
+    urgency: 'standard',
+    regularGuardId: 'guard-current',
+    regularGuardName: 'Alex Mercer',
+    regularGuardBadge: 'SEC-8842',
+    regularGuardPhone: '+1 (555) 234-5678',
+    isActive: true,
+    notes: 'Regular standing master schedule for Port Authority primary gate post.'
+  },
+  {
+    id: 'SETSCHED-02',
+    title: 'Corporate HQ Executive Concierge - Mon-Fri Swing Shift',
+    siteId: 'site-2',
+    siteName: 'Corporate HQ - Main Tower',
+    siteAddress: '500 Executive Blvd, Main Tower, Bellevue, WA 98004',
+    serviceType: 'dedicated',
+    daysOfWeek: [1, 2, 3, 4, 5],
+    daysPatternLabel: 'Mon - Fri',
+    startTime: '16:00',
+    endTime: '00:00',
+    hours: 8,
+    postRole: 'Executive Lobby Concierge & C-Suite Access Control',
+    postInstructions: 'Issue guest RFID badges. Night sweep of C-suite floors 12-18 and server bay locks.',
+    requiredCertifications: ['CCTV Monitoring', 'CPR/AED', 'Access Control'],
+    urgency: 'standard',
+    regularGuardId: 'guard-101',
+    regularGuardName: 'Sarah Jenkins',
+    regularGuardBadge: 'SEC-7721',
+    regularGuardPhone: '+1 (555) 345-6789',
+    isActive: true,
+    notes: 'Regular standing master schedule for high-density corporate tower concierge.'
+  },
+  {
+    id: 'SETSCHED-03',
+    title: 'Tech Campus North Data Center - Daily Graveyard',
+    siteId: 'site-6',
+    siteName: 'Tech Campus North - Data Center',
+    siteAddress: '1501 4th Ave, Tech District, Seattle, WA 98101',
+    serviceType: 'dedicated',
+    daysOfWeek: [1, 2, 3, 4, 5],
+    daysPatternLabel: 'Mon - Fri',
+    startTime: '00:00',
+    endTime: '08:00',
+    hours: 8,
+    postRole: 'Server Pods & Mantrap Biometric Access Specialist',
+    postInstructions: 'Strict biometric and card access into server halls. Zero unauthorized recording devices permitted inside white space.',
+    requiredCertifications: ['Secret Clearance', 'Biometric Systems', 'Access Control Specialist'],
+    urgency: 'standard',
+    regularGuardId: 'guard-104',
+    regularGuardName: 'Elena Rostova',
+    regularGuardBadge: 'SEC-4199',
+    regularGuardPhone: '+1 (555) 678-9012',
+    isActive: true,
+    notes: 'Mission critical tier 4 data center overnight protection post.'
+  },
+  {
+    id: 'SETSCHED-04',
+    title: 'Alpha Group Downtown Rover Patrol - Mon-Fri Night Shift',
+    siteId: 'site-12',
+    siteName: 'Midtown Commercial Lofts',
+    siteAddress: '1420 5th Ave, Seattle, WA 98101',
+    serviceType: 'roving',
+    rovingGroup: 'Alpha Group',
+    assignedRoverUnit: 'RVR-101 (Alpha-1 Interceptor)',
+    daysOfWeek: [1, 2, 3, 4, 5],
+    daysPatternLabel: 'Mon - Fri',
+    startTime: '20:00',
+    endTime: '04:00',
+    hours: 8,
+    postRole: 'Alpha Group Downtown Commercial & Residential Circuit Lead',
+    postInstructions: 'Continuous vehicle and foot patrols across Alpha Group assigned downtown properties. Respond to CFS dispatches.',
+    requiredCertifications: ['Armed Endorsement', 'Incident Command', 'Guard Card'],
+    urgency: 'standard',
+    regularGuardId: 'guard-103',
+    regularGuardName: 'Marcus Wright',
+    regularGuardBadge: 'SEC-6340',
+    regularGuardPhone: '+1 (555) 567-8901',
+    isActive: true,
+    notes: 'Lead mobile roving circuit unit patrolling 6 downtown properties.'
+  },
+  {
+    id: 'SETSCHED-05',
+    title: 'Waterfront Chemical Plant - Weekend Night Watch',
+    siteId: 'site-11',
+    siteName: 'Waterfront Chemical Plant',
+    siteAddress: '3400 E Marginal Way S, Seattle, WA 98134',
+    serviceType: 'dedicated',
+    daysOfWeek: [0, 6],
+    daysPatternLabel: 'Sat - Sun',
+    startTime: '18:00',
+    endTime: '06:00',
+    hours: 12,
+    postRole: 'HAZMAT Tank Farm & South Rail Perimeter Gate',
+    postInstructions: 'Overnight gate control. Respirator & HAZMAT gear compliance. Check photoelectric perimeter sensors.',
+    requiredCertifications: ['TWIC Card', 'Heavy Equipment Perimeter', 'Night Ops Specialist'],
+    urgency: 'standard',
+    regularGuardId: 'guard-105',
+    regularGuardName: 'David Silva',
+    regularGuardBadge: 'SEC-5510',
+    regularGuardPhone: '+1 (555) 789-0123',
+    isActive: true,
+    notes: 'Standing weekend overnight post for critical chemical terminal.'
+  },
+  {
+    id: 'SETSCHED-06',
+    title: 'Retail Plaza Weekend Safety Patrol (Unassigned Shift)',
+    siteId: 'site-5',
+    siteName: 'Retail Plaza - Patrol',
+    siteAddress: '800 Pine St, Downtown Seattle, WA 98101',
+    serviceType: 'dedicated',
+    daysOfWeek: [0, 6],
+    daysPatternLabel: 'Sat - Sun',
+    startTime: '10:00',
+    endTime: '18:00',
+    hours: 8,
+    postRole: 'Retail Concourse Patrol & Shoplifting Deterrence',
+    postInstructions: 'Foot patrol of inner concourse, food pavilion, and outer plaza perimeters. Deter shoplifting and assist lost customers.',
+    requiredCertifications: ['Guard Card', 'Customer Service'],
+    urgency: 'standard',
+    regularGuardId: undefined, // Unassigned! Will auto-populate to shift bidding queue
+    isActive: true,
+    notes: 'Open regular weekend schedule — automatically routed to Shift Bidding Queue for guard bids.'
+  },
+  {
+    id: 'SETSCHED-07',
+    title: 'Bravo Group Waterfront Marina Circuit - Daily Twilight (Unassigned)',
+    siteId: 'site-13',
+    siteName: 'Pier 66 Marina Boardwalk',
+    siteAddress: '2201 Alaskan Way, Pier 66, Seattle, WA 98121',
+    serviceType: 'roving',
+    rovingGroup: 'Bravo Group',
+    assignedRoverUnit: 'RVR-102 (Bravo-2 Interceptor)',
+    daysOfWeek: [1, 2, 3, 4, 5],
+    daysPatternLabel: 'Mon - Fri',
+    startTime: '18:00',
+    endTime: '02:00',
+    hours: 8,
+    postRole: 'Bravo Group Waterfront Marina & Promenade Patrol',
+    postInstructions: 'Inspect marina security gates, dock slip electrical panels, and waterside dining areas.',
+    requiredCertifications: ['TWIC Card', 'CPR/AED', 'Foot Patrol License'],
+    urgency: 'standard',
+    regularGuardId: undefined, // Unassigned! Auto-populates to Shift Bidding Queue
+    isActive: true,
+    notes: 'Open roving shift — automatically routed to Shift Bidding Queue with priority push.'
+  }
+];
 
+export const INITIAL_TIME_OFF_REQUESTS: TimeOffRequest[] = [
+  {
+    id: 'TO-2026-001',
+    guardId: 'guard-current',
+    guardName: 'Alex Mercer',
+    guardBadge: 'SEC-8842',
+    guardPhone: '+1 (555) 234-5678',
+    startDate: '2026-08-30',
+    endDate: '2026-09-02',
+    type: 'vacation',
+    reason: 'Annual family summer trip out of state. Coordinated with relief dispatcher.',
+    status: 'approved',
+    requestedAt: '2026-08-15T09:00:00Z',
+    resolvedAt: '2026-08-16T14:30:00Z',
+    resolvedByAdminName: "Lt. Mark O'Connor",
+    resolvedByAdminBadge: 'OPS-CMD-01',
+    resolutionNote: 'Approved. Shifts during this window will auto-vacate into the Bidding Queue.'
+  },
+  {
+    id: 'TO-2026-002',
+    guardId: 'guard-102',
+    guardName: 'Mike Chen',
+    guardBadge: 'SEC-9104',
+    guardPhone: '+1 (555) 456-7890',
+    startDate: '2026-09-05',
+    endDate: '2026-09-07',
+    type: 'personal',
+    reason: 'Vocational technical examination and lab practicum certifications.',
+    status: 'pending',
+    requestedAt: '2026-08-25T11:00:00Z'
+  },
+  {
+    id: 'TO-2026-003',
+    guardId: 'guard-104',
+    guardName: 'Elena Rostova',
+    guardBadge: 'SEC-4199',
+    guardPhone: '+1 (555) 678-9012',
+    startDate: '2026-09-10',
+    endDate: '2026-09-12',
+    type: 'training',
+    reason: 'Advanced Critical Infrastructure Cyber-Physical Security Symposium.',
+    status: 'approved',
+    requestedAt: '2026-08-20T10:00:00Z',
+    resolvedAt: '2026-08-21T16:00:00Z',
+    resolvedByAdminName: "Lt. Mark O'Connor",
+    resolvedByAdminBadge: 'OPS-CMD-01',
+    resolutionNote: 'Approved for professional development credentials.'
+  }
+];
 
-
-
-
-
+export const INITIAL_CALL_OFF_RECORDS: GuardCallOffRecord[] = [
+  {
+    id: 'CO-2026-0826-01',
+    guardId: 'guard-106',
+    guardName: 'Jamar Vance',
+    guardBadge: 'SEC-3820',
+    guardPhone: '+1 (555) 890-1234',
+    scheduledShiftId: 'SCHED-2026-0826-05',
+    siteName: 'Retail Plaza - Patrol',
+    shiftDate: '2026-08-26',
+    shiftStartTime: '20:00',
+    shiftEndTime: '00:00',
+    reason: 'Sudden onset fever & medical illness. Contacted dispatch via phone at 19:40.',
+    calledOffAt: new Date(Date.now() - 40 * 60 * 1000).toISOString(),
+    isNoShow: false,
+    convertedToUrgentBid: true,
+    urgentShiftId: 'shift-urg-24h-02',
+    acknowledgedByAdmin: "Lt. Mark O'Connor (OPS-CMD-01)",
+    resolutionNote: 'Shift vacated and pushed to urgent bidding queue with push broadcast dispatched to available guards.'
+  }
+];

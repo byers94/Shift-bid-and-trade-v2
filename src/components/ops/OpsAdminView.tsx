@@ -18,6 +18,9 @@ import { LateShiftAlertModal } from './LateShiftAlertModal';
 import { RoverRouteOptimizationPanel } from './RoverRouteOptimizationPanel';
 import { SiteTaskOverview } from './SiteTaskOverview';
 import { StandardReportsHub } from './StandardReportsHub';
+import { SetSchedulesManager } from './SetSchedulesManager';
+import { GuardAvailabilityTracker } from './GuardAvailabilityTracker';
+import { CallOffQueuePanel } from './CallOffQueuePanel';
 import { 
   ShieldCheck, 
   Activity, 
@@ -47,7 +50,9 @@ import {
   Clock,
   AlertTriangle,
   Navigation,
-  CheckSquare
+  CheckSquare,
+  PhoneOff,
+  CalendarRange
 } from 'lucide-react';
 
 interface OpsAdminViewProps {
@@ -80,11 +85,14 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
     rovers,
     activeInterceptions,
     taskCompletionLogs,
-    standardReports
+    standardReports,
+    setSchedules,
+    timeOffRequests,
+    callOffRecords
   } = useShiftOps();
 
   const [activeMainTab, setActiveMainTabState] = useState<
-    'operations' | 'live_tracking' | 'rover_routing' | 'calendar_schedule' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal'
+    'operations' | 'live_tracking' | 'rover_routing' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal'
   >(() => {
     try {
       const saved = localStorage.getItem(STORAGE_OPS_MAIN_TAB_KEY);
@@ -93,6 +101,9 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         saved === 'live_tracking' || 
         saved === 'rover_routing' || 
         saved === 'calendar_schedule' || 
+        saved === 'set_schedules' ||
+        saved === 'guard_availability' ||
+        saved === 'call_off_queue' ||
         saved === 'calls_for_service' || 
         saved === 'standard_reports' || 
         saved === 'site_tasks' ||
@@ -107,7 +118,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
     return 'operations';
   });
 
-  const setActiveMainTab = (tab: 'operations' | 'live_tracking' | 'rover_routing' | 'calendar_schedule' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal') => {
+  const setActiveMainTab = (tab: 'operations' | 'live_tracking' | 'rover_routing' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal') => {
     setActiveMainTabState(tab);
     try {
       localStorage.setItem(STORAGE_OPS_MAIN_TAB_KEY, tab);
@@ -141,6 +152,9 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   const todayTaskLogsCount = (taskCompletionLogs || []).filter(l => l.completedAt?.startsWith(new Date().toISOString().slice(0, 10))).length;
   const pendingStandardReportsCount = (standardReports || []).filter(r => r.status === 'submitted').length;
   const emergencyEscalatedReportsCount = (standardReports || []).filter(r => r.reportType === 'incident' && r.incidentDetails?.escalatedToEmergencyServices).length;
+  const pendingTimeOffCount = (timeOffRequests || []).filter(r => r.status === 'pending').length;
+  const uncoveredCallOffsCount = (callOffRecords || []).filter(r => !r.replacementGuardName).length;
+  const setSchedulesCount = (setSchedules || []).length;
 
   return (
     <main 
@@ -470,6 +484,68 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
             </span>
           </button>
 
+          {/* Set & Long-Term Schedules Sub-Nav Tab */}
+          <button
+            id="tab-set-schedules-btn"
+            type="button"
+            onClick={() => setActiveMainTab('set_schedules')}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              activeMainTab === 'set_schedules'
+                ? 'bg-blue-600 text-white shadow-xs font-black'
+                : 'text-blue-300 hover:text-white hover:bg-blue-950/60 dark:hover:bg-slate-800'
+            }`}
+          >
+            <CalendarRange className="w-3.5 h-3.5 text-blue-300" />
+            <span>Set Schedules</span>
+            <span className="bg-blue-950 text-blue-300 border border-blue-800 text-[10px] font-black px-1.5 py-0.2 rounded-full font-mono">
+              {setSchedulesCount}
+            </span>
+          </button>
+
+          {/* Guard Availability Tracker & Time Off Sub-Nav Tab */}
+          <button
+            id="tab-guard-availability-btn"
+            type="button"
+            onClick={() => setActiveMainTab('guard_availability')}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              activeMainTab === 'guard_availability'
+                ? 'bg-purple-600 text-white shadow-xs font-black'
+                : 'text-purple-300 hover:text-white hover:bg-purple-950/60 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5 text-purple-300" />
+            <span>Availability & Time-Off</span>
+            <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full font-mono ${
+              pendingTimeOffCount > 0
+                ? 'bg-amber-400 text-slate-950 animate-pulse'
+                : 'bg-purple-950 text-purple-300 border border-purple-800'
+            }`}>
+              {pendingTimeOffCount > 0 ? `🚨 ${pendingTimeOffCount} New` : `${guardsList.length} Guards`}
+            </span>
+          </button>
+
+          {/* Call-Offs & Emergency Relief Queue Sub-Nav Tab */}
+          <button
+            id="tab-call-off-queue-btn"
+            type="button"
+            onClick={() => setActiveMainTab('call_off_queue')}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              activeMainTab === 'call_off_queue'
+                ? 'bg-rose-600 text-white shadow-xs font-black'
+                : 'text-rose-300 hover:text-white hover:bg-rose-950/60 dark:hover:bg-slate-800'
+            }`}
+          >
+            <PhoneOff className="w-3.5 h-3.5 text-rose-300" />
+            <span>Call-Offs & Relief</span>
+            <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full font-mono ${
+              uncoveredCallOffsCount > 0
+                ? 'bg-rose-500 text-white animate-pulse'
+                : 'bg-slate-700 text-slate-300'
+            }`}>
+              {uncoveredCallOffsCount > 0 ? `⚠️ ${uncoveredCallOffsCount} Open` : `${callOffRecords.length}`}
+            </span>
+          </button>
+
           {/* Calls for Service & BOLOs Sub-Nav Tab */}
           <button
             id="tab-calls-for-service-btn"
@@ -785,6 +861,26 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
           <ShiftSchedulingCalendar 
             initialGuardFilter={calendarTargetGuardId || undefined}
           />
+        </div>
+      )}
+
+      {activeMainTab === 'set_schedules' && (
+        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
+          <SetSchedulesManager 
+            onOpenCalendar={() => setActiveMainTab('calendar_schedule')}
+          />
+        </div>
+      )}
+
+      {activeMainTab === 'guard_availability' && (
+        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
+          <GuardAvailabilityTracker />
+        </div>
+      )}
+
+      {activeMainTab === 'call_off_queue' && (
+        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
+          <CallOffQueuePanel />
         </div>
       )}
 

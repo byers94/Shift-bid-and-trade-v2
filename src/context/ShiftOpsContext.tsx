@@ -55,7 +55,17 @@ import {
   IncidentReportDetails,
   ReportMediaAttachment,
   OfflineQueuedReport,
-  ReportSyncStatus
+  ReportSyncStatus,
+  SetSchedule,
+  TimeOffRequest,
+  GuardCallOffRecord,
+  GuardWeeklyAvailability,
+  DailyAvailabilityRule,
+  DayOfWeek,
+  GenerateSetSchedulesOptions,
+  GeneratedScheduleEntry,
+  GenerateSetSchedulesResult,
+  SetScheduleAiSuggestion
 } from '../types/shift';
 import {
   enqueueOfflineReport,
@@ -105,8 +115,12 @@ import {
   INITIAL_SCHEDULED_SHIFTS,
   INITIAL_CLAIM_REQUESTS,
   INITIAL_TASK_COMPLETION_LOGS,
-  INITIAL_STANDARD_REPORTS
+  INITIAL_STANDARD_REPORTS,
+  INITIAL_SET_SCHEDULES,
+  INITIAL_TIME_OFF_REQUESTS,
+  INITIAL_CALL_OFF_RECORDS
 } from '../data/mockData';
+import { generateSetScheduleAiSuggestions } from '../utils/autoFillHeuristics';
 import { calculateHours, generateSmsLink, calculateShiftLateStatus, getShiftElapsedSeconds, formatElapsedTimer } from '../utils/time';
 import {
   evaluatePriorityShiftsForGuard,
@@ -503,6 +517,48 @@ interface ShiftOpsContextType {
   getRoverForGuard: (guardId: string) => RoverVehicle | undefined;
   getRoverByGroup: (group: RovingGroup) => RoverVehicle | undefined;
 
+  // Set Schedules & Recurring Assignments
+  setSchedules: SetSchedule[];
+  timeOffRequests: TimeOffRequest[];
+  callOffRecords: GuardCallOffRecord[];
+  addSetSchedule: (data: Omit<SetSchedule, 'id' | 'createdAt' | 'updatedAt'>) => SetSchedule;
+  updateSetSchedule: (id: string, data: Partial<SetSchedule>) => void;
+  deleteSetSchedule: (id: string) => void;
+  toggleSetScheduleActive: (id: string) => void;
+  assignGuardToSetSchedule: (scheduleId: string, guardId: string) => void;
+  generateSchedulesFromSetTemplates: (options: GenerateSetSchedulesOptions) => GenerateSetSchedulesResult;
+  getSetScheduleAiSuggestions: (setScheduleId: string) => SetScheduleAiSuggestion[];
+
+  // Guard Availability Tracker
+  updateGuardAvailability: (guardId: string, availability: Partial<GuardWeeklyAvailability>) => void;
+  updateGuardDailyRule: (guardId: string, dayOfWeek: DayOfWeek, rule: Partial<DailyAvailabilityRule>) => void;
+
+  // Time-Off Requests Management
+  submitTimeOffRequest: (data: Omit<TimeOffRequest, 'id' | 'requestedAt' | 'status'>) => TimeOffRequest;
+  reviewTimeOffRequest: (requestId: string, status: 'approved' | 'rejected' | 'denied', adminName?: string, adminBadge?: string, note?: string) => void;
+  cancelTimeOffRequest: (requestId: string) => void;
+
+  // Guard Call-Offs & Urgent Open Shift Quick-Add Flow
+  recordGuardCallOff: (data: {
+    scheduledShiftId: string;
+    reason: string;
+    guardId?: string;
+    guardName?: string;
+    guardBadge?: string;
+    siteName?: string;
+    shiftDate?: string;
+    startTime?: string;
+    endTime?: string;
+    notes?: string;
+    autoAddToBiddingQueue?: boolean;
+    broadcastPushNotification?: boolean;
+    isNoShow?: boolean;
+    postToBiddingQueue?: boolean;
+    sendUrgentPush?: boolean;
+    adminName?: string;
+  }) => { callOffRecord: GuardCallOffRecord; urgentShift?: Shift };
+  quickAddCallOffToBiddingQueue: (callOffId: string, options?: { sendPushNotification?: boolean; urgency?: 'standard' | 'emergency' }) => Shift | null;
+
   // System
   resetToDefaults: () => void;
 }
@@ -539,6 +595,9 @@ const STORAGE_KEY_TASK_COMPLETION_LOGS = 'secureshift_task_completion_logs_v1';
 const STORAGE_KEY_TASK_ALERTS_HISTORY = 'secureshift_task_alerts_history_v1';
 const STORAGE_KEY_SHIFT_CLAIMS = 'secureshift_claim_requests_v1';
 const STORAGE_KEY_STANDARD_REPORTS = 'secureshift_standard_reports_v1';
+const STORAGE_KEY_SET_SCHEDULES = 'secureshift_set_schedules_v1';
+const STORAGE_KEY_TIME_OFF_REQUESTS = 'secureshift_time_off_requests_v1';
+const STORAGE_KEY_CALL_OFF_RECORDS = 'secureshift_call_off_records_v1';
 
 export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [scheduledShifts, setScheduledShifts] = useState<ScheduledShift[]>(() => {
@@ -780,6 +839,61 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return INITIAL_STANDARD_REPORTS;
     }
   });
+
+  // Set Schedules & Standing Shift Templates State
+  const [setSchedules, setSetSchedules] = useState<SetSchedule[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_SET_SCHEDULES);
+      return saved ? JSON.parse(saved) : INITIAL_SET_SCHEDULES;
+    } catch {
+      return INITIAL_SET_SCHEDULES;
+    }
+  });
+
+  // Time-Off Requests State
+  const [timeOffRequests, setTimeOffRequests] = useState<TimeOffRequest[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_TIME_OFF_REQUESTS);
+      return saved ? JSON.parse(saved) : INITIAL_TIME_OFF_REQUESTS;
+    } catch {
+      return INITIAL_TIME_OFF_REQUESTS;
+    }
+  });
+
+  // Guard Call-Offs & No-Show Records State
+  const [callOffRecords, setCallOffRecords] = useState<GuardCallOffRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_CALL_OFF_RECORDS);
+      return saved ? JSON.parse(saved) : INITIAL_CALL_OFF_RECORDS;
+    } catch {
+      return INITIAL_CALL_OFF_RECORDS;
+    }
+  });
+
+  // LocalStorage synchronization for Set Schedules, Time-Off, and Call-Off records
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_SET_SCHEDULES, JSON.stringify(setSchedules));
+    } catch (e) {
+      console.warn('Failed to save set schedules', e);
+    }
+  }, [setSchedules]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_TIME_OFF_REQUESTS, JSON.stringify(timeOffRequests));
+    } catch (e) {
+      console.warn('Failed to save time-off requests', e);
+    }
+  }, [timeOffRequests]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_CALL_OFF_RECORDS, JSON.stringify(callOffRecords));
+    } catch (e) {
+      console.warn('Failed to save call-off records', e);
+    }
+  }, [callOffRecords]);
 
   // Offline Report Queue & Cloud Sync Status State
   const [offlineReportQueue, setOfflineReportQueue] = useState<OfflineQueuedReport[]>(() => getOfflineReportQueue());
@@ -5375,6 +5489,648 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     });
   };
 
+  // ==========================================
+  // Set Schedules & Standing Shift Templates
+  // ==========================================
+  const addSetSchedule = (data: Omit<SetSchedule, 'id' | 'createdAt' | 'updatedAt'>): SetSchedule => {
+    const nowIso = new Date().toISOString();
+    const newSchedule: SetSchedule = {
+      ...data,
+      id: `setsched-${Date.now()}`,
+      createdAt: nowIso,
+      updatedAt: nowIso
+    };
+
+    setSetSchedules((prev) => [newSchedule, ...prev]);
+
+    logAdminAction({
+      type: 'template_created',
+      adminName: "Lt. Mark O'Connor",
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'blue',
+      title: `Set Schedule Created: ${data.title}`,
+      description: `Configured standing ${data.daysPatternLabel} shift template for ${data.siteName} (${data.startTime}-${data.endTime}).`
+    });
+
+    showToast('Set Schedule Created', `Saved recurring schedule "${data.title}" for ${data.siteName}.`, 'success');
+    return newSchedule;
+  };
+
+  const updateSetSchedule = (id: string, data: Partial<SetSchedule>) => {
+    setSetSchedules((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, ...data, updatedAt: new Date().toISOString() } : s))
+    );
+    showToast('Schedule Template Updated', 'Saved changes to standing set schedule.', 'info');
+  };
+
+  const deleteSetSchedule = (id: string) => {
+    const target = setSchedules.find((s) => s.id === id);
+    setSetSchedules((prev) => prev.filter((s) => s.id !== id));
+    if (target) {
+      showToast('Schedule Removed', `Removed standing set schedule "${target.title}".`, 'warning');
+    }
+  };
+
+  const toggleSetScheduleActive = (id: string) => {
+    setSetSchedules((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, isActive: !s.isActive, updatedAt: new Date().toISOString() } : s))
+    );
+  };
+
+  const assignGuardToSetSchedule = (scheduleId: string, guardId: string) => {
+    const targetGuard = guardsList.find((g) => g.id === guardId);
+    setSetSchedules((prev) =>
+      prev.map((s) => {
+        if (s.id === scheduleId) {
+          if (!targetGuard) {
+            return {
+              ...s,
+              regularGuardId: undefined,
+              regularGuardName: undefined,
+              regularGuardBadge: undefined,
+              regularGuardPhone: undefined,
+              updatedAt: new Date().toISOString()
+            };
+          }
+          return {
+            ...s,
+            regularGuardId: targetGuard.id,
+            regularGuardName: targetGuard.name,
+            regularGuardBadge: targetGuard.badgeNumber,
+            regularGuardPhone: targetGuard.phone,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return s;
+      })
+    );
+
+    if (targetGuard) {
+      showToast('Guard Assigned', `Assigned ${targetGuard.name} as regular guard for standing schedule.`, 'success');
+    } else {
+      showToast('Assignment Cleared', 'Schedule set to unassigned (open bidding).', 'info');
+    }
+  };
+
+  const generateSchedulesFromSetTemplates = (options: GenerateSetSchedulesOptions): GenerateSetSchedulesResult => {
+    const {
+      startDate,
+      endDate,
+      selectedScheduleIds,
+      overwriteExisting = false,
+      autoPopulateOpenShiftsToBiddingQueue = true,
+      respectTimeOff = true
+    } = options;
+
+    const start = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+
+    // Filter active schedules
+    const targetTemplates = setSchedules.filter((s) => {
+      if (!s.isActive) return false;
+      if (selectedScheduleIds && selectedScheduleIds.length > 0) {
+        return selectedScheduleIds.includes(s.id);
+      }
+      return true;
+    });
+
+    const createdShifts: ScheduledShift[] = [];
+    const generatedOpenShifts: Shift[] = [];
+    const unassignedEntries: GeneratedScheduleEntry[] = [];
+    const timeOffReplacementEntries: GeneratedScheduleEntry[] = [];
+
+    const formatDate = (d: Date) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    let cur = new Date(start);
+    while (cur <= end) {
+      const dateStr = formatDate(cur);
+      const dayOfWeek = cur.getDay() as DayOfWeek;
+
+      targetTemplates.forEach((template) => {
+        if (!template.daysOfWeek.includes(dayOfWeek)) return;
+
+        // Check if shift already exists on this date for this site and start time
+        const alreadyScheduled = scheduledShifts.some(
+          (s) =>
+            s.date === dateStr &&
+            s.siteName.toLowerCase() === template.siteName.toLowerCase() &&
+            s.startTime === template.startTime
+        );
+
+        if (alreadyScheduled && !overwriteExisting) {
+          return;
+        }
+
+        const hours = template.hours || calculateHours(template.startTime, template.endTime);
+        const regularGuard = guardsList.find((g) => g.id === template.regularGuardId);
+
+        // Check if regular guard is on approved time-off
+        let guardIsOnTimeOff = false;
+        let timeOffReason = '';
+        if (regularGuard && respectTimeOff) {
+          const matchingTimeOff = timeOffRequests.find(
+            (to) =>
+              to.guardId === regularGuard.id &&
+              to.status === 'approved' &&
+              dateStr >= to.startDate &&
+              dateStr <= to.endDate
+          );
+          if (matchingTimeOff) {
+            guardIsOnTimeOff = true;
+            timeOffReason = `${matchingTimeOff.type.toUpperCase()}: ${matchingTimeOff.reason}`;
+          }
+        }
+
+        if (regularGuard && !guardIsOnTimeOff) {
+          // Regular guard assigned and fully available
+          const newScheduledShift: ScheduledShift = {
+            id: `SCHED-${dateStr.replace(/-/g, '')}-${Date.now().toString().slice(-4)}-${Math.random().toString(36).substring(2, 5)}`,
+            guardId: regularGuard.id,
+            guardName: regularGuard.name,
+            guardBadge: regularGuard.badgeNumber,
+            guardPhone: regularGuard.phone,
+            siteName: template.siteName,
+            siteAddress: template.siteAddress,
+            postRole: template.postRole,
+            date: dateStr,
+            startTime: template.startTime,
+            endTime: template.endTime,
+            hours,
+            status: 'scheduled',
+            isRovingShift: template.serviceType === 'roving',
+            rovingGroup: template.rovingGroup,
+            notes: `Auto-generated from Set Schedule "${template.title}"`,
+            createdAt: new Date().toISOString()
+          };
+          createdShifts.push(newScheduledShift);
+        } else {
+          // Unassigned OR Regular Guard on Time-Off
+          if (guardIsOnTimeOff && regularGuard) {
+            timeOffReplacementEntries.push({
+              setScheduleId: template.id,
+              siteName: template.siteName,
+              date: dateStr,
+              startTime: template.startTime,
+              endTime: template.endTime,
+              hours,
+              regularGuardName: regularGuard.name,
+              status: 'time_off_replacement',
+              isTimeOffReplacement: true,
+              timeOffReason,
+              actionTaken: autoPopulateOpenShiftsToBiddingQueue
+                ? 'Sent to Shift Bidding Queue'
+                : 'Unassigned Shift Created'
+            });
+          } else {
+            unassignedEntries.push({
+              setScheduleId: template.id,
+              siteName: template.siteName,
+              date: dateStr,
+              startTime: template.startTime,
+              endTime: template.endTime,
+              hours,
+              status: 'unassigned_open',
+              actionTaken: autoPopulateOpenShiftsToBiddingQueue
+                ? 'Auto-populated into Shift Bidding Queue'
+                : 'Requires Manual Assignment'
+            });
+          }
+
+          if (autoPopulateOpenShiftsToBiddingQueue) {
+            const urgency = guardIsOnTimeOff ? 'emergency' : (template.urgency || 'standard');
+            const openShift: Shift = {
+              id: `shift-set-${dateStr.replace(/-/g, '')}-${Date.now().toString().slice(-4)}-${Math.random().toString(36).substring(2, 5)}`,
+              siteName: template.siteName,
+              address: template.siteAddress || '100 Main St, Seattle, WA 98101',
+              location: template.postRole || 'Main Security Post',
+              date: dateStr,
+              startTime: template.startTime,
+              endTime: template.endTime,
+              hours,
+              urgency,
+              status: 'open',
+              requiredCertifications: template.requiredCertifications || [],
+              notes: guardIsOnTimeOff
+                ? `⚡ RELIEF NEEDED: Regular officer ${regularGuard?.name} on approved time off (${timeOffReason}). From set schedule "${template.title}".`
+                : `Open standing shift from template "${template.title}". Available for bidding.`,
+              createdAt: new Date().toISOString(),
+              bidsCount: 0
+            };
+            generatedOpenShifts.push(openShift);
+          }
+        }
+      });
+
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    // Apply updates to state
+    if (createdShifts.length > 0) {
+      setScheduledShifts((prev) => [...createdShifts, ...prev]);
+    }
+    if (generatedOpenShifts.length > 0) {
+      setShifts((prev) => [...generatedOpenShifts, ...prev]);
+    }
+
+    logAdminAction({
+      type: 'shift_scheduled',
+      adminName: "Lt. Mark O'Connor",
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'emerald',
+      title: `Generated Set Schedules (${startDate} to ${endDate})`,
+      description: `Populated ${createdShifts.length} assigned guard shifts and ${generatedOpenShifts.length} open bidding shifts from standing templates.`
+    });
+
+    showToast(
+      'Set Schedules Generated',
+      `Created ${createdShifts.length} assigned shifts and ${generatedOpenShifts.length} open bidding shifts across ${startDate} to ${endDate}.`,
+      'success'
+    );
+
+    return {
+      totalGenerated: createdShifts.length + generatedOpenShifts.length,
+      assignedShiftsCount: createdShifts.length,
+      openBiddingShiftsCount: generatedOpenShifts.length,
+      timeOffReplacementsCount: timeOffReplacementEntries.length,
+      startDate,
+      endDate,
+      assignedShifts: createdShifts,
+      openShifts: generatedOpenShifts,
+      timeOffReplacementEntries,
+      unassignedEntries
+    };
+  };
+
+  const getSetScheduleAiSuggestions = (setScheduleId: string): SetScheduleAiSuggestion[] => {
+    const target = setSchedules.find((s) => s.id === setScheduleId);
+    if (!target) return [];
+    return generateSetScheduleAiSuggestions(target, guardsList, shifts, timeOffRequests, sitesList);
+  };
+
+  // ==========================================
+  // Guard Availability Tracker Management
+  // ==========================================
+  const updateGuardAvailability = (guardId: string, availability: Partial<GuardWeeklyAvailability>) => {
+    setGuardsList((prev) =>
+      prev.map((g) => {
+        if (g.id !== guardId) return g;
+        const currentAvail = g.availability || { guardId: g.id, weeklyRules: [], maxWeeklyHours: 40 };
+        return {
+          ...g,
+          availability: {
+            ...currentAvail,
+            ...availability,
+            updatedAt: new Date().toISOString()
+          }
+        };
+      })
+    );
+    if (activeGuard.id === guardId) {
+      setActiveGuard((prev) => {
+        const currentAvail = prev.availability || { guardId: prev.id, weeklyRules: [], maxWeeklyHours: 40 };
+        return {
+          ...prev,
+          availability: {
+            ...currentAvail,
+            ...availability,
+            updatedAt: new Date().toISOString()
+          }
+        };
+      });
+    }
+    if (authenticatedGuard?.id === guardId) {
+      setAuthenticatedGuard((prev) => {
+        if (!prev) return prev;
+        const currentAvail = prev.availability || { guardId: prev.id, weeklyRules: [], maxWeeklyHours: 40 };
+        return {
+          ...prev,
+          availability: {
+            ...currentAvail,
+            ...availability,
+            updatedAt: new Date().toISOString()
+          }
+        };
+      });
+    }
+    showToast('Availability Saved', `Weekly schedule availability updated for officer.`, 'success');
+  };
+
+  const updateGuardDailyRule = (guardId: string, dayOfWeek: DayOfWeek, rule: Partial<DailyAvailabilityRule>) => {
+    setGuardsList((prev) =>
+      prev.map((g) => {
+        if (g.id !== guardId) return g;
+        const currentAvail = g.availability || { guardId: g.id, weeklyRules: [] };
+        const currentRules = currentAvail.weeklyRules || [];
+        const updatedRules = currentRules.map((r) => (r.dayOfWeek === dayOfWeek ? { ...r, ...rule } : r));
+        if (!currentRules.some((r) => r.dayOfWeek === dayOfWeek)) {
+          const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+          updatedRules.push({
+            dayOfWeek,
+            dayLabel: dayNames[dayOfWeek] || 'Day',
+            isAvailable: true,
+            ...rule
+          });
+        }
+        return {
+          ...g,
+          availability: {
+            ...currentAvail,
+            weeklyRules: updatedRules,
+            lastUpdated: new Date().toISOString()
+          }
+        };
+      })
+    );
+
+    showToast('Availability Rule Saved', `Updated daily availability rule.`, 'success');
+  };
+
+  // ==========================================
+  // Time-Off Requests Management
+  // ==========================================
+  const submitTimeOffRequest = (data: Omit<TimeOffRequest, 'id' | 'requestedAt' | 'status'>): TimeOffRequest => {
+    const newRequest: TimeOffRequest = {
+      ...data,
+      id: `timeoff-${Date.now()}`,
+      status: 'pending',
+      requestedAt: new Date().toISOString()
+    };
+
+    setTimeOffRequests((prev) => [newRequest, ...prev]);
+
+    addAuditLog(
+      'TIME_OFF_REQUESTED',
+      'shift',
+      `Officer ${data.guardName} (${data.guardBadge}) submitted ${data.type.toUpperCase()} time-off request for ${data.startDate} to ${data.endDate} (${data.totalDays} day(s)). Reason: "${data.reason}".`,
+      data.guardName,
+      'info'
+    );
+
+    showToast('Time-Off Request Submitted', `Submitted ${data.type} request for ${data.startDate} to ${data.endDate}.`, 'info');
+    return newRequest;
+  };
+
+  const reviewTimeOffRequest = (
+    requestId: string,
+    status: 'approved' | 'rejected' | 'denied',
+    adminName = "Lt. Mark O'Connor",
+    adminBadge = 'OPS-CMD-01',
+    note?: string
+  ) => {
+    const nowIso = new Date().toISOString();
+    const target = timeOffRequests.find((r) => r.id === requestId);
+    const normalizedStatus: 'approved' | 'rejected' = status === 'approved' ? 'approved' : 'rejected';
+
+    setTimeOffRequests((prev) =>
+      prev.map((r) =>
+        r.id === requestId
+          ? {
+              ...r,
+              status: normalizedStatus,
+              reviewedAt: nowIso,
+              reviewedBy: `${adminName} (${adminBadge})`,
+              adminNotes: note || (status === 'approved' ? 'Approved by Operations' : 'Denied per staffing capacity')
+            }
+          : r
+      )
+    );
+
+    if (target) {
+      addAuditLog(
+        status === 'approved' ? 'TIME_OFF_APPROVED' : 'TIME_OFF_REJECTED',
+        'system',
+        `Time-off request for ${target.guardName} (${target.startDate} to ${target.endDate}) was ${status.toUpperCase()} by ${adminName}.`,
+        adminName,
+        status === 'approved' ? 'success' : 'warning'
+      );
+
+      logAdminAction({
+        type: status === 'approved' ? 'shift_scheduled' : 'shift_cancelled',
+        adminName,
+        adminBadge,
+        badgeVariant: status === 'approved' ? 'emerald' : 'rose',
+        title: `Time-Off ${status.toUpperCase()}: ${target.guardName}`,
+        description: `${status === 'approved' ? 'Approved' : 'Rejected'} ${target.type} leave for ${target.guardName} (${target.startDate} - ${target.endDate}).`
+      });
+
+      showToast(
+        `Time-Off ${status === 'approved' ? 'Approved' : 'Rejected'}`,
+        `${target.guardName}'s leave from ${target.startDate} to ${target.endDate} is now ${status}.`,
+        status === 'approved' ? 'success' : 'warning'
+      );
+    }
+  };
+
+  const cancelTimeOffRequest = (requestId: string) => {
+    setTimeOffRequests((prev) => prev.map((r) => (r.id === requestId ? { ...r, status: 'cancelled' } : r)));
+    showToast('Time-Off Cancelled', 'Request marked as cancelled.', 'info');
+  };
+
+  // ==========================================
+  // Guard Call-Offs & Quick-Add to Shift Bidding Queue
+  // ==========================================
+  const recordGuardCallOff = (data: {
+    scheduledShiftId: string;
+    reason: string;
+    guardId?: string;
+    guardName?: string;
+    guardBadge?: string;
+    siteName?: string;
+    shiftDate?: string;
+    startTime?: string;
+    endTime?: string;
+    notes?: string;
+    autoAddToBiddingQueue?: boolean;
+    broadcastPushNotification?: boolean;
+    isNoShow?: boolean;
+    postToBiddingQueue?: boolean;
+    sendUrgentPush?: boolean;
+    adminName?: string;
+  }): { callOffRecord: GuardCallOffRecord; urgentShift?: Shift } => {
+    const targetShift = scheduledShifts.find((s) => s.id === data.scheduledShiftId);
+    const nowIso = new Date().toISOString();
+    const isNoShow = data.isNoShow || false;
+    const postToBidding = data.autoAddToBiddingQueue !== undefined ? data.autoAddToBiddingQueue : data.postToBiddingQueue !== false;
+    const sendPush = data.broadcastPushNotification !== undefined ? data.broadcastPushNotification : data.sendUrgentPush !== false;
+    const admin = data.adminName || "Lt. Mark O'Connor (OPS-CMD-01)";
+
+    const callOffId = `calloff-${Date.now()}`;
+    let urgentShift: Shift | undefined;
+
+    // 1. If posting to bidding queue, create urgent open shift
+    if (postToBidding && targetShift) {
+      urgentShift = {
+        id: `shift-urgent-calloff-${Date.now().toString().slice(-4)}`,
+        siteName: targetShift.siteName,
+        address: targetShift.siteAddress || '100 Main St, Seattle, WA 98101',
+        location: targetShift.postRole || 'Active Security Post',
+        date: targetShift.date,
+        startTime: targetShift.startTime,
+        endTime: targetShift.endTime,
+        hours: targetShift.hours || 8,
+        urgency: 'emergency',
+        status: 'open',
+        notes: `🚨 URGENT RELIEF: Officer ${targetShift.guardName} ${isNoShow ? 'NO-SHOWED' : 'CALLED OFF'} (${data.reason}). Immediate coverage required!`,
+        requiredCertifications: targetShift.isRovingShift ? ['Roving Patrol'] : [],
+        createdAt: nowIso,
+        bidsCount: 0
+      };
+
+      setShifts((prev) => [urgentShift!, ...prev]);
+    }
+
+    // 2. Create call-off record
+    const newRecord: GuardCallOffRecord = {
+      id: callOffId,
+      scheduledShiftId: data.scheduledShiftId,
+      guardId: targetShift?.guardId || 'unknown',
+      guardName: targetShift?.guardName || 'Guard',
+      guardBadge: targetShift?.guardBadge || 'N/A',
+      guardPhone: targetShift?.guardPhone,
+      siteName: targetShift?.siteName || 'Facility',
+      shiftDate: targetShift?.date || new Date().toISOString().slice(0, 10),
+      shiftStartTime: targetShift?.startTime || '08:00',
+      shiftEndTime: targetShift?.endTime || '16:00',
+      hours: targetShift?.hours || 8,
+      reason: data.reason,
+      calledOffAt: nowIso,
+      isNoShow,
+      convertedToUrgentBid: postToBidding,
+      urgentShiftId: urgentShift?.id,
+      notes: `Reported by ${admin}`
+    };
+
+    setCallOffRecords((prev) => [newRecord, ...prev]);
+
+    // 3. Update scheduled shift status to cancelled with note
+    if (targetShift) {
+      setScheduledShifts((prev) =>
+        prev.map((s) =>
+          s.id === data.scheduledShiftId
+            ? {
+                ...s,
+                status: 'cancelled',
+                notes: `${s.notes ? s.notes + ' | ' : ''}⚠️ ${isNoShow ? 'NO-SHOW' : 'CALL-OFF'}: ${data.reason} (Reported by ${admin})`
+              }
+            : s
+        )
+      );
+    }
+
+    // 4. Send Push Notification and Play Audio Siren if requested
+    if (sendPush && urgentShift) {
+      try {
+        playPriorityShiftAlertSound();
+      } catch {}
+
+      const pushObj: PriorityPushNotification = {
+        id: `push-calloff-${Date.now()}`,
+        shiftId: urgentShift.id,
+        shift: urgentShift,
+        title: `🚨 URGENT OPEN SHIFT: ${urgentShift.siteName}`,
+        message: `Emergency relief needed today (${urgentShift.date} ${urgentShift.startTime}-${urgentShift.endTime}) at ${urgentShift.siteName}. 1-Click claim available now!`,
+        broadcastAt: nowIso,
+        dismissed: false
+      };
+      setActivePriorityPush(pushObj);
+    }
+
+    logAdminAction({
+      type: 'shift_cancelled',
+      adminName: admin,
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'rose',
+      title: `Guard ${isNoShow ? 'No-Show' : 'Call-Off'}: ${targetShift?.guardName || 'Officer'}`,
+      description: `${targetShift?.guardName} ${isNoShow ? 'no-showed' : 'called off'} for ${targetShift?.siteName} on ${targetShift?.date} (${data.reason}). ${postToBidding ? 'Urgent relief shift broadcast to bidding queue.' : ''}`
+    });
+
+    addAuditLog(
+      'GUARD_CALL_OFF_RECORDED',
+      'shift',
+      `🚨 [${isNoShow ? 'NO-SHOW' : 'CALL-OFF'}] Guard ${targetShift?.guardName} (${targetShift?.guardBadge}) unavailable for ${targetShift?.siteName} on ${targetShift?.date}. Reason: ${data.reason}. Relief posted: ${postToBidding ? 'YES' : 'NO'}.`,
+      admin,
+      'danger'
+    );
+
+    showToast(
+      isNoShow ? '🚨 Guard No-Show Logged' : '⚠️ Guard Call-Off Logged',
+      `${targetShift?.guardName} unavailable for ${targetShift?.siteName}. ${postToBidding ? 'Urgent relief shift added to Bidding Queue!' : ''}`,
+      'danger'
+    );
+
+    return { callOffRecord: newRecord, urgentShift };
+  };
+
+  const quickAddCallOffToBiddingQueue = (
+    callOffId: string,
+    options?: { sendPushNotification?: boolean; urgency?: 'standard' | 'emergency' }
+  ): Shift | null => {
+    const record = callOffRecords.find((r) => r.id === callOffId);
+    if (!record) return null;
+
+    const urgency = options?.urgency || 'emergency';
+    const sendPush = options?.sendPushNotification !== false;
+    const nowIso = new Date().toISOString();
+
+    const openShift: Shift = {
+      id: `shift-urgent-relief-${Date.now().toString().slice(-4)}`,
+      siteName: record.siteName,
+      address: '100 Main St, Seattle, WA 98101',
+      location: 'Assigned Security Post',
+      date: record.shiftDate,
+      startTime: record.shiftStartTime,
+      endTime: record.shiftEndTime,
+      hours: record.hours || 8,
+      urgency,
+      status: 'open',
+      notes: `🚨 URGENT RELIEF: Officer ${record.guardName} ${record.isNoShow ? 'No-Show' : 'Call-Off'} (${record.reason}). Immediate bidding open!`,
+      requiredCertifications: [],
+      createdAt: nowIso,
+      bidsCount: 0
+    };
+
+    setShifts((prev) => [openShift, ...prev]);
+
+    setCallOffRecords((prev) =>
+      prev.map((r) =>
+        r.id === callOffId
+          ? {
+              ...r,
+              postedToBiddingQueue: true,
+              urgentShiftId: openShift.id,
+              pushNotificationSent: sendPush,
+              status: 'relief_posted'
+            }
+          : r
+      )
+    );
+
+    if (sendPush) {
+      try {
+        playPriorityShiftAlertSound();
+      } catch {}
+      setActivePriorityPush({
+        id: `push-relief-${Date.now()}`,
+        shiftId: openShift.id,
+        shift: openShift,
+        title: `🚨 URGENT OPEN SHIFT: ${openShift.siteName}`,
+        body: `Emergency relief opened for ${openShift.siteName} (${openShift.date} ${openShift.startTime}-${openShift.endTime}). Tap to bid now!`,
+        urgency: 'critical',
+        hoursUntilShift: 1,
+        matchGrade: 'top',
+        timestamp: nowIso
+      });
+    }
+
+    showToast('Urgent Shift Posted', `Relief position for ${record.siteName} published to Shift Bidding Queue.`, 'success');
+    return openShift;
+  };
+
   // Dynamic Rover Route Optimization Methods
   const addTelemetryLog = (logData: Omit<RoverTelemetryLog, 'id' | 'timestamp'> & { timestamp?: string }): RoverTelemetryLog => {
     const newLog: RoverTelemetryLog = {
@@ -6039,7 +6795,13 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setSitesList(INITIAL_SITES);
     setShiftClaims(INITIAL_CLAIM_REQUESTS);
     localStorage.removeItem(STORAGE_KEY_SHIFT_CLAIMS);
-    showToast('System Reset', 'Demo shift, trade, schedule, time tracking, CFS calls, rover routes, and telemetry restored to initial state.', 'info');
+    setSetSchedules(INITIAL_SET_SCHEDULES);
+    setTimeOffRequests(INITIAL_TIME_OFF_REQUESTS);
+    setCallOffRecords(INITIAL_CALL_OFF_RECORDS);
+    localStorage.removeItem(STORAGE_KEY_SET_SCHEDULES);
+    localStorage.removeItem(STORAGE_KEY_TIME_OFF_REQUESTS);
+    localStorage.removeItem(STORAGE_KEY_CALL_OFF_RECORDS);
+    showToast('System Reset', 'Demo shift, trade, schedule, time tracking, CFS calls, rover routes, set schedules, and telemetry restored to initial state.', 'info');
   };
 
   return (
@@ -6092,6 +6854,23 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         getGuardActiveShift,
         getGuardUpcomingShifts,
         getGuardsLiveTracking,
+        setSchedules,
+        timeOffRequests,
+        callOffRecords,
+        addSetSchedule,
+        updateSetSchedule,
+        deleteSetSchedule,
+        toggleSetScheduleActive,
+        assignGuardToSetSchedule,
+        generateSchedulesFromSetTemplates,
+        getSetScheduleAiSuggestions,
+        updateGuardAvailability,
+        updateGuardDailyRule,
+        submitTimeOffRequest,
+        reviewTimeOffRequest,
+        cancelTimeOffRequest,
+        recordGuardCallOff,
+        quickAddCallOffToBiddingQueue,
         rovers,
         roverPlans,
         activeInterceptions,
