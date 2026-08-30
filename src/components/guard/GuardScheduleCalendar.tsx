@@ -50,6 +50,7 @@ export const GuardScheduleCalendar: React.FC<GuardScheduleCalendarProps> = ({
     activeClockedInShift, 
     timeOffRequests, 
     trades, 
+    coachingSessions,
     showToast 
   } = useShiftOps();
 
@@ -104,6 +105,13 @@ export const GuardScheduleCalendar: React.FC<GuardScheduleCalendarProps> = ({
   const getDeniedTimeOffForDate = (dateStr: string): TimeOffRequest | undefined => {
     return guardTimeOff.find(
       (r) => r.startDate <= dateStr && r.endDate >= dateStr && (r.status === 'denied' || (r.status as any) === 'rejected')
+    );
+  };
+
+  // Check coaching session for active guard on date
+  const getCoachingSessionForDate = (dateStr: string) => {
+    return coachingSessions.find(
+      (c) => c.guardId === activeGuard.id && c.scheduledDate === dateStr && c.status !== 'cancelled' && c.status !== 'completed'
     );
   };
 
@@ -582,6 +590,40 @@ export const GuardScheduleCalendar: React.FC<GuardScheduleCalendarProps> = ({
                   <p className="text-[10px] text-amber-700 dark:text-amber-300 font-semibold mt-1">
                     * Scheduled shifts below remain active and mandatory until Operations approves your request.
                   </p>
+                </div>
+              </div>
+            )}
+
+            {/* Coaching Session banner on selected day */}
+            {getCoachingSessionForDate(selectedDateStr) && (
+              <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 shadow-xs flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-amber-500 text-neutral-950 flex items-center justify-center font-bold text-xs">
+                      <CalendarDays className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                        1-on-1 Performance Coaching Session
+                      </h4>
+                      <p className="text-[10px] text-amber-700 dark:text-amber-300 font-medium">
+                        Topic: {getCoachingSessionForDate(selectedDateStr)?.topic}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100 uppercase">
+                    {getCoachingSessionForDate(selectedDateStr)?.status.replace(/_/g, ' ')}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-300 pt-1 border-t border-amber-200 dark:border-amber-800">
+                  <div className="flex items-center gap-1.5 font-mono font-bold">
+                    <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    <span>{getCoachingSessionForDate(selectedDateStr)?.scheduledTime}</span>
+                    <span className="text-[10px] text-slate-400">({getCoachingSessionForDate(selectedDateStr)?.durationMinutes} mins)</span>
+                  </div>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Location: Operations Command Room
+                  </span>
                 </div>
               </div>
             )}

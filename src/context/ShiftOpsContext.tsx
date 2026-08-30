@@ -60,6 +60,7 @@ import {
   TimeOffRequest,
   TimeOffDailyStats,
   GuardCallOffRecord,
+  GuardCoachingSession,
   GuardWeeklyAvailability,
   DailyAvailabilityRule,
   DayOfWeek,
@@ -119,10 +120,13 @@ import {
   INITIAL_STANDARD_REPORTS,
   INITIAL_SET_SCHEDULES,
   INITIAL_TIME_OFF_REQUESTS,
-  INITIAL_CALL_OFF_RECORDS
+  INITIAL_CALL_OFF_RECORDS,
+  INITIAL_COACHING_SESSIONS
 } from '../data/mockData';
 import { generateSetScheduleAiSuggestions } from '../utils/autoFillHeuristics';
 import { calculateHours, generateSmsLink, calculateShiftLateStatus, getShiftElapsedSeconds, formatElapsedTimer } from '../utils/time';
+import { calculateOculusScore } from '../utils/oculusScoring';
+import { validateCoachingScheduleSlot, validateAlternateCoachingDate } from '../utils/coachingSchedule';
 import {
   evaluatePriorityShiftsForGuard,
   checkShiftScheduleConflict,
@@ -249,8 +253,37 @@ interface ShiftOpsContextType {
   // Top Performers & Site Feedback
   addSiteFeedback: (feedback: Omit<SiteFeedbackEntry, 'id'>) => SiteFeedbackEntry;
   awardGuardCommendation: (guardId: string, badgeName: string, note?: string) => void;
+  coachingSessions: GuardCoachingSession[];
+  scheduleGuardCoaching: (
+    guardIdOrData: string | {
+      guardId: string;
+      topic: string;
+      scheduledDate: string;
+      scheduledTime?: string;
+      durationMinutes?: number;
+      notes?: string;
+      overrideRestrictions?: boolean;
+      overrideReason?: string;
+      hasShiftConflict?: boolean;
+      hasRestBufferConflict?: boolean;
+      conflictDetails?: string;
+    },
+    topic?: string,
+    scheduledDate?: string,
+    notes?: string
+  ) => GuardCoachingSession | undefined;
+  confirmGuardCoaching: (sessionId: string, guardNotes?: string) => void;
+  proposeAlternateCoaching: (
+    sessionId: string,
+    alternateDate: string,
+    alternateTime: string,
+    reason?: string
+  ) => { success: boolean; message: string };
+  acceptAlternateCoaching: (sessionId: string, adminNotes?: string) => void;
+  cancelCoachingSession: (sessionId: string, reason?: string) => void;
+  getGuardCoachingSessions: (guardId: string) => GuardCoachingSession[];
   getGuardPerformance: (guardId: string) => GuardPerformanceStats;
-  getLeaderboard: (sortBy?: 'composite' | 'shifts' | 'rating' | 'emergency' | 'ontime', timeframe?: string) => (GuardProfile & GuardPerformanceStats)[];
+  getLeaderboard: (sortBy?: 'composite' | 'oculus' | 'reliability' | 'client_exp' | 'shifts' | 'rating' | 'emergency' | 'ontime', timeframe?: string) => (GuardProfile & GuardPerformanceStats)[];
   
   // Guard Shift Alert Preferences
   updateAlertPreferences: (prefs: Partial<ShiftAlertPreferences>) => void;
@@ -618,6 +651,7 @@ const STORAGE_KEY_TIME_OFF_REQUESTS = 'secureshift_time_off_requests_v1';
 const STORAGE_KEY_MAX_DAILY_APPROVED_TIME_OFF = 'secureshift_max_daily_approved_time_off_v1';
 const STORAGE_KEY_DATE_SPECIFIC_MAX_TIME_OFF = 'secureshift_date_specific_max_time_off_v1';
 const STORAGE_KEY_CALL_OFF_RECORDS = 'secureshift_call_off_records_v1';
+const STORAGE_KEY_COACHING_SESSIONS = 'secureshift_coaching_sessions_v1';
 
 export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [scheduledShifts, setScheduledShifts] = useState<ScheduledShift[]>(() => {
@@ -910,6 +944,16 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   });
 
+  // Guard Coaching & Performance Remediation Sessions State
+  const [coachingSessions, setCoachingSessions] = useState<GuardCoachingSession[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_COACHING_SESSIONS);
+      return saved ? JSON.parse(saved) : INITIAL_COACHING_SESSIONS;
+    } catch {
+      return INITIAL_COACHING_SESSIONS;
+    }
+  });
+
   // LocalStorage synchronization for Set Schedules, Time-Off, and Call-Off records
   useEffect(() => {
     try {
@@ -950,6 +994,14 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       console.warn('Failed to save call-off records', e);
     }
   }, [callOffRecords]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_COACHING_SESSIONS, JSON.stringify(coachingSessions));
+    } catch (e) {
+      console.warn('Failed to save coaching sessions', e);
+    }
+  }, [coachingSessions]);
 
   // Offline Report Queue & Cloud Sync Status State
   const [offlineReportQueue, setOfflineReportQueue] = useState<OfflineQueuedReport[]>(() => getOfflineReportQueue());
@@ -2218,6 +2270,271 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     );
   };
 
+  const getGuardCoachingSessions = (guardId: string): GuardCoachingSession[] => {
+    return coachingSessions.filter((cs) => cs.guardId === guardId);
+  };
+
+  const scheduleGuardCoaching = (
+    guardIdOrData: string | {
+      guardId: string;
+      topic: string;
+      scheduledDate: string;
+      scheduledTime?: string;
+      durationMinutes?: number;
+      notes?: string;
+      overrideRestrictions?: boolean;
+      overrideReason?: string;
+      hasShiftConflict?: boolean;
+      hasRestBufferConflict?: boolean;
+      conflictDetails?: string;
+    },
+    topicArg?: string,
+    scheduledDateArg?: string,
+    notesArg?: string
+  ): GuardCoachingSession | undefined => {
+    let guardId = '';
+    let topic = '';
+    let scheduledDate = '';
+    let scheduledTime = '10:00';
+    let durationMinutes = 45;
+    let notes = '';
+    let overrideRestrictions = false;
+    let overrideReason: string | undefined;
+    let hasShiftConflict = false;
+    let hasRestBufferConflict = false;
+    let conflictDetails: string | undefined;
+
+    if (typeof guardIdOrData === 'object') {
+      guardId = guardIdOrData.guardId;
+      topic = guardIdOrData.topic;
+      scheduledDate = guardIdOrData.scheduledDate;
+      scheduledTime = guardIdOrData.scheduledTime || '10:00';
+      durationMinutes = guardIdOrData.durationMinutes || 45;
+      notes = guardIdOrData.notes || '';
+      overrideRestrictions = guardIdOrData.overrideRestrictions || false;
+      overrideReason = guardIdOrData.overrideReason;
+      hasShiftConflict = guardIdOrData.hasShiftConflict || false;
+      hasRestBufferConflict = guardIdOrData.hasRestBufferConflict || false;
+      conflictDetails = guardIdOrData.conflictDetails;
+    } else {
+      guardId = guardIdOrData;
+      topic = topicArg || 'Performance Review & Remediation';
+      scheduledDate = scheduledDateArg || new Date().toISOString().split('T')[0];
+      notes = notesArg || '';
+    }
+
+    const targetGuard = guardsList.find((g) => g.id === guardId);
+    if (!targetGuard) return undefined;
+
+    if (typeof guardIdOrData === 'object' && guardIdOrData.hasShiftConflict === undefined) {
+      const validation = validateCoachingScheduleSlot(
+        guardId,
+        scheduledDate,
+        scheduledTime,
+        durationMinutes,
+        scheduledShifts,
+        shifts,
+        8
+      );
+      hasShiftConflict = validation.hasShiftOverlap;
+      hasRestBufferConflict = validation.hasBufferViolation;
+      conflictDetails = validation.conflictDescription;
+    }
+
+    const newSession: GuardCoachingSession = {
+      id: `coach-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      guardId,
+      guardName: targetGuard.name,
+      guardBadge: targetGuard.badgeNumber,
+      topic,
+      scheduledDate,
+      scheduledTime,
+      durationMinutes,
+      scheduledBy: "Commander Mark O'Connor",
+      scheduledByBadge: "OPS-CMD-01",
+      notes,
+      status: 'pending_guard_action',
+      overrideRestrictions,
+      overrideReason,
+      hasShiftConflict,
+      hasRestBufferConflict,
+      conflictDetails,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    setCoachingSessions((prev) => [newSession, ...prev]);
+
+    logAdminAction({
+      type: 'user_created',
+      title: `Scheduled 1-on-1 Performance Coaching for ${targetGuard.name}`,
+      description: `Coaching Session: "${topic}" set for ${scheduledDate} at ${scheduledTime} (${durationMinutes}m). ${
+        overrideRestrictions ? 'Schedule conflict & 8h rest buffer manually overridden by Command. ' : ''
+      }${notes ? `Notes: ${notes}` : ''}`,
+      adminName: "Commander Mark O'Connor",
+      adminBadge: "OPS-CMD-01",
+      badgeVariant: 'amber',
+      metadata: { session: newSession }
+    });
+
+    showToast(
+      'Coaching Session Dispatched',
+      `Performance coaching dispatched to Officer ${targetGuard.name} for ${scheduledDate} at ${scheduledTime}. Awaiting guard confirmation.`,
+      'info'
+    );
+
+    return newSession;
+  };
+
+  const confirmGuardCoaching = (sessionId: string, guardNotes?: string) => {
+    const session = coachingSessions.find((s) => s.id === sessionId);
+    if (!session) return;
+
+    setCoachingSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId
+          ? {
+              ...s,
+              status: 'confirmed_by_guard' as const,
+              guardResponseNotes: guardNotes || s.guardResponseNotes,
+              updatedAt: new Date().toISOString()
+            }
+          : s
+      )
+    );
+
+    logAdminAction({
+      type: 'user_updated',
+      title: `Coaching Session Confirmed by ${session.guardName}`,
+      description: `Officer ${session.guardName} confirmed coaching session for ${session.scheduledDate} at ${session.scheduledTime}.`,
+      adminName: 'Guard Response Terminal',
+      adminBadge: session.guardBadge,
+      badgeVariant: 'emerald',
+      metadata: { sessionId, guardNotes }
+    });
+
+    showToast(
+      'Coaching Confirmed',
+      `Officer ${session.guardName} confirmed attendance for coaching on ${session.scheduledDate} at ${session.scheduledTime}.`,
+      'success'
+    );
+  };
+
+  const proposeAlternateCoaching = (
+    sessionId: string,
+    alternateDate: string,
+    alternateTime: string,
+    reason?: string
+  ): { success: boolean; message: string } => {
+    const session = coachingSessions.find((s) => s.id === sessionId);
+    if (!session) {
+      return { success: false, message: 'Coaching session not found.' };
+    }
+
+    const validation = validateAlternateCoachingDate(session.scheduledDate, alternateDate);
+    if (!validation.isValid) {
+      showToast('Invalid Alternate Date', validation.errorMessage || 'Date must be within 1 week of original session.', 'warning');
+      return { success: false, message: validation.errorMessage || 'Invalid alternate date' };
+    }
+
+    setCoachingSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId
+          ? {
+              ...s,
+              status: 'alternate_proposed_by_guard' as const,
+              proposedAlternateDate: alternateDate,
+              proposedAlternateTime: alternateTime,
+              alternateProposalReason: reason,
+              guardResponseNotes: reason,
+              updatedAt: new Date().toISOString()
+            }
+          : s
+      )
+    );
+
+    logAdminAction({
+      type: 'user_updated',
+      title: `Alternate Coaching Time Proposed by ${session.guardName}`,
+      description: `Officer ${session.guardName} proposed alternate coaching time for "${session.topic}": ${alternateDate} at ${alternateTime}. Reason: ${reason || 'Schedule adjustment requested.'}`,
+      adminName: 'Guard Response Terminal',
+      adminBadge: session.guardBadge,
+      badgeVariant: 'blue',
+      metadata: { sessionId, alternateDate, alternateTime, reason }
+    });
+
+    showToast(
+      'Alternate Time Proposed',
+      `Proposed alternate session for ${alternateDate} at ${alternateTime} submitted to Command for review.`,
+      'info'
+    );
+
+    return { success: true, message: 'Alternate time proposed successfully.' };
+  };
+
+  const acceptAlternateCoaching = (sessionId: string, adminNotes?: string) => {
+    const session = coachingSessions.find((s) => s.id === sessionId);
+    if (!session || !session.proposedAlternateDate) return;
+
+    const newDate = session.proposedAlternateDate;
+    const newTime = session.proposedAlternateTime || session.scheduledTime;
+
+    setCoachingSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId
+          ? {
+              ...s,
+              scheduledDate: newDate,
+              scheduledTime: newTime,
+              status: 'confirmed_by_guard' as const,
+              notes: adminNotes ? `${s.notes ? s.notes + ' | ' : ''}Supervisor approved alternate: ${adminNotes}` : s.notes,
+              updatedAt: new Date().toISOString()
+            }
+          : s
+      )
+    );
+
+    logAdminAction({
+      type: 'user_updated',
+      title: `Supervisor Accepted Alternate Coaching for ${session.guardName}`,
+      description: `New Coaching time confirmed: ${newDate} at ${newTime}. Topic: "${session.topic}".`,
+      adminName: "Commander Mark O'Connor",
+      adminBadge: "OPS-CMD-01",
+      badgeVariant: 'emerald',
+      metadata: { sessionId, newDate, newTime }
+    });
+
+    showToast(
+      'Alternate Time Approved',
+      `Coaching for Officer ${session.guardName} rescheduled to ${newDate} at ${newTime}.`,
+      'success'
+    );
+  };
+
+  const cancelCoachingSession = (sessionId: string, reason?: string) => {
+    const session = coachingSessions.find((s) => s.id === sessionId);
+    if (!session) return;
+
+    setCoachingSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId
+          ? {
+              ...s,
+              status: 'cancelled' as const,
+              notes: reason ? `${s.notes ? s.notes + ' | ' : ''}Cancelled: ${reason}` : s.notes,
+              updatedAt: new Date().toISOString()
+            }
+          : s
+      )
+    );
+
+    showToast(
+      'Coaching Session Cancelled',
+      `Coaching session for Officer ${session.guardName} was cancelled.`,
+      'info'
+    );
+  };
+
   const getGuardPerformance = (guardId: string): GuardPerformanceStats => {
     const base = GUARD_BASE_METRICS[guardId] || {
       fulfilledShiftsCount: 6,
@@ -2227,7 +2544,11 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       positiveFeedbackCount: 3,
       onTimeArrivalRate: 96.0,
       recognitionBadges: ['Active Patrol'],
-      topCommendedSite: 'Corporate HQ'
+      topCommendedSite: 'Corporate HQ',
+      geofenceBreachesCount: 0,
+      lateCallOffsCount: 0,
+      slaCheckpointsCompletedRate: 92.0,
+      darQualityRate: 88.0
     };
 
     // Calculate dynamically filled shifts in current system state
@@ -2254,6 +2575,27 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const totalEmergency = base.emergencyShiftsFulfilled + dynamicEmergencyCount;
     const totalPositiveReviews = base.positiveFeedbackCount + guardFeedbacks.length;
 
+    // Filter call-off records for this guard
+    const guardCallOffs = callOffRecords.filter(c => c.guardId === guardId);
+
+    // Calculate 100-Point Composite Oculus Score Breakdown
+    const oculusBreakdown = calculateOculusScore({
+      guardId,
+      onTimeArrivalRate: base.onTimeArrivalRate,
+      emergencyShiftsFulfilled: totalEmergency,
+      fulfilledShiftsCount: totalFulfilled,
+      feedbacks: guardFeedbacks,
+      callOffRecords: guardCallOffs,
+      geofenceBreachesCount: base.geofenceBreachesCount || 0,
+      slaCheckpointsCompletedRate: base.slaCheckpointsCompletedRate,
+      darQualityRate: base.darQualityRate
+    });
+
+    // Check for active coaching session
+    const activeCoaching = coachingSessions
+      .filter((cs) => cs.guardId === guardId && cs.status !== 'cancelled')
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+
     return {
       guardId,
       fulfilledShiftsCount: totalFulfilled,
@@ -2264,12 +2606,27 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       onTimeArrivalRate: base.onTimeArrivalRate,
       recognitionBadges: base.recognitionBadges,
       topCommendedSite: base.topCommendedSite,
-      recentFeedbacks: guardFeedbacks
+      recentFeedbacks: guardFeedbacks,
+      geofenceBreachesCount: base.geofenceBreachesCount || 0,
+      lateCallOffsCount: base.lateCallOffsCount || 0,
+      slaCheckpointsCompletedRate: base.slaCheckpointsCompletedRate,
+      darQualityRate: base.darQualityRate,
+      oculusScore: oculusBreakdown.oculusScore,
+      oculusBreakdown,
+      coachingScheduled: activeCoaching
+        ? {
+            scheduledDate: activeCoaching.scheduledDate,
+            topic: activeCoaching.topic,
+            scheduledBy: activeCoaching.scheduledBy,
+            notes: activeCoaching.notes
+          }
+        : undefined,
+      latestCoachingSession: activeCoaching
     };
   };
 
   const getLeaderboard = (
-    sortBy: 'composite' | 'shifts' | 'rating' | 'emergency' | 'ontime' = 'composite',
+    sortBy: 'composite' | 'oculus' | 'reliability' | 'client_exp' | 'shifts' | 'rating' | 'emergency' | 'ontime' = 'composite',
     timeframe: string = 'all'
   ): (GuardProfile & GuardPerformanceStats)[] => {
     const enrichedGuards = guardsList.map((guard) => {
@@ -2296,11 +2653,27 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (sortBy === 'ontime') {
         return b.onTimeArrivalRate - a.onTimeArrivalRate;
       }
+      if (sortBy === 'reliability') {
+        const relA = a.oculusBreakdown?.operationalReliabilityScore || 0;
+        const relB = b.oculusBreakdown?.operationalReliabilityScore || 0;
+        return relB - relA;
+      }
+      if (sortBy === 'client_exp') {
+        const expA = a.oculusBreakdown?.clientExperienceScore || 0;
+        const expB = b.oculusBreakdown?.clientExperienceScore || 0;
+        return expB - expA;
+      }
       
-      // Default composite score
-      const scoreA = (a.fulfilledShiftsCount * 2) + (a.ratingAverage * 25) + (a.emergencyShiftsFulfilled * 4) + (a.onTimeArrivalRate / 5);
-      const scoreB = (b.fulfilledShiftsCount * 2) + (b.ratingAverage * 25) + (b.emergencyShiftsFulfilled * 4) + (b.onTimeArrivalRate / 5);
-      return scoreB - scoreA;
+      // Default: Composite Oculus Score (100 pts max)
+      const scoreA = a.oculusScore ?? (a.oculusBreakdown?.oculusScore || 0);
+      const scoreB = b.oculusScore ?? (b.oculusBreakdown?.oculusScore || 0);
+      if (scoreB !== scoreA) {
+        return scoreB - scoreA;
+      }
+      if (b.ratingAverage !== a.ratingAverage) {
+        return b.ratingAverage - a.ratingAverage;
+      }
+      return b.fulfilledShiftsCount - a.fulfilledShiftsCount;
     });
   };
 
@@ -7031,9 +7404,11 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setSetSchedules(INITIAL_SET_SCHEDULES);
     setTimeOffRequests(INITIAL_TIME_OFF_REQUESTS);
     setCallOffRecords(INITIAL_CALL_OFF_RECORDS);
+    setCoachingSessions(INITIAL_COACHING_SESSIONS);
     localStorage.removeItem(STORAGE_KEY_SET_SCHEDULES);
     localStorage.removeItem(STORAGE_KEY_TIME_OFF_REQUESTS);
     localStorage.removeItem(STORAGE_KEY_CALL_OFF_RECORDS);
+    localStorage.removeItem(STORAGE_KEY_COACHING_SESSIONS);
     showToast('System Reset', 'Demo shift, trade, schedule, time tracking, CFS calls, rover routes, set schedules, and telemetry restored to initial state.', 'info');
   };
 
@@ -7164,6 +7539,13 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         deleteCall,
         addSiteFeedback,
         awardGuardCommendation,
+        coachingSessions,
+        scheduleGuardCoaching,
+        confirmGuardCoaching,
+        proposeAlternateCoaching,
+        acceptAlternateCoaching,
+        cancelCoachingSession,
+        getGuardCoachingSessions,
         getGuardPerformance,
         getLeaderboard,
         updateAlertPreferences,

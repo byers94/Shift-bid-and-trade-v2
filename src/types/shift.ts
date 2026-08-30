@@ -363,6 +363,8 @@ export interface PriorityPushNotification {
   snoozedUntil?: string;
 }
 
+export type ReviewerRoleType = 'property_manager' | 'supervisor' | 'resident';
+
 export interface SiteFeedbackEntry {
   id: string;
   guardId: string;
@@ -371,10 +373,72 @@ export interface SiteFeedbackEntry {
   rating: number; // 1.0 to 5.0
   reviewerName: string;
   reviewerTitle: string;
+  reviewerRole?: ReviewerRoleType;
   comment: string;
   tags: string[];
   date: string; // YYYY-MM-DD
   isVerifiedClient: boolean;
+}
+
+export interface OculusScoreBreakdown {
+  oculusScore: number; // 0 - 100
+  tier: 'diamond' | 'gold' | 'silver' | 'bronze' | 'coaching';
+  tierLabel: string;
+  
+  // Operational Reliability (Max 60 pts)
+  operationalReliabilityScore: number; // 0 - 60
+  attendancePunctualityScore: number; // 0 - 25
+  emergencyBonusPts: number;
+  callOffPenaltyPts: number;
+  slaCheckpointsScore: number; // 0 - 20
+  darQualityScore: number; // 0 - 15
+  geofenceBreachesCount: number;
+  geofencePenaltyPts: number; // -3 per breach
+  
+  // Client Experience (Max 40 pts)
+  clientExperienceScore: number; // 0 - 40
+  weightedStarRating: number; // 1.0 - 5.0
+  reviewCount: number;
+  isDefaultBaseline: boolean; // true if <3 reviews (baseline 4.0 stars = 32 pts)
+  reviewWeightBreakdown: {
+    propertyManagerCount: number;
+    supervisorCount: number;
+    residentCount: number;
+  };
+}
+
+export type CoachingSessionStatus = 
+  | 'pending_guard_action' 
+  | 'confirmed_by_guard' 
+  | 'alternate_proposed_by_guard' 
+  | 'completed' 
+  | 'cancelled';
+
+export interface GuardCoachingSession {
+  id: string;
+  guardId: string;
+  guardName: string;
+  guardBadge: string;
+  topic: string;
+  scheduledDate: string; // YYYY-MM-DD
+  scheduledTime: string; // HH:mm
+  durationMinutes: number; // e.g. 45
+  scheduledBy: string;
+  scheduledByBadge?: string;
+  notes?: string;
+  status: CoachingSessionStatus;
+  overrideRestrictions?: boolean;
+  overrideReason?: string;
+  hasShiftConflict?: boolean;
+  hasRestBufferConflict?: boolean;
+  conflictDetails?: string;
+  guardResponseNotes?: string;
+  guardRespondedAt?: string;
+  proposedAlternateDate?: string;
+  proposedAlternateTime?: string;
+  proposedAlternateReason?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface GuardPerformanceStats {
@@ -388,6 +452,23 @@ export interface GuardPerformanceStats {
   recognitionBadges: string[];
   topCommendedSite: string;
   recentFeedbacks?: SiteFeedbackEntry[];
+  
+  // Oculus 100-Pt Composite Scoring
+  oculusScore?: number; // 0 - 100
+  oculusBreakdown?: OculusScoreBreakdown;
+  geofenceBreachesCount?: number;
+  lateCallOffsCount?: number;
+  unexcusedLateCount?: number;
+  slaCheckpointsCompletedRate?: number;
+  darQualityRate?: number;
+  coachingNotes?: string[];
+  coachingScheduled?: {
+    scheduledDate: string;
+    topic: string;
+    scheduledBy: string;
+    notes?: string;
+  };
+  latestCoachingSession?: GuardCoachingSession;
 }
 
 export type SiteCategory = 

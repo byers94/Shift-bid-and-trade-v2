@@ -20,6 +20,7 @@ import {
   SetSchedule,
   TimeOffRequest,
   GuardCallOffRecord,
+  GuardCoachingSession,
   GuardWeeklyAvailability,
   DailyAvailabilityRule,
   DayOfWeek
@@ -1418,6 +1419,111 @@ export const GUARDS_LIST: GuardProfile[] = [
       preferredServiceTypes: ['dedicated'],
       notes: 'Supervisor daylight command. Available Mon-Fri.'
     }
+  },
+  {
+    id: 'guard-108',
+    name: 'Maya Lin',
+    phone: '+1 (555) 321-7654',
+    badgeNumber: 'SEC-4930',
+    role: 'guard',
+    trainingLevel: 'trained',
+    email: 'maya.lin@secureshift.net',
+    certifications: ['Biometrics Specialist', 'Access Control Specialist', 'CCTV Monitoring'],
+    hireDate: '2025-01-14',
+    notes: 'Access control specialist for high-security commercial and tech facilities.',
+    ojtSites: ['Tech Campus North', 'Corporate HQ', 'Downtown Financial Center'],
+    username: 'maya.lin',
+    password: 'password123',
+    pin: '4930',
+    biometricsEnabled: true,
+    biometricCredentialId: 'bio-cred-4930',
+    lastLogin: '2026-08-26T09:00:00Z',
+    availability: {
+      guardId: 'guard-108',
+      weeklyRules: createStandardWeeklyRules([1, 2, 3, 4, 5], '07:00', '19:00', ['day']),
+      maxWeeklyHours: 40,
+      preferredSites: ['Tech Campus North - Data Center', 'Corporate HQ - Main Tower'],
+      preferredServiceTypes: ['dedicated'],
+      notes: 'Day shift specialist for corporate server suites.'
+    }
+  },
+  {
+    id: 'guard-109',
+    name: 'Carlos Rivera',
+    phone: '+1 (555) 432-8765',
+    badgeNumber: 'SEC-5201',
+    role: 'guard',
+    trainingLevel: 'trained',
+    email: 'carlos.rivera@secureshift.net',
+    certifications: ['Transit Safety', 'De-escalation', 'First Aid'],
+    hireDate: '2025-04-10',
+    notes: 'Experienced in public venue security and transit terminal foot patrol.',
+    ojtSites: ['Retail Plaza', 'Pioneer Square Transit Center'],
+    username: 'carlos.rivera',
+    password: 'password123',
+    pin: '5201',
+    biometricsEnabled: false,
+    lastLogin: '2026-08-25T14:30:00Z',
+    availability: {
+      guardId: 'guard-109',
+      weeklyRules: createStandardWeeklyRules([2, 3, 4, 5, 6], '14:00', '00:00', ['swing']),
+      maxWeeklyHours: 40,
+      preferredSites: ['Retail Plaza - Patrol'],
+      preferredServiceTypes: ['dedicated'],
+      notes: 'Available Tue-Sat swing shifts.'
+    }
+  },
+  {
+    id: 'guard-110',
+    name: 'Jordan Hayes',
+    phone: '+1 (555) 543-9876',
+    badgeNumber: 'SEC-2944',
+    role: 'guard',
+    trainingLevel: 'needs_ojt',
+    email: 'jordan.hayes@secureshift.net',
+    certifications: ['Guard Card', 'Access Control'],
+    hireDate: '2026-05-18',
+    notes: 'Junior officer assigned to industrial access control and perimeter gates.',
+    ojtSites: ['Industrial Warehouse'],
+    username: 'jordan.hayes',
+    password: 'password123',
+    pin: '2944',
+    biometricsEnabled: false,
+    lastLogin: '2026-08-24T16:00:00Z',
+    availability: {
+      guardId: 'guard-110',
+      weeklyRules: createStandardWeeklyRules([0, 1, 2, 3, 4], '20:00', '06:00', ['grave']),
+      maxWeeklyHours: 36,
+      preferredSites: ['Industrial Warehouse Night Watch'],
+      preferredServiceTypes: ['dedicated'],
+      notes: 'Graveyard shift guard. Undergoing coaching on perimeter geofence compliance.'
+    }
+  },
+  {
+    id: 'guard-111',
+    name: 'Brandon Cole',
+    phone: '+1 (555) 654-0987',
+    badgeNumber: 'SEC-1855',
+    role: 'guard',
+    trainingLevel: 'needs_ojt',
+    email: 'brandon.cole@secureshift.net',
+    certifications: ['Guard Card'],
+    hireDate: '2026-07-02',
+    notes: 'Probationary officer. Scheduled for supervisor coaching regarding attendance punctuality.',
+    ojtSites: ['Retail Plaza'],
+    username: 'brandon.cole',
+    password: 'password123',
+    pin: '1855',
+    biometricsEnabled: false,
+    lastLogin: '2026-08-23T11:00:00Z',
+    availability: {
+      guardId: 'guard-111',
+      weeklyRules: createStandardWeeklyRules([4, 5, 6, 0], '16:00', '02:00', ['swing']),
+      maxWeeklyHours: 32,
+      preferredSites: ['Retail Plaza - Patrol'],
+      preferredServiceTypes: ['dedicated'],
+      notes: 'Weekend night coverage. Requires attendance follow-up.'
+    }
   }
 ];
 
@@ -2071,6 +2177,7 @@ export const INITIAL_SITE_FEEDBACKS: SiteFeedbackEntry[] = [
     rating: 5.0,
     reviewerName: 'Dr. Aaron Patel',
     reviewerTitle: 'ER Chief of Operations',
+    reviewerRole: 'property_manager',
     comment: 'Officer Bennett handled a volatile patient de-escalation in triage with exceptional calm and professional mastery. Kept staff safe and logbook pristine.',
     tags: ['De-escalation', 'ER Specialist', 'Leadership Commendation'],
     date: '2026-08-20',
@@ -2084,6 +2191,7 @@ export const INITIAL_SITE_FEEDBACKS: SiteFeedbackEntry[] = [
     rating: 5.0,
     reviewerName: 'Capt. Thomas Vance',
     reviewerTitle: 'Terminal Operations Director',
+    reviewerRole: 'property_manager',
     comment: 'Officer Mercer was early on dock, conducted thorough TWIC credential checks on 48 incoming container drivers, and prevented an unauthorized zone breach.',
     tags: ['Maritime Security', 'Early Arrival', 'Perimeter Ace'],
     date: '2026-08-21',
@@ -2097,6 +2205,7 @@ export const INITIAL_SITE_FEEDBACKS: SiteFeedbackEntry[] = [
     rating: 4.9,
     reviewerName: 'Helena Torres',
     reviewerTitle: 'TSA Security Coordinator',
+    reviewerRole: 'supervisor',
     comment: 'Flawless SIDA badge protocol adherence and crowd control during flight delay surge. Excellent communication with airport dispatch.',
     tags: ['Aviation Compliance', 'High Surge Response', 'Punctual'],
     date: '2026-08-19',
@@ -2110,6 +2219,7 @@ export const INITIAL_SITE_FEEDBACKS: SiteFeedbackEntry[] = [
     rating: 5.0,
     reviewerName: 'Greg Lindqvist',
     reviewerTitle: 'Head of Infrastructure Security',
+    reviewerRole: 'property_manager',
     comment: 'Impeccable visitor logging and audit control in Data Center Vault. Spotted a server room door sensor malfunction and reported it immediately.',
     tags: ['Biometric & Access Control', 'Detailed Logbook', 'Alert & Vigilant'],
     date: '2026-08-18',
@@ -2123,6 +2233,7 @@ export const INITIAL_SITE_FEEDBACKS: SiteFeedbackEntry[] = [
     rating: 4.8,
     reviewerName: 'Miriam Davis',
     reviewerTitle: 'Facilities & VIP Liaison',
+    reviewerRole: 'property_manager',
     comment: 'Courteous executive concierge security. Handled executive suite access seamlessly during high-profile board meeting.',
     tags: ['Executive Protection', 'Client Commendation', 'Customer Service'],
     date: '2026-08-22',
@@ -2136,6 +2247,7 @@ export const INITIAL_SITE_FEEDBACKS: SiteFeedbackEntry[] = [
     rating: 4.8,
     reviewerName: 'Robert Gomez',
     reviewerTitle: 'Logistics Night Supervisor',
+    reviewerRole: 'supervisor',
     comment: 'Solid graveyard shift patrol coverage. Consistent hourly clock-in points and accurate truck cargo seal checks.',
     tags: ['Night Patrol', 'Logistics Security', 'Dependable'],
     date: '2026-08-17',
@@ -2149,6 +2261,7 @@ export const INITIAL_SITE_FEEDBACKS: SiteFeedbackEntry[] = [
     rating: 4.9,
     reviewerName: 'Miriam Davis',
     reviewerTitle: 'Facilities Director',
+    reviewerRole: 'property_manager',
     comment: 'Alex covered a short-notice night patrol shift and secured 14 floor zones without a single missed checkpoint.',
     tags: ['Short Notice Fill', 'Perimeter Ace', 'Reliable'],
     date: '2026-08-15',
@@ -2162,6 +2275,7 @@ export const INITIAL_SITE_FEEDBACKS: SiteFeedbackEntry[] = [
     rating: 5.0,
     reviewerName: 'Helena Torres',
     reviewerTitle: 'TSA Security Coordinator',
+    reviewerRole: 'supervisor',
     comment: 'Provided on-site field mentoring for junior guards while managing gate checkpoint throughput flawlessly.',
     tags: ['Master Mentor', 'Leadership Commendation'],
     date: '2026-08-14',
@@ -2172,12 +2286,83 @@ export const INITIAL_SITE_FEEDBACKS: SiteFeedbackEntry[] = [
     guardId: 'guard-102',
     guardName: 'Mike Chen',
     siteName: 'Retail Plaza',
-    rating: 4.7,
+    rating: 4.5,
     reviewerName: 'Jason Scott',
     reviewerTitle: 'Plaza Operations Lead',
+    reviewerRole: 'property_manager',
     comment: 'Good enthusiasm on foot patrol. Deterred shoplifting incident and assisted customer with emergency vehicle jumpstart.',
     tags: ['Customer Assist', 'Active Patrol'],
     date: '2026-08-16',
+    isVerifiedClient: true
+  },
+  {
+    id: 'fb-110',
+    guardId: 'guard-108',
+    guardName: 'Maya Lin',
+    siteName: 'Tech Campus North',
+    rating: 4.9,
+    reviewerName: 'Greg Lindqvist',
+    reviewerTitle: 'Infrastructure Lead',
+    reviewerRole: 'property_manager',
+    comment: 'Strong adherence to access badge validation protocols in high security server wings.',
+    tags: ['Access Control', 'Diligent'],
+    date: '2026-08-12',
+    isVerifiedClient: true
+  },
+  {
+    id: 'fb-111',
+    guardId: 'guard-109',
+    guardName: 'Carlos Rivera',
+    siteName: 'Retail Plaza',
+    rating: 4.3,
+    reviewerName: 'Samira Khan',
+    reviewerTitle: 'Resident Association President',
+    reviewerRole: 'resident',
+    comment: 'Polite during evening rounds, assisted elderly resident with heavy groceries safely to vehicle.',
+    tags: ['Community Patrol', 'Helpful'],
+    date: '2026-08-11',
+    isVerifiedClient: true
+  },
+  {
+    id: 'fb-112',
+    guardId: 'guard-106',
+    guardName: 'Jamar Vance',
+    siteName: 'Retail Plaza',
+    rating: 3.8,
+    reviewerName: 'Marcus Wright',
+    reviewerTitle: 'Field Supervisor',
+    reviewerRole: 'supervisor',
+    comment: 'Needs coaching on hourly DAR submission timeliness. Good uniform appearance but missed one scheduled checkpoint round.',
+    tags: ['Coaching Required', 'DAR Review'],
+    date: '2026-08-09',
+    isVerifiedClient: true
+  },
+  {
+    id: 'fb-113',
+    guardId: 'guard-110',
+    guardName: 'Jordan Hayes',
+    siteName: 'Industrial Warehouse',
+    rating: 3.4,
+    reviewerName: 'Robert Gomez',
+    reviewerTitle: 'Logistics Supervisor',
+    reviewerRole: 'supervisor',
+    comment: 'Noticed guard wandered outside assigned perimeter zone twice during graveyard shift. Requires geofence compliance review.',
+    tags: ['Geofence Warning', 'Coaching Followup'],
+    date: '2026-08-08',
+    isVerifiedClient: true
+  },
+  {
+    id: 'fb-114',
+    guardId: 'guard-111',
+    guardName: 'Brandon Cole',
+    siteName: 'Retail Plaza',
+    rating: 3.0,
+    reviewerName: 'Jason Scott',
+    reviewerTitle: 'Operations Manager',
+    reviewerRole: 'property_manager',
+    comment: 'Arrived 25 minutes late for shift handover and failed to notify dispatch in advance. Needs urgent coaching intervention.',
+    tags: ['Tardiness Incident', 'Urgent Coaching'],
+    date: '2026-08-06',
     isVerifiedClient: true
   }
 ];
@@ -2191,85 +2376,177 @@ export const GUARD_BASE_METRICS: Record<string, {
   onTimeArrivalRate: number;
   recognitionBadges: string[];
   topCommendedSite: string;
+  geofenceBreachesCount?: number;
+  lateCallOffsCount?: number;
+  slaCheckpointsCompletedRate?: number;
+  darQualityRate?: number;
 }> = {
-  'guard-107': { // Chloe Bennett
+  'guard-107': { // Chloe Bennett (Top 1)
     fulfilledShiftsCount: 44,
     totalHoursCompleted: 412,
     emergencyShiftsFulfilled: 14,
     ratingAverage: 4.98,
     positiveFeedbackCount: 26,
     onTimeArrivalRate: 99.8,
+    geofenceBreachesCount: 0,
+    lateCallOffsCount: 0,
+    slaCheckpointsCompletedRate: 99.5,
+    darQualityRate: 98.0,
     recognitionBadges: ['Officer of the Month', 'Master Instructor', 'Zero Incident Award', 'Perfect Attendance'],
     topCommendedSite: 'West Medical Center'
   },
-  'guard-current': { // Alex Mercer
+  'guard-current': { // Alex Mercer (Top 2)
     fulfilledShiftsCount: 39,
     totalHoursCompleted: 374,
     emergencyShiftsFulfilled: 12,
     ratingAverage: 4.95,
     positiveFeedbackCount: 21,
     onTimeArrivalRate: 99.4,
+    geofenceBreachesCount: 0,
+    lateCallOffsCount: 0,
+    slaCheckpointsCompletedRate: 99.0,
+    darQualityRate: 97.5,
     recognitionBadges: ['Top Surge Responder', 'Client Commended', 'Maritime Security Specialist'],
     topCommendedSite: 'Port Authority - Pier 7'
   },
-  'guard-103': { // Marcus Wright
+  'guard-103': { // Marcus Wright (Top 3)
     fulfilledShiftsCount: 36,
     totalHoursCompleted: 340,
     emergencyShiftsFulfilled: 11,
     ratingAverage: 4.92,
     positiveFeedbackCount: 18,
     onTimeArrivalRate: 99.1,
+    geofenceBreachesCount: 0,
+    lateCallOffsCount: 0,
+    slaCheckpointsCompletedRate: 98.5,
+    darQualityRate: 96.0,
     recognitionBadges: ['Aviation Lead Ace', 'Rapid Deployment', 'Field Commander Choice'],
     topCommendedSite: 'City Airport Gate 4'
   },
-  'guard-104': { // Elena Rostova
+  'guard-104': { // Elena Rostova (Top 4)
     fulfilledShiftsCount: 31,
     totalHoursCompleted: 288,
     emergencyShiftsFulfilled: 8,
     ratingAverage: 4.89,
     positiveFeedbackCount: 15,
     onTimeArrivalRate: 98.9,
+    geofenceBreachesCount: 0,
+    lateCallOffsCount: 0,
+    slaCheckpointsCompletedRate: 98.0,
+    darQualityRate: 96.5,
     recognitionBadges: ['Biometrics Specialist', 'Logbook Integrity Award'],
     topCommendedSite: 'Tech Campus North'
   },
-  'guard-101': { // Sarah Jenkins
+  'guard-101': { // Sarah Jenkins (Top 5)
     fulfilledShiftsCount: 28,
     totalHoursCompleted: 248,
     emergencyShiftsFulfilled: 6,
     ratingAverage: 4.86,
     positiveFeedbackCount: 13,
     onTimeArrivalRate: 98.5,
+    geofenceBreachesCount: 0,
+    lateCallOffsCount: 0,
+    slaCheckpointsCompletedRate: 97.5,
+    darQualityRate: 95.0,
     recognitionBadges: ['VIP Concierge Award', 'Hospitality Security Star'],
     topCommendedSite: 'Corporate HQ'
   },
-  'guard-105': { // David Silva
+  'guard-105': { // David Silva (Middle #6)
     fulfilledShiftsCount: 23,
     totalHoursCompleted: 216,
     emergencyShiftsFulfilled: 5,
     ratingAverage: 4.80,
     positiveFeedbackCount: 10,
     onTimeArrivalRate: 97.9,
+    geofenceBreachesCount: 0,
+    lateCallOffsCount: 0,
+    slaCheckpointsCompletedRate: 96.0,
+    darQualityRate: 92.0,
     recognitionBadges: ['Graveyard Hero', 'Port Perimeter Master'],
     topCommendedSite: 'Industrial Warehouse'
   },
-  'guard-102': { // Mike Chen
+  'guard-108': { // Maya Lin (Middle #7)
+    fulfilledShiftsCount: 20,
+    totalHoursCompleted: 180,
+    emergencyShiftsFulfilled: 4,
+    ratingAverage: 4.78,
+    positiveFeedbackCount: 9,
+    onTimeArrivalRate: 97.5,
+    geofenceBreachesCount: 0,
+    lateCallOffsCount: 0,
+    slaCheckpointsCompletedRate: 95.5,
+    darQualityRate: 91.0,
+    recognitionBadges: ['Biometrics Specialist', 'Access Control Star'],
+    topCommendedSite: 'Tech Campus North'
+  },
+  'guard-102': { // Mike Chen (Bottom #8)
     fulfilledShiftsCount: 15,
     totalHoursCompleted: 132,
     emergencyShiftsFulfilled: 3,
-    ratingAverage: 4.72,
+    ratingAverage: 4.60,
     positiveFeedbackCount: 7,
-    onTimeArrivalRate: 96.8,
+    onTimeArrivalRate: 95.0,
+    geofenceBreachesCount: 0,
+    lateCallOffsCount: 1,
+    slaCheckpointsCompletedRate: 91.0,
+    darQualityRate: 85.0,
     recognitionBadges: ['Rising Star', 'High Dedication'],
     topCommendedSite: 'Retail Plaza'
   },
-  'guard-106': { // Jamar Vance
+  'guard-109': { // Carlos Rivera (Bottom #9)
+    fulfilledShiftsCount: 12,
+    totalHoursCompleted: 104,
+    emergencyShiftsFulfilled: 2,
+    ratingAverage: 4.45,
+    positiveFeedbackCount: 5,
+    onTimeArrivalRate: 93.5,
+    geofenceBreachesCount: 1,
+    lateCallOffsCount: 1,
+    slaCheckpointsCompletedRate: 88.0,
+    darQualityRate: 82.0,
+    recognitionBadges: ['Transit Commendation'],
+    topCommendedSite: 'Retail Plaza'
+  },
+  'guard-106': { // Jamar Vance (Bottom #10)
     fulfilledShiftsCount: 9,
     totalHoursCompleted: 76,
     emergencyShiftsFulfilled: 1,
-    ratingAverage: 4.65,
+    ratingAverage: 4.20,
     positiveFeedbackCount: 4,
-    onTimeArrivalRate: 95.5,
+    onTimeArrivalRate: 91.0,
+    geofenceBreachesCount: 1,
+    lateCallOffsCount: 1,
+    slaCheckpointsCompletedRate: 84.0,
+    darQualityRate: 78.0,
     recognitionBadges: ['New Recruit Commendation'],
+    topCommendedSite: 'Retail Plaza'
+  },
+  'guard-110': { // Jordan Hayes (Bottom #11)
+    fulfilledShiftsCount: 7,
+    totalHoursCompleted: 58,
+    emergencyShiftsFulfilled: 0,
+    ratingAverage: 3.80,
+    positiveFeedbackCount: 2,
+    onTimeArrivalRate: 88.0,
+    geofenceBreachesCount: 2,
+    lateCallOffsCount: 2,
+    slaCheckpointsCompletedRate: 78.0,
+    darQualityRate: 72.0,
+    recognitionBadges: ['Industrial Watch'],
+    topCommendedSite: 'Industrial Warehouse'
+  },
+  'guard-111': { // Brandon Cole (Bottom #12)
+    fulfilledShiftsCount: 5,
+    totalHoursCompleted: 40,
+    emergencyShiftsFulfilled: 0,
+    ratingAverage: 3.40,
+    positiveFeedbackCount: 1,
+    onTimeArrivalRate: 82.0,
+    geofenceBreachesCount: 3,
+    lateCallOffsCount: 2,
+    slaCheckpointsCompletedRate: 70.0,
+    darQualityRate: 65.0,
+    recognitionBadges: ['Probationary Officer'],
     topCommendedSite: 'Retail Plaza'
   }
 };
@@ -3401,3 +3678,43 @@ export const INITIAL_CALL_OFF_RECORDS: GuardCallOffRecord[] = [
     resolutionNote: 'Shift vacated and pushed to urgent bidding queue with push broadcast dispatched to available guards.'
   }
 ];
+
+export const INITIAL_COACHING_SESSIONS: GuardCoachingSession[] = [
+  {
+    id: 'coach-101',
+    guardId: 'guard-current',
+    guardName: 'Alex Mercer',
+    guardBadge: 'SEC-8842',
+    topic: 'Geofence Post Integrity & SLA Checkpoints',
+    scheduledDate: '2026-09-02',
+    scheduledTime: '14:00',
+    durationMinutes: 45,
+    scheduledBy: "Commander Mark O'Connor",
+    scheduledByBadge: 'OPS-CMD-01',
+    notes: 'Review perimeter boundary GPS tolerances and ensure 30-minute DAR logs include photo verification.',
+    status: 'pending_guard_action',
+    hasShiftConflict: false,
+    hasRestBufferConflict: false,
+    createdAt: '2026-08-30T10:00:00Z',
+    updatedAt: '2026-08-30T10:00:00Z'
+  },
+  {
+    id: 'coach-102',
+    guardId: 'guard-102',
+    guardName: 'Mike Chen',
+    guardBadge: 'SEC-9104',
+    topic: 'Punctuality, Shift Arrival & Attendance Remediation',
+    scheduledDate: '2026-09-03',
+    scheduledTime: '11:00',
+    durationMinutes: 45,
+    scheduledBy: "Commander Mark O'Connor",
+    scheduledByBadge: 'OPS-CMD-01',
+    notes: 'Review attendance standards and 2-hour minimum call-off notice window.',
+    status: 'pending_guard_action',
+    hasShiftConflict: false,
+    hasRestBufferConflict: false,
+    createdAt: '2026-08-30T10:30:00Z',
+    updatedAt: '2026-08-30T10:30:00Z'
+  }
+];
+

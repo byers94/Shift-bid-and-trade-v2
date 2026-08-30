@@ -13,6 +13,8 @@ import { GuardLoginModal } from './GuardLoginModal';
 import { PriorityShiftPushBanner } from './PriorityShiftPushBanner';
 import { TimeSpecificTaskAlertBanner } from './TimeSpecificTaskAlertBanner';
 import { UpcomingShiftReminderBanner } from './UpcomingShiftReminderBanner';
+import { GuardLeaderboardView } from './GuardLeaderboardView';
+import { GuardCoachingAlertBanner } from './GuardCoachingAlertBanner';
 import { 
   Shield, 
   UserCheck, 
@@ -35,7 +37,8 @@ import {
   LogOut,
   UserPlus,
   Navigation,
-  CalendarDays
+  CalendarDays,
+  Trophy
 } from 'lucide-react';
 
 interface GuardViewProps {
@@ -61,7 +64,7 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
     alertPreferences,
     eligiblePriorityShifts
   } = useShiftOps();
-  const [activeTab, setActiveTab] = useState<'duty_post' | 'schedule_calendar' | 'live_route' | 'open_board' | 'trade_board' | 'active_calls'>('duty_post');
+  const [activeTab, setActiveTab] = useState<'duty_post' | 'schedule_calendar' | 'live_route' | 'open_board' | 'trade_board' | 'ranking' | 'active_calls'>('duty_post');
   const [showGuardMenu, setShowGuardMenu] = useState(false);
   const [isAlertPrefsOpen, setIsAlertPrefsOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -421,6 +424,20 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
         </button>
 
         <button
+          id="guard-tab-ranking"
+          onClick={() => setActiveTab('ranking')}
+          className={`flex-1 min-w-[70px] py-3 text-[10px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
+            activeTab === 'ranking'
+              ? 'border-b-2 border-amber-500 dark:border-amber-400 text-amber-700 dark:text-amber-400 bg-amber-50/40 dark:bg-amber-950/30 font-black'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+          }`}
+        >
+          <Trophy className="w-3.5 h-3.5 text-amber-500" />
+          <span>RANKING</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+        </button>
+
+        <button
           id="guard-tab-trade-board"
           onClick={() => setActiveTab('trade_board')}
           className={`flex-1 min-w-[65px] py-3 text-[10px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
@@ -464,6 +481,9 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
 
       {/* Board Content */}
       <div className="flex-1 flex flex-col overflow-y-auto min-h-0 bg-slate-50 dark:bg-slate-900 p-2 sm:p-3">
+        {/* Guard 1-on-1 Performance Coaching Notification Banner (Strictly filtered by active guard) */}
+        <GuardCoachingAlertBanner guardId={activeGuard.id} />
+
         {/* 24-Hour Pre-Shift Duty Reminder Banner */}
         <UpcomingShiftReminderBanner 
           onNavigateToDuty={() => setActiveTab('duty_post')}
@@ -495,6 +515,7 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
           />
         )}
         {activeTab === 'open_board' && <OpenShiftBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
+        {activeTab === 'ranking' && <GuardLeaderboardView onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
         {activeTab === 'trade_board' && <TradeBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
         {activeTab === 'active_calls' && <ActiveCallsPanel />}
       </div>

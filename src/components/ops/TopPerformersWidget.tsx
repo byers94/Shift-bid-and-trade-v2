@@ -23,18 +23,38 @@ import {
   FileText, 
   Check, 
   AlertTriangle,
-  ExternalLink
+  ExternalLink,
+  MapPin,
+  HelpCircle,
+  Zap,
+  Info,
+  CalendarDays,
+  ListOrdered,
+  ChevronDown,
+  ChevronUp,
+  AlertCircle,
+  Target,
+  SlidersHorizontal,
+  UserCheck
 } from 'lucide-react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
-import { GuardProfile, GuardPerformanceStats, SiteFeedbackEntry } from '../../types/shift';
+import { 
+  GuardProfile, 
+  GuardPerformanceStats, 
+  SiteFeedbackEntry, 
+  ReviewerRoleType, 
+  OculusScoreBreakdown 
+} from '../../types/shift';
 import { SiteQualificationCircle } from './SiteQualificationCircle';
+import { ROLE_WEIGHTS } from '../../utils/oculusScoring';
+import { CoachingSchedulingCalendarModal } from './CoachingSchedulingCalendarModal';
 
 interface TopPerformersWidgetProps {
   onNavigateToGuardDirectory?: (guardId?: string) => void;
   compact?: boolean;
 }
 
-type SortMetric = 'composite' | 'shifts' | 'rating' | 'emergency' | 'ontime';
+type SortMetric = 'composite' | 'reliability' | 'client_exp' | 'shifts' | 'rating' | 'emergency' | 'ontime';
 type TimeframeFilter = 'all' | 'month' | 'quarter';
 
 export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({ 
@@ -45,8 +65,12 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
     guardsList, 
     sitesList,
     siteFeedbacks, 
+    callOffRecords,
     addSiteFeedback, 
     awardGuardCommendation, 
+    scheduleGuardCoaching,
+    coachingSessions,
+    acceptAlternateCoaching,
     getLeaderboard,
     getGuardPerformance,
     shifts
@@ -56,14 +80,35 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
   const [timeframe, setTimeframe] = useState<TimeframeFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGuardForDossier, setSelectedGuardForDossier] = useState<(GuardProfile & GuardPerformanceStats) | null>(null);
+  
+  // Coaching Modal State
+  const [coachingGuard, setCoachingGuard] = useState<(GuardProfile & GuardPerformanceStats) | null>(null);
+  const [coachingTopic, setCoachingTopic] = useState('Geofence Post Integrity & SLA Checkpoints');
+  const [coachingDate, setCoachingDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 2);
+    return d.toISOString().split('T')[0];
+  });
+  const [coachingNotes, setCoachingNotes] = useState('');
+
+  // Incident & Geofence Log Modal State
+  const [incidentLogGuard, setIncidentLogGuard] = useState<(GuardProfile & GuardPerformanceStats) | null>(null);
+
+  // Middle roster expansion toggle (when guards > 10)
+  const [isMiddleRosterExpanded, setIsMiddleRosterExpanded] = useState(false);
+
+  // Add Feedback Modal State
   const [isAddFeedbackOpen, setIsAddFeedbackOpen] = useState(false);
   const [feedbackGuardId, setFeedbackGuardId] = useState<string>(guardsList[0]?.id || '');
   const [feedbackSiteName, setFeedbackSiteName] = useState<string>('Port Authority - Pier 7');
   const [feedbackRating, setFeedbackRating] = useState<number>(5);
+  const [feedbackReviewerRole, setFeedbackReviewerRole] = useState<ReviewerRoleType>('property_manager');
   const [feedbackReviewerName, setFeedbackReviewerName] = useState<string>('');
-  const [feedbackReviewerTitle, setFeedbackReviewerTitle] = useState<string>('Site Operations Director');
+  const [feedbackReviewerTitle, setFeedbackReviewerTitle] = useState<string>('Property General Manager');
   const [feedbackComment, setFeedbackComment] = useState<string>('');
   const [feedbackTags, setFeedbackTags] = useState<string[]>(['Punctual & Alert', 'Client Commendation']);
+
+  // Award Modal State
   const [isAwardModalOpen, setIsAwardModalOpen] = useState(false);
   const [awardGuardId, setAwardGuardId] = useState<string>(guardsList[0]?.id || '');
   const [awardBadgeName, setAwardBadgeName] = useState<string>('Officer of the Month');
@@ -83,22 +128,32 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
     );
   }, [getLeaderboard, sortMetric, timeframe, searchQuery, guardsList, siteFeedbacks, shifts]);
 
-  // Overall aggregate stats
-  const totalFulfilled = useMemo(() => {
-    return rankedGuards.reduce((acc, g) => acc + g.fulfilledShiftsCount, 0);
+  // Tier Segmentation Logic
+  const totalGuardsCount = rankedGuards.length;
+  const isTieredView = totalGuardsCount > 10 && !searchQuery.trim();
+
+  const topFiveGuards = useMemo(() => {
+    return isTieredView ? rankedGuards.slice(0, 5) : rankedGuards;
+  }, [rankedGuards, isTieredView]);
+
+  const middleGuards = useMemo(() => {
+    return isTieredView ? rankedGuards.slice(5, totalGuardsCount - 5) : [];
+  }, [rankedGuards, isTieredView, totalGuardsCount]);
+
+  const bottomFiveGuards = useMemo(() => {
+    return isTieredView ? rankedGuards.slice(totalGuardsCount - 5) : [];
+  }, [rankedGuards, isTieredView, totalGuardsCount]);
+
+  // Aggregate Stats
+  const avgOculusScore = useMemo(() => {
+    if (rankedGuards.length === 0) return 0;
+    const sum = rankedGuards.reduce((acc, g) => acc + (g.oculusScore || 85), 0);
+    return Math.round(sum / rankedGuards.length);
   }, [rankedGuards]);
 
-  const avgFeedbackScore = useMemo(() => {
-    if (siteFeedbacks.length === 0) return 4.9;
-    const sum = siteFeedbacks.reduce((acc, f) => acc + f.rating, 0);
-    return (sum / siteFeedbacks.length).toFixed(2);
-  }, [siteFeedbacks]);
-
   const topPerformer = rankedGuards[0];
-  const secondPerformer = rankedGuards[1];
-  const thirdPerformer = rankedGuards[2];
 
-  // Preset commendation tags
+  // Commendation Tags
   const AVAILABLE_TAGS = [
     'Punctual & Alert',
     'De-escalation',
@@ -113,7 +168,7 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
     'Flawless Logbook'
   ];
 
-  // Preset recognition badges
+  // Recognition Badges
   const AVAILABLE_BADGES = [
     'Officer of the Month',
     'Master Instructor',
@@ -145,6 +200,7 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
       guardName: guard.name,
       siteName: feedbackSiteName,
       rating: Number(feedbackRating),
+      reviewerRole: feedbackReviewerRole,
       reviewerName: feedbackReviewerName.trim() || 'Facility Director',
       reviewerTitle: feedbackReviewerTitle.trim() || 'Site Operations Manager',
       comment: feedbackComment.trim() || 'Guard demonstrated outstanding alertness, professional demeanor, and impeccable post coverage.',
@@ -165,7 +221,29 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
     setAwardNotes('');
   };
 
-  // Render Star Rating
+  const handleSaveCoaching = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!coachingGuard) return;
+    scheduleGuardCoaching(coachingGuard.id, coachingTopic, coachingDate, coachingNotes);
+    setCoachingGuard(null);
+    setCoachingNotes('');
+  };
+
+  const getTierBadgeStyle = (tier?: string) => {
+    switch (tier) {
+      case 'diamond':
+        return 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold shadow-xs';
+      case 'gold':
+        return 'bg-gradient-to-r from-amber-400 to-yellow-500 text-neutral-950 font-black shadow-xs';
+      case 'silver':
+        return 'bg-gradient-to-r from-slate-300 to-slate-400 text-slate-900 font-bold';
+      case 'bronze':
+        return 'bg-gradient-to-r from-orange-400 to-amber-600 text-white font-bold';
+      default:
+        return 'bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 font-bold border border-rose-300 dark:border-rose-800';
+    }
+  };
+
   const renderStars = (rating: number, max: number = 5) => {
     return (
       <div className="flex items-center gap-0.5 text-amber-400">
@@ -185,9 +263,254 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
             />
           );
         })}
-        <span className="ml-1 text-xs font-semibold text-neutral-800 dark:text-neutral-200">
+        <span className="ml-1 text-xs font-bold text-neutral-800 dark:text-neutral-200">
           {rating.toFixed(1)}
         </span>
+      </div>
+    );
+  };
+
+  // Guard Row Renderer
+  const renderGuardRow = (
+    guard: GuardProfile & GuardPerformanceStats, 
+    rankNumber: number,
+    sectionType: 'recognition' | 'middle' | 'coaching'
+  ) => {
+    const oculus = guard.oculusBreakdown;
+    const isTopThree = rankNumber <= 3;
+    const isCoaching = sectionType === 'coaching';
+
+    return (
+      <div
+        key={guard.id}
+        className={`p-4 rounded-xl border transition-all duration-150 flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+          isTopThree
+            ? 'bg-gradient-to-r from-amber-50/40 via-white to-white dark:from-amber-950/20 dark:via-neutral-900 dark:to-neutral-900 border-amber-200/80 dark:border-amber-900/40 shadow-xs'
+            : isCoaching
+            ? 'bg-gradient-to-r from-rose-50/40 via-white to-white dark:from-rose-950/20 dark:via-neutral-900 dark:to-neutral-900 border-rose-200/80 dark:border-rose-900/40'
+            : 'bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700'
+        }`}
+      >
+        {/* Left Side: Rank, Avatar, Guard Info */}
+        <div className="flex items-center gap-3.5 min-w-[240px]">
+          {/* Rank Badge */}
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm shrink-0 shadow-xs ${
+            rankNumber === 1
+              ? 'bg-gradient-to-br from-amber-400 to-yellow-500 text-neutral-950'
+              : rankNumber === 2
+              ? 'bg-gradient-to-br from-slate-200 to-slate-400 text-slate-900'
+              : rankNumber === 3
+              ? 'bg-gradient-to-br from-amber-600 to-orange-600 text-white'
+              : isCoaching
+              ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800'
+              : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400'
+          }`}>
+            #{rankNumber}
+          </div>
+
+          {/* Guard Avatar + Site Qualifications Circle */}
+          <div className="relative shrink-0">
+            <div className="w-11 h-11 rounded-full bg-neutral-200 dark:bg-neutral-700 flex items-center justify-center text-neutral-800 dark:text-neutral-200 font-bold text-sm">
+              {guard.name.split(' ').map(n => n[0]).join('')}
+            </div>
+            <div className="absolute -bottom-1 -right-1">
+              <SiteQualificationCircle
+                qualifiedSitesCount={guard.ojtSites?.length || 0}
+                totalSitesCount={sitesList.length || 8}
+                size="xs"
+                trainingLevel={guard.trainingLevel}
+                role={guard.role}
+              />
+            </div>
+          </div>
+
+          {/* Name & Basic Info */}
+          <div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setSelectedGuardForDossier(guard)}
+                className="font-bold text-neutral-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 text-sm transition-colors text-left cursor-pointer"
+              >
+                {guard.name}
+              </button>
+              <span className="text-[10px] font-mono px-1.5 py-0.2 bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 rounded">
+                {guard.badgeNumber}
+              </span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${getTierBadgeStyle(oculus?.tier)}`}>
+                {oculus?.tierLabel || 'Rank Tier'}
+              </span>
+            </div>
+
+            <div className="flex items-center flex-wrap gap-2 text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+              <span className="flex items-center gap-1">
+                <Building2 className="w-3.5 h-3.5 text-neutral-400" />
+                <span>{guard.topCommendedSite}</span>
+              </span>
+              <span>•</span>
+              <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold">
+                <Clock className="w-3.5 h-3.5" />
+                <span>{guard.onTimeArrivalRate}% On-time</span>
+              </span>
+              {oculus?.geofenceBreachesCount && oculus.geofenceBreachesCount > 0 ? (
+                <>
+                  <span>•</span>
+                  <span className="text-rose-600 font-bold flex items-center gap-0.5 text-[11px]">
+                    <AlertTriangle className="w-3 h-3" />
+                    <span>{oculus.geofenceBreachesCount} Geofence {oculus.geofenceBreachesCount === 1 ? 'Breach' : 'Breaches'} (&gt;10m)</span>
+                  </span>
+                </>
+              ) : null}
+
+              {/* Coaching Session Status Badges */}
+              {guard.latestCoachingSession && (
+                <>
+                  <span>•</span>
+                  {guard.latestCoachingSession.status === 'pending_guard_action' && (
+                    <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      <span>Coaching Dispatched ({guard.latestCoachingSession.scheduledDate}) • Pending Guard</span>
+                    </span>
+                  )}
+                  {guard.latestCoachingSession.status === 'alternate_proposed_by_guard' && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800 flex items-center gap-1">
+                        <CalendarDays className="w-3 h-3 text-blue-600" />
+                        <span>Alt Proposed: {guard.latestCoachingSession.proposedAlternateDate} @ {guard.latestCoachingSession.proposedAlternateTime}</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          acceptAlternateCoaching(guard.latestCoachingSession!.id);
+                        }}
+                        className="px-2 py-0.5 text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md transition-colors"
+                      >
+                        Accept Alt
+                      </button>
+                    </div>
+                  )}
+                  {guard.latestCoachingSession.status === 'confirmed_by_guard' && (
+                    <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
+                      <Check className="w-3 h-3" />
+                      <span>Coaching Confirmed ({guard.latestCoachingSession.scheduledDate})</span>
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Middle: Oculus Score & Sub-scores Breakdown */}
+        <div className="flex items-center flex-wrap gap-4 py-1 md:py-0 border-t md:border-t-0 border-neutral-100 dark:border-neutral-800 pt-2 md:pt-0">
+          {/* Oculus Total Score Gauge */}
+          <div className="text-center bg-neutral-50 dark:bg-neutral-800/60 px-3 py-1.5 rounded-lg border border-neutral-200/60 dark:border-neutral-700/60">
+            <div className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">Oculus Score</div>
+            <div className="text-lg font-black text-neutral-900 dark:text-white flex items-baseline justify-center gap-0.5">
+              <span>{guard.oculusScore ?? oculus?.oculusScore ?? 85}</span>
+              <span className="text-[10px] font-semibold text-neutral-400">/100</span>
+            </div>
+          </div>
+
+          {/* Operational Reliability (60 pts) */}
+          <div className="space-y-1 min-w-[120px]">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-neutral-500 dark:text-neutral-400 font-medium">Reliability</span>
+              <span className="font-bold text-neutral-800 dark:text-neutral-200 font-mono">
+                {oculus?.operationalReliabilityScore ?? 50}/60
+              </span>
+            </div>
+            <div className="w-24 sm:w-28 bg-neutral-200 dark:bg-neutral-700 h-1.5 rounded-full overflow-hidden">
+              <div 
+                className={`h-full rounded-full transition-all ${
+                  (oculus?.operationalReliabilityScore ?? 50) >= 50
+                    ? 'bg-emerald-500'
+                    : (oculus?.operationalReliabilityScore ?? 50) >= 40
+                    ? 'bg-amber-500'
+                    : 'bg-rose-500'
+                }`}
+                style={{ width: `${((oculus?.operationalReliabilityScore ?? 50) / 60) * 100}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Client Experience (40 pts) */}
+          <div className="space-y-1 min-w-[120px]">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-neutral-500 dark:text-neutral-400 font-medium">Client Exp</span>
+              <span className="font-bold text-amber-600 dark:text-amber-400 font-mono">
+                {oculus?.clientExperienceScore ?? 35}/40
+              </span>
+            </div>
+            <div className="w-24 sm:w-28 bg-neutral-200 dark:bg-neutral-700 h-1.5 rounded-full overflow-hidden">
+              <div 
+                className="bg-amber-400 h-full rounded-full transition-all"
+                style={{ width: `${((oculus?.clientExperienceScore ?? 35) / 40) * 100}%` }}
+              />
+            </div>
+            <div className="text-[10px] text-neutral-400 flex items-center gap-1">
+              <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
+              <span>{guard.ratingAverage.toFixed(1)}★ ({oculus?.reviewCount ?? guard.recentFeedbacks?.length ?? 0})</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Side: Quick Action Buttons */}
+        <div className="flex items-center gap-2 shrink-0">
+          {isCoaching ? (
+            <>
+              {/* Schedule Coaching Button */}
+              <button
+                id={`btn-schedule-coaching-${guard.id}`}
+                onClick={() => {
+                  setCoachingGuard(guard);
+                  setCoachingTopic('Geofence Post Integrity & SLA Checkpoints');
+                }}
+                className="px-3 py-1.5 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-neutral-950 rounded-lg shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                title="Schedule 1-on-1 Performance Coaching"
+              >
+                <CalendarDays className="w-3.5 h-3.5" />
+                <span>Schedule Coaching</span>
+              </button>
+
+              {/* View Incident Log Button */}
+              <button
+                id={`btn-view-incident-log-${guard.id}`}
+                onClick={() => setIncidentLogGuard(guard)}
+                className="px-3 py-1.5 text-xs font-semibold bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                title="View Geofence Breaches & Incident Log"
+              >
+                <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
+                <span>Incident Log</span>
+              </button>
+            </>
+          ) : (
+            <>
+              {/* View Dossier Button */}
+              <button
+                id={`btn-view-dossier-${guard.id}`}
+                onClick={() => setSelectedGuardForDossier(guard)}
+                className="px-3 py-1.5 text-xs font-semibold bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-lg border border-neutral-200 dark:border-neutral-700 transition-colors flex items-center gap-1 cursor-pointer"
+              >
+                <FileText className="w-3.5 h-3.5 text-blue-500" />
+                <span>Dossier</span>
+              </button>
+
+              {/* Award Commendation Button */}
+              <button
+                id={`btn-quick-award-${guard.id}`}
+                onClick={() => {
+                  setAwardGuardId(guard.id);
+                  setIsAwardModalOpen(true);
+                }}
+                className="p-1.5 text-neutral-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-lg transition-colors cursor-pointer"
+                title="Award Commendation Badge"
+              >
+                <Award className="w-4 h-4" />
+              </button>
+            </>
+          )}
+        </div>
       </div>
     );
   };
@@ -195,7 +518,7 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
   return (
     <div id="top-performers-leaderboard-container" className="space-y-6">
       {/* Leaderboard Top Header & Summary Stats */}
-      <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-5 shadow-sm">
+      <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-5 shadow-xs">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-neutral-100 dark:border-neutral-800">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center border border-amber-500/20 shadow-inner">
@@ -204,14 +527,14 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-xl font-bold text-neutral-900 dark:text-white tracking-tight">
-                  Top Performers Leaderboard
+                  Guard Performance Ranking & Leaderboard
                 </h2>
-                <span className="px-2 py-0.5 text-xs font-semibold uppercase tracking-wider bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 rounded-md border border-amber-300/40 dark:border-amber-800/50">
-                  Live Rankings
+                <span className="px-2 py-0.5 text-xs font-black uppercase tracking-wider bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 rounded-md border border-blue-300/40 dark:border-blue-800/50">
+                  100-Pt Oculus Index
                 </span>
               </div>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-                Recognizing guards with highest fulfilled shift volume, positive facility feedback, and zero-incident reliability.
+                Composite scoring combining Operational Reliability (Max 60 pts) and Weighted Client Experience (Max 40 pts).
               </p>
             </div>
           </div>
@@ -224,10 +547,10 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
                 setFeedbackGuardId(topPerformer?.id || guardsList[0]?.id || '');
                 setIsAddFeedbackOpen(true);
               }}
-              className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-sm cursor-pointer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-xs cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>Log Site Feedback</span>
+              <span>Log Site Feedback (Weighted)</span>
             </button>
 
             <button
@@ -248,988 +571,688 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4">
           <div className="bg-neutral-50 dark:bg-neutral-800/50 p-3 rounded-lg border border-neutral-100 dark:border-neutral-800">
             <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 text-xs mb-1">
-              <span>Total Fulfilled Shifts</span>
+              <span>Avg Oculus Score</span>
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+            </div>
+            <div className="text-xl font-black text-neutral-900 dark:text-white flex items-baseline gap-1">
+              <span>{avgOculusScore}</span>
+              <span className="text-xs text-neutral-400 font-normal">/ 100</span>
+            </div>
+            <div className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-0.5 font-medium">
+              Regional Guard Benchmark
+            </div>
+          </div>
+
+          <div className="bg-neutral-50 dark:bg-neutral-800/50 p-3 rounded-lg border border-neutral-100 dark:border-neutral-800">
+            <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 text-xs mb-1">
+              <span>Top Officer</span>
+              <Trophy className="w-3.5 h-3.5 text-amber-500" />
+            </div>
+            <div className="text-sm font-black text-neutral-900 dark:text-white truncate">
+              {topPerformer?.name || 'Officer'}
+            </div>
+            <div className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5 font-bold">
+              {topPerformer?.oculusScore || 96} Pts • {topPerformer?.topCommendedSite}
+            </div>
+          </div>
+
+          <div className="bg-neutral-50 dark:bg-neutral-800/50 p-3 rounded-lg border border-neutral-100 dark:border-neutral-800">
+            <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 text-xs mb-1">
+              <span>Active Roster</span>
               <Shield className="w-3.5 h-3.5 text-blue-500" />
             </div>
-            <div className="text-xl font-bold text-neutral-900 dark:text-white">
-              {totalFulfilled}
+            <div className="text-xl font-black text-neutral-900 dark:text-white">
+              {rankedGuards.length} Guards
             </div>
-            <div className="text-[11px] text-neutral-500 dark:text-neutral-400">
-              Across all regional posts
-            </div>
-          </div>
-
-          <div className="bg-neutral-50 dark:bg-neutral-800/50 p-3 rounded-lg border border-neutral-100 dark:border-neutral-800">
-            <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 text-xs mb-1">
-              <span>Avg Site Satisfaction</span>
-              <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-            </div>
-            <div className="text-xl font-bold text-amber-600 dark:text-amber-400">
-              {avgFeedbackScore}★
-            </div>
-            <div className="text-[11px] text-neutral-500 dark:text-neutral-400">
-              {siteFeedbacks.length} client evaluations
+            <div className="text-[10px] text-slate-500 mt-0.5">
+              {isTieredView ? 'Top 5 Recognition • Bottom 5 Coaching' : 'Full Single Roster'}
             </div>
           </div>
 
           <div className="bg-neutral-50 dark:bg-neutral-800/50 p-3 rounded-lg border border-neutral-100 dark:border-neutral-800">
             <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 text-xs mb-1">
-              <span>On-Time Punctuality</span>
-              <Clock className="w-3.5 h-3.5 text-emerald-500" />
+              <span>Client Feedbacks</span>
+              <Star className="w-3.5 h-3.5 text-amber-500" />
             </div>
-            <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
-              98.7%
+            <div className="text-xl font-black text-neutral-900 dark:text-white">
+              {siteFeedbacks.length} Verified
             </div>
-            <div className="text-[11px] text-neutral-500 dark:text-neutral-400">
-              Biometric check-in verified
-            </div>
-          </div>
-
-          <div className="bg-neutral-50 dark:bg-neutral-800/50 p-3 rounded-lg border border-neutral-100 dark:border-neutral-800">
-            <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 text-xs mb-1">
-              <span>Surge Emergency Fills</span>
-              <ShieldAlert className="w-3.5 h-3.5 text-rose-500" />
-            </div>
-            <div className="text-xl font-bold text-rose-600 dark:text-rose-400">
-              {rankedGuards.reduce((acc, g) => acc + g.emergencyShiftsFulfilled, 0)}
-            </div>
-            <div className="text-[11px] text-neutral-500 dark:text-neutral-400">
-              100% critical coverage
+            <div className="text-[10px] text-blue-600 dark:text-blue-400 mt-0.5">
+              Role Weights: PM (3x), Supv (2x), Res (1x)
             </div>
           </div>
         </div>
       </div>
 
-      {/* Podium Cards for Top 3 Guards (When not searching / default view) */}
-      {!searchQuery && topPerformer && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-          {/* #2 Silver Card */}
-          {secondPerformer && (
-            <div 
-              id="podium-card-rank-2"
-              onClick={() => setSelectedGuardForDossier(secondPerformer)}
-              className="bg-white dark:bg-neutral-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 relative overflow-hidden cursor-pointer hover:shadow-md hover:border-slate-400 dark:hover:border-slate-700 transition-all order-2 md:order-1"
+      {/* Filter and Search Controls */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-neutral-900 p-3.5 rounded-xl border border-neutral-200 dark:border-neutral-800">
+        <div className="relative flex-1 max-w-md">
+          <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            id="input-search-leaderboard"
+            type="text"
+            placeholder="Search guard by name, badge, site, or badge..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-4 py-1.5 text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-900 dark:text-white placeholder:text-neutral-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 cursor-pointer"
             >
-              <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-slate-400/10 to-transparent rounded-bl-full pointer-events-none" />
-              
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <span className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center border border-slate-300 dark:border-slate-700">
-                    #2
-                  </span>
-                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Silver Tier</span>
-                </div>
-                <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                  <Medal className="w-5 h-5" />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 mb-4">
-                <div className="relative">
-                  <div className="w-12 h-12 rounded-full bg-neutral-200 dark:bg-neutral-800 flex items-center justify-center text-neutral-700 dark:text-neutral-200 font-bold text-base border-2 border-slate-300 dark:border-slate-700">
-                    {secondPerformer.name.split(' ').map(n => n[0]).join('')}
-                  </div>
-                  <div className="absolute -bottom-1 -right-1">
-                    <SiteQualificationCircle 
-                      qualifiedSitesCount={secondPerformer.ojtSites?.length || 0} 
-                      totalSitesCount={sitesList.length || 8} 
-                      size="xs"
-                      trainingLevel={secondPerformer.trainingLevel}
-                      role={secondPerformer.role}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <h3 className="font-bold text-neutral-900 dark:text-white text-base">
-                    {secondPerformer.name}
-                  </h3>
-                  <div className="flex items-center gap-2 text-xs text-neutral-500">
-                    <span>{secondPerformer.badgeNumber}</span>
-                    <span>•</span>
-                    <span className="capitalize">{secondPerformer.role}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 bg-neutral-50 dark:bg-neutral-800/60 p-2.5 rounded-lg text-xs mb-3">
-                <div>
-                  <span className="text-neutral-500 block text-[11px]">Fulfilled Shifts</span>
-                  <span className="font-bold text-neutral-900 dark:text-white text-sm">
-                    {secondPerformer.fulfilledShiftsCount} shifts
-                  </span>
-                </div>
-                <div>
-                  <span className="text-neutral-500 block text-[11px]">Rating</span>
-                  {renderStars(secondPerformer.ratingAverage)}
-                </div>
-              </div>
-
-              <div className="text-xs text-neutral-600 dark:text-neutral-400 italic line-clamp-2 bg-slate-50 dark:bg-slate-900/40 p-2 rounded border border-slate-100 dark:border-slate-800">
-                "{secondPerformer.recentFeedbacks?.[0]?.comment || 'Outstanding dedication and flawless attendance records across all assigned posts.'}"
-              </div>
-            </div>
-          )}
-
-          {/* #1 Gold Card (Taller & Prominent) */}
-          <div 
-            id="podium-card-rank-1"
-            onClick={() => setSelectedGuardForDossier(topPerformer)}
-            className="bg-gradient-to-b from-amber-500/10 via-white to-white dark:from-amber-500/15 dark:via-neutral-900 dark:to-neutral-900 border-2 border-amber-400 dark:border-amber-500/60 rounded-xl p-5 relative overflow-hidden cursor-pointer shadow-md hover:shadow-lg transition-all order-1 md:order-2 md:-mt-4"
-          >
-            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-amber-400/20 to-transparent rounded-bl-full pointer-events-none" />
-            
-            <div className="flex items-start justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-full bg-amber-500 text-white font-black text-xs flex items-center gap-1 shadow-sm">
-                  <Trophy className="w-3.5 h-3.5 fill-white" />
-                  #1 RANK
-                </span>
-                <span className="text-xs font-bold text-amber-700 dark:text-amber-300">Gold Champion</span>
-              </div>
-              <div className="p-2 rounded-xl bg-amber-500 text-white shadow-md">
-                <CrownIcon className="w-5 h-5" />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 mb-4">
-              <div className="relative">
-                <div className="w-14 h-14 rounded-full bg-amber-100 dark:bg-amber-950/80 flex items-center justify-center text-amber-900 dark:text-amber-200 font-extrabold text-lg border-2 border-amber-400 shadow-sm">
-                  {topPerformer.name.split(' ').map(n => n[0]).join('')}
-                </div>
-                <div className="absolute -bottom-1 -right-1">
-                  <SiteQualificationCircle 
-                    qualifiedSitesCount={topPerformer.ojtSites?.length || 0} 
-                    totalSitesCount={sitesList.length || 8} 
-                    size="xs" 
-                    trainingLevel={topPerformer.trainingLevel}
-                    role={topPerformer.role}
-                  />
-                </div>
-              </div>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <h3 className="font-extrabold text-neutral-900 dark:text-white text-lg tracking-tight">
-                    {topPerformer.name}
-                  </h3>
-                  <Sparkles className="w-4 h-4 text-amber-500 fill-amber-400" />
-                </div>
-                <div className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-300">
-                  <span className="font-semibold">{topPerformer.badgeNumber}</span>
-                  <span>•</span>
-                  <span className="capitalize">{topPerformer.role}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2 bg-amber-50/70 dark:bg-amber-950/30 p-2.5 rounded-lg text-xs mb-3 border border-amber-200/50 dark:border-amber-800/40">
-              <div>
-                <span className="text-neutral-500 dark:text-neutral-400 block text-[11px]">Fulfilled</span>
-                <span className="font-black text-neutral-900 dark:text-white text-sm">
-                  {topPerformer.fulfilledShiftsCount}
-                </span>
-              </div>
-              <div>
-                <span className="text-neutral-500 dark:text-neutral-400 block text-[11px]">Hours</span>
-                <span className="font-black text-neutral-900 dark:text-white text-sm">
-                  {topPerformer.totalHoursCompleted}h
-                </span>
-              </div>
-              <div>
-                <span className="text-neutral-500 dark:text-neutral-400 block text-[11px]">Rating</span>
-                <span className="font-black text-amber-600 dark:text-amber-400 text-sm">
-                  {topPerformer.ratingAverage.toFixed(2)}★
-                </span>
-              </div>
-            </div>
-
-            {/* Recognition Badges */}
-            <div className="flex flex-wrap gap-1 mb-3">
-              {topPerformer.recognitionBadges.slice(0, 3).map((badge, idx) => (
-                <span 
-                  key={idx}
-                  className="px-2 py-0.5 text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200 rounded border border-amber-300/40 dark:border-amber-700/40"
-                >
-                  {badge}
-                </span>
-              ))}
-            </div>
-
-            <div className="text-xs text-neutral-700 dark:text-neutral-300 italic line-clamp-2 bg-white/80 dark:bg-neutral-800/70 p-2.5 rounded-lg border border-amber-200 dark:border-amber-900/50">
-              "{topPerformer.recentFeedbacks?.[0]?.comment || 'Exceptional leadership, crisis de-escalation mastery, and outstanding site client evaluations.'}"
-            </div>
-          </div>
-
-          {/* #3 Bronze Card */}
-          {thirdPerformer && (
-            <div 
-              id="podium-card-rank-3"
-              onClick={() => setSelectedGuardForDossier(thirdPerformer)}
-              className="bg-white dark:bg-neutral-900 border border-orange-200/70 dark:border-orange-950/60 rounded-xl p-5 relative overflow-hidden cursor-pointer hover:shadow-md hover:border-orange-300 dark:hover:border-orange-900 transition-all order-3"
-            >
-              <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-orange-400/10 to-transparent rounded-bl-full pointer-events-none" />
-              
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <span className="w-7 h-7 rounded-full bg-orange-100 dark:bg-orange-950/60 text-orange-800 dark:text-orange-300 font-bold text-xs flex items-center justify-center border border-orange-300 dark:border-orange-800">
-                    #3
-                  </span>
-                  <span className="text-xs font-semibold text-orange-700 dark:text-orange-400">Bronze Tier</span>
-                </div>
-                <div className="p-1.5 rounded-lg bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-400">
-                  <Medal className="w-5 h-5" />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 mb-4">
-                <div className="relative">
-                  <div className="w-12 h-12 rounded-full bg-neutral-200 dark:bg-neutral-800 flex items-center justify-center text-neutral-700 dark:text-neutral-200 font-bold text-base border-2 border-orange-300 dark:border-orange-800">
-                    {thirdPerformer.name.split(' ').map(n => n[0]).join('')}
-                  </div>
-                  <div className="absolute -bottom-1 -right-1">
-                    <SiteQualificationCircle 
-                      qualifiedSitesCount={thirdPerformer.ojtSites?.length || 0} 
-                      totalSitesCount={sitesList.length || 8} 
-                      size="xs" 
-                      trainingLevel={thirdPerformer.trainingLevel}
-                      role={thirdPerformer.role}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <h3 className="font-bold text-neutral-900 dark:text-white text-base">
-                    {thirdPerformer.name}
-                  </h3>
-                  <div className="flex items-center gap-2 text-xs text-neutral-500">
-                    <span>{thirdPerformer.badgeNumber}</span>
-                    <span>•</span>
-                    <span className="capitalize">{thirdPerformer.role}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 bg-neutral-50 dark:bg-neutral-800/60 p-2.5 rounded-lg text-xs mb-3">
-                <div>
-                  <span className="text-neutral-500 block text-[11px]">Fulfilled Shifts</span>
-                  <span className="font-bold text-neutral-900 dark:text-white text-sm">
-                    {thirdPerformer.fulfilledShiftsCount} shifts
-                  </span>
-                </div>
-                <div>
-                  <span className="text-neutral-500 block text-[11px]">Rating</span>
-                  {renderStars(thirdPerformer.ratingAverage)}
-                </div>
-              </div>
-
-              <div className="text-xs text-neutral-600 dark:text-neutral-400 italic line-clamp-2 bg-orange-50/50 dark:bg-orange-950/30 p-2 rounded border border-orange-100 dark:border-orange-900/40">
-                "{thirdPerformer.recentFeedbacks?.[0]?.comment || 'Rapid responder with aviation credentials and reliable emergency shift coverage.'}"
-              </div>
-            </div>
+              <X className="w-3.5 h-3.5" />
+            </button>
           )}
         </div>
-      )}
 
-      {/* Metric Sort Tabs & Search Controls */}
-      <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-4 shadow-sm space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          {/* Sort Metrics Selector */}
-          <div className="flex items-center flex-wrap gap-1.5 p-1 bg-neutral-100 dark:bg-neutral-800/80 rounded-lg">
+        {/* Sort Metric Selector */}
+        <div className="flex items-center flex-wrap gap-2">
+          <span className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 flex items-center gap-1">
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span>Sort:</span>
+          </span>
+
+          <div className="flex items-center bg-neutral-100 dark:bg-neutral-800 p-0.5 rounded-lg text-xs font-medium">
             <button
               id="sort-metric-composite"
               onClick={() => setSortMetric('composite')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+              className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                 sortMetric === 'composite'
-                  ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs'
-                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+                  ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs font-bold'
+                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900'
               }`}
             >
-              ⭐ Overall Performance
+              Oculus Score
+            </button>
+
+            <button
+              id="sort-metric-reliability"
+              onClick={() => setSortMetric('reliability')}
+              className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                sortMetric === 'reliability'
+                  ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs font-bold'
+                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900'
+              }`}
+            >
+              Reliability (60)
+            </button>
+
+            <button
+              id="sort-metric-client-exp"
+              onClick={() => setSortMetric('client_exp')}
+              className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                sortMetric === 'client_exp'
+                  ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs font-bold'
+                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900'
+              }`}
+            >
+              Client Exp (40)
             </button>
 
             <button
               id="sort-metric-shifts"
               onClick={() => setSortMetric('shifts')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+              className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                 sortMetric === 'shifts'
-                  ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs'
-                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+                  ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs font-bold'
+                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900'
               }`}
             >
-              🛡️ Most Shifts Fulfilled
+              Shifts
             </button>
 
             <button
               id="sort-metric-rating"
               onClick={() => setSortMetric('rating')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+              className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                 sortMetric === 'rating'
-                  ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs'
-                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
+                  ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs font-bold'
+                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900'
               }`}
             >
-              ★ Site Feedback Rating
-            </button>
-
-            <button
-              id="sort-metric-emergency"
-              onClick={() => setSortMetric('emergency')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
-                sortMetric === 'emergency'
-                  ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs'
-                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-              }`}
-            >
-              🚨 Emergency Surge Fills
-            </button>
-
-            <button
-              id="sort-metric-ontime"
-              onClick={() => setSortMetric('ontime')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
-                sortMetric === 'ontime'
-                  ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs'
-                  : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
-              }`}
-            >
-              ⏱️ Punctuality
+              Stars
             </button>
           </div>
+        </div>
+      </div>
 
-          {/* Search Field */}
-          <div className="relative min-w-[240px]">
-            <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              id="input-search-leaderboard"
-              type="text"
-              placeholder="Search guard, badge, site..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
+      {/* Main Leaderboard Content */}
+      <div className="space-y-6">
+        {isTieredView ? (
+          <>
+            {/* SECTION 1: Top 5 (Recognition Tier) */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold text-xs">
+                    <Trophy className="w-3.5 h-3.5" />
+                  </div>
+                  <h3 className="font-bold text-sm text-neutral-900 dark:text-white tracking-tight">
+                    Top 5 Performers • Recognition & Merit Tier
+                  </h3>
+                </div>
+                <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                  Elite Roster (Rank #1 - #5)
+                </span>
+              </div>
+
+              <div className="space-y-2.5">
+                {topFiveGuards.map((guard, idx) => renderGuardRow(guard, idx + 1, 'recognition'))}
+              </div>
+            </div>
+
+            {/* SECTION 2: Middle Roster Collapsed/Expanded Accordion */}
+            {middleGuards.length > 0 && (
+              <div className="bg-neutral-50 dark:bg-neutral-900/60 border border-neutral-200 dark:border-neutral-800 rounded-xl p-3">
+                <button
+                  id="btn-toggle-middle-roster"
+                  onClick={() => setIsMiddleRosterExpanded(!isMiddleRosterExpanded)}
+                  className="w-full flex items-center justify-between text-xs font-bold text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-blue-500" />
+                    <span>
+                      {middleGuards.length} Officers in Good Standing (Rank #6 to #{5 + middleGuards.length})
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 bg-neutral-200 dark:bg-neutral-800 rounded-full font-normal text-neutral-600 dark:text-neutral-400">
+                      Standard Bronze & Silver Tiers
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+                    <span>{isMiddleRosterExpanded ? 'Collapse Middle Roster' : 'Expand Middle Roster'}</span>
+                    {isMiddleRosterExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </div>
+                </button>
+
+                {isMiddleRosterExpanded && (
+                  <div className="mt-3 space-y-2.5 pt-3 border-t border-neutral-200 dark:border-neutral-800">
+                    {middleGuards.map((guard, idx) => renderGuardRow(guard, 6 + idx, 'middle'))}
+                  </div>
+                )}
+              </div>
             )}
-          </div>
-        </div>
 
-        {/* Detailed Leaderboard Table */}
-        <div className="overflow-x-auto">
-          <table id="table-guard-leaderboard" className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-neutral-200 dark:border-neutral-800 text-neutral-500 dark:text-neutral-400 uppercase tracking-wider font-semibold">
-                <th className="py-3 px-3 w-12 text-center">Rank</th>
-                <th className="py-3 px-3">Guard / Badge</th>
-                <th className="py-3 px-3">Fulfilled Shifts</th>
-                <th className="py-3 px-3">Hours Logged</th>
-                <th className="py-3 px-3">Site Rating & Feedback</th>
-                <th className="py-3 px-3">Surge Fills</th>
-                <th className="py-3 px-3">Punctuality</th>
-                <th className="py-3 px-3">Top Commended Site</th>
-                <th className="py-3 px-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800/60">
-              {rankedGuards.map((guard, index) => {
-                const rank = index + 1;
-                const isGold = rank === 1;
-                const isSilver = rank === 2;
-                const isBronze = rank === 3;
-
-                return (
-                  <tr 
-                    key={guard.id}
-                    className="hover:bg-neutral-50 dark:hover:bg-neutral-800/40 transition-colors group cursor-pointer"
-                    onClick={() => setSelectedGuardForDossier(guard)}
-                  >
-                    {/* Rank Badge */}
-                    <td className="py-3.5 px-3 text-center">
-                      {isGold ? (
-                        <span className="w-6 h-6 rounded-full bg-amber-500 text-white font-black text-xs inline-flex items-center justify-center shadow-xs">
-                          1
-                        </span>
-                      ) : isSilver ? (
-                        <span className="w-6 h-6 rounded-full bg-slate-300 dark:bg-slate-700 text-slate-900 dark:text-white font-bold text-xs inline-flex items-center justify-center">
-                          2
-                        </span>
-                      ) : isBronze ? (
-                        <span className="w-6 h-6 rounded-full bg-orange-300 dark:bg-orange-800 text-orange-950 dark:text-white font-bold text-xs inline-flex items-center justify-center">
-                          3
-                        </span>
-                      ) : (
-                        <span className="text-neutral-400 font-semibold">
-                          #{rank}
-                        </span>
-                      )}
-                    </td>
-
-                    {/* Guard Info */}
-                    <td className="py-3.5 px-3">
-                      <div className="flex items-center gap-2.5">
-                        <div className="relative">
-                          <div className="w-8 h-8 rounded-full bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center font-bold text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700">
-                            {guard.name.split(' ').map(n => n[0]).join('')}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="font-semibold text-neutral-900 dark:text-white flex items-center gap-1.5">
-                            <span>{guard.name}</span>
-                            {guard.role === 'supervisor' && (
-                              <span className="px-1.5 py-0.2 text-[10px] bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded font-medium">
-                                Supv
-                              </span>
-                            )}
-                            {guard.role === 'lead' && (
-                              <span className="px-1.5 py-0.2 text-[10px] bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 rounded font-medium">
-                                Lead
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[11px] text-neutral-500 flex items-center gap-1.5">
-                            <span>{guard.badgeNumber}</span>
-                            <span>•</span>
-                            <span>{guard.ojtSites.length}/8 sites qualified</span>
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Fulfilled Shifts */}
-                    <td className="py-3.5 px-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-neutral-900 dark:text-white text-sm">
-                          {guard.fulfilledShiftsCount}
-                        </span>
-                        <span className="text-neutral-500 text-[11px]">shifts</span>
-                      </div>
-                    </td>
-
-                    {/* Hours */}
-                    <td className="py-3.5 px-3">
-                      <span className="font-semibold text-neutral-800 dark:text-neutral-200">
-                        {guard.totalHoursCompleted} hrs
-                      </span>
-                    </td>
-
-                    {/* Rating & Feedback Reviews */}
-                    <td className="py-3.5 px-3">
-                      <div>
-                        {renderStars(guard.ratingAverage)}
-                        <div className="text-[11px] text-neutral-500 mt-0.5 flex items-center gap-1">
-                          <MessageSquare className="w-3 h-3 text-neutral-400" />
-                          <span>{guard.positiveFeedbackCount} verified reviews</span>
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Emergency Surge */}
-                    <td className="py-3.5 px-3">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 rounded font-semibold text-xs border border-rose-200 dark:border-rose-900/40">
-                        <ShieldAlert className="w-3 h-3" />
-                        {guard.emergencyShiftsFulfilled} fills
-                      </span>
-                    </td>
-
-                    {/* Punctuality */}
-                    <td className="py-3.5 px-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-12 bg-neutral-200 dark:bg-neutral-700 h-1.5 rounded-full overflow-hidden">
-                          <div 
-                            className="bg-emerald-500 h-full rounded-full" 
-                            style={{ width: `${Math.min(100, guard.onTimeArrivalRate)}%` }} 
-                          />
-                        </div>
-                        <span className="font-semibold text-emerald-600 dark:text-emerald-400 text-xs">
-                          {guard.onTimeArrivalRate}%
-                        </span>
-                      </div>
-                    </td>
-
-                    {/* Top Site */}
-                    <td className="py-3.5 px-3">
-                      <div className="flex items-center gap-1.5 text-neutral-700 dark:text-neutral-300 font-medium">
-                        <Building2 className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-                        <span className="truncate max-w-[150px]">{guard.topCommendedSite}</span>
-                      </div>
-                    </td>
-
-                    {/* Actions */}
-                    <td className="py-3.5 px-3 text-right" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          id={`btn-view-dossier-${guard.id}`}
-                          onClick={() => setSelectedGuardForDossier(guard)}
-                          className="px-2.5 py-1 text-[11px] font-semibold bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded transition-colors"
-                        >
-                          Dossier
-                        </button>
-                        <button
-                          id={`btn-review-guard-${guard.id}`}
-                          onClick={() => {
-                            setFeedbackGuardId(guard.id);
-                            setIsAddFeedbackOpen(true);
-                          }}
-                          className="p-1 text-neutral-400 hover:text-blue-600 dark:hover:text-blue-400 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
-                          title="Add Site Feedback"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Feed of Recent Verified Client Commendations */}
-      <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-5 shadow-sm">
-        <div className="flex items-center justify-between mb-4 pb-3 border-b border-neutral-100 dark:border-neutral-800">
-          <div className="flex items-center gap-2">
-            <MessageSquare className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-            <h3 className="font-bold text-neutral-900 dark:text-white text-base">
-              Recent Facility & Client Commendations
-            </h3>
-          </div>
-          <span className="text-xs text-neutral-500">
-            {siteFeedbacks.length} total client reviews logged
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-          {siteFeedbacks.slice(0, 6).map((feedback) => (
-            <div 
-              key={feedback.id}
-              className="bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-200/80 dark:border-neutral-800 rounded-lg p-3.5 space-y-2.5 flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-start justify-between gap-2 mb-1.5">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 font-bold text-xs flex items-center justify-center">
-                      {feedback.guardName.split(' ').map(n => n[0]).join('')}
-                    </div>
-                    <div>
-                      <div className="font-semibold text-xs text-neutral-900 dark:text-white">
-                        {feedback.guardName}
-                      </div>
-                      <div className="text-[10px] text-neutral-500">
-                        {feedback.siteName}
-                      </div>
-                    </div>
+            {/* SECTION 3: Bottom 5 (Coaching & Intervention Tier) */}
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center font-bold text-xs">
+                    <AlertTriangle className="w-3.5 h-3.5" />
                   </div>
-                  {renderStars(feedback.rating)}
+                  <h3 className="font-bold text-sm text-neutral-900 dark:text-white tracking-tight">
+                    Bottom 5 Performers • Coaching & Remediation Tier
+                  </h3>
                 </div>
-
-                <p className="text-xs text-neutral-700 dark:text-neutral-300 italic leading-relaxed">
-                  "{feedback.comment}"
-                </p>
+                <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+                  Intervention Queue (Rank #{totalGuardsCount - 4} - #{totalGuardsCount})
+                </span>
               </div>
 
-              <div>
-                <div className="flex flex-wrap gap-1 mb-2">
-                  {feedback.tags.map((tag, i) => (
-                    <span 
-                      key={i}
-                      className="px-1.5 py-0.5 text-[10px] bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 rounded font-medium"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-
-                <div className="pt-2 border-t border-neutral-200/60 dark:border-neutral-700/60 flex items-center justify-between text-[10px] text-neutral-500">
-                  <span className="font-medium text-neutral-700 dark:text-neutral-400">
-                    {feedback.reviewerName} ({feedback.reviewerTitle})
-                  </span>
-                  <span>{feedback.date}</span>
-                </div>
+              <div className="space-y-2.5">
+                {bottomFiveGuards.map((guard, idx) => 
+                  renderGuardRow(guard, totalGuardsCount - 5 + idx + 1, 'coaching')
+                )}
               </div>
             </div>
-          ))}
-        </div>
+          </>
+        ) : (
+          /* Full Unified Roster (When <= 10 guards or filtered by search) */
+          <div className="space-y-2.5">
+            {rankedGuards.map((guard, idx) => renderGuardRow(guard, idx + 1, 'recognition'))}
+          </div>
+        )}
       </div>
 
-      {/* Modal 1: Guard Performance & Site Commendation Dossier Modal */}
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL 1: Comprehensive Guard Dossier & Oculus Breakdown */}
+      {/* ------------------------------------------------------------- */}
       {selectedGuardForDossier && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div 
-            id="guard-performance-dossier-modal"
-            className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150"
-          >
+        <div className="fixed inset-0 z-50 bg-neutral-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl max-w-2xl w-full p-6 shadow-xl relative animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => setSelectedGuardForDossier(null)}
+              className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 p-1 rounded-lg cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
             {/* Dossier Header */}
-            <div className="bg-gradient-to-r from-neutral-900 via-neutral-800 to-neutral-900 text-white p-5 flex items-start justify-between">
-              <div className="flex items-center gap-3.5">
-                <div className="w-14 h-14 rounded-full bg-neutral-700 border-2 border-amber-400 flex items-center justify-center text-white font-extrabold text-lg shadow-inner">
-                  {selectedGuardForDossier.name.split(' ').map(n => n[0]).join('')}
+            <div className="flex items-start gap-4 pb-4 border-b border-neutral-100 dark:border-neutral-800">
+              <div className="w-14 h-14 rounded-2xl bg-neutral-100 dark:bg-neutral-800 border-2 border-neutral-200 dark:border-neutral-700 flex items-center justify-center text-xl font-bold text-neutral-800 dark:text-neutral-200">
+                {selectedGuardForDossier.name.split(' ').map(n => n[0]).join('')}
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-bold text-neutral-900 dark:text-white">
+                    {selectedGuardForDossier.name}
+                  </h3>
+                  <span className="font-mono text-xs px-2 py-0.5 bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 rounded">
+                    {selectedGuardForDossier.badgeNumber}
+                  </span>
+                  <span className={`text-xs px-2 py-0.5 rounded-md ${getTierBadgeStyle(selectedGuardForDossier.oculusBreakdown?.tier)}`}>
+                    {selectedGuardForDossier.oculusBreakdown?.tierLabel || 'Active Tier'}
+                  </span>
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-xl font-bold text-white tracking-tight">
-                      {selectedGuardForDossier.name}
-                    </h2>
-                    <span className="px-2 py-0.5 text-xs font-semibold bg-amber-500 text-neutral-900 rounded">
-                      Rank #{rankedGuards.findIndex(g => g.id === selectedGuardForDossier.id) + 1}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-neutral-300 mt-1">
-                    <span>Badge: <strong>{selectedGuardForDossier.badgeNumber}</strong></span>
-                    <span>•</span>
-                    <span>Role: <strong className="capitalize">{selectedGuardForDossier.role}</strong></span>
-                    <span>•</span>
-                    <span>{selectedGuardForDossier.phone}</span>
-                  </div>
+
+                <div className="text-xs text-neutral-500 dark:text-neutral-400 flex items-center gap-3 mt-1">
+                  <span>Role: <strong>{selectedGuardForDossier.role.toUpperCase()}</strong></span>
+                  <span>•</span>
+                  <span>Primary Site: <strong>{selectedGuardForDossier.topCommendedSite}</strong></span>
                 </div>
               </div>
 
-              <button
-                id="btn-close-dossier-modal"
-                onClick={() => setSelectedGuardForDossier(null)}
-                className="p-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              {/* Oculus Score Big Badge */}
+              <div className="text-right bg-neutral-50 dark:bg-neutral-800/80 p-3 rounded-xl border border-neutral-200 dark:border-neutral-700">
+                <div className="text-[10px] uppercase font-bold text-neutral-400">Composite Oculus</div>
+                <div className="text-2xl font-black text-neutral-900 dark:text-white">
+                  {selectedGuardForDossier.oculusScore ?? selectedGuardForDossier.oculusBreakdown?.oculusScore ?? 85}
+                  <span className="text-xs font-normal text-neutral-400">/100</span>
+                </div>
+              </div>
             </div>
 
-            {/* Dossier Body */}
-            <div className="p-5 space-y-5 max-h-[75vh] overflow-y-auto">
-              {/* Performance Metric Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="bg-neutral-50 dark:bg-neutral-800 p-3 rounded-xl border border-neutral-200 dark:border-neutral-700">
-                  <div className="text-xs text-neutral-500 mb-1">Fulfilled Shifts</div>
-                  <div className="text-xl font-bold text-neutral-900 dark:text-white">
-                    {selectedGuardForDossier.fulfilledShiftsCount}
+            {/* Dossier Body: Oculus Score Pillars Breakdown */}
+            <div className="py-4 space-y-4">
+              {/* Pillar 1: Operational Reliability (Max 60 pts) */}
+              <div className="bg-neutral-50 dark:bg-neutral-800/40 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-emerald-500" />
+                    <h4 className="font-bold text-xs uppercase tracking-wider text-neutral-900 dark:text-white">
+                      1. Operational Reliability Score
+                    </h4>
                   </div>
-                  <div className="text-[11px] text-neutral-500">{selectedGuardForDossier.totalHoursCompleted} hrs completed</div>
+                  <span className="font-bold font-mono text-xs text-emerald-600 dark:text-emerald-400">
+                    {selectedGuardForDossier.oculusBreakdown?.operationalReliabilityScore ?? 50} / 60.0 Max
+                  </span>
                 </div>
 
-                <div className="bg-neutral-50 dark:bg-neutral-800 p-3 rounded-xl border border-neutral-200 dark:border-neutral-700">
-                  <div className="text-xs text-neutral-500 mb-1">Client Rating</div>
-                  <div className="text-xl font-bold text-amber-500">
-                    {selectedGuardForDossier.ratingAverage.toFixed(2)}★
-                  </div>
-                  <div className="text-[11px] text-neutral-500">{selectedGuardForDossier.positiveFeedbackCount} verified reviews</div>
-                </div>
-
-                <div className="bg-neutral-50 dark:bg-neutral-800 p-3 rounded-xl border border-neutral-200 dark:border-neutral-700">
-                  <div className="text-xs text-neutral-500 mb-1">Surge Emergency Fills</div>
-                  <div className="text-xl font-bold text-rose-600 dark:text-rose-400">
-                    {selectedGuardForDossier.emergencyShiftsFulfilled}
-                  </div>
-                  <div className="text-[11px] text-neutral-500">Short notice response</div>
-                </div>
-
-                <div className="bg-neutral-50 dark:bg-neutral-800 p-3 rounded-xl border border-neutral-200 dark:border-neutral-700">
-                  <div className="text-xs text-neutral-500 mb-1">On-Time Arrival</div>
-                  <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                    {selectedGuardForDossier.onTimeArrivalRate}%
-                  </div>
-                  <div className="text-[11px] text-neutral-500">Punctuality index</div>
-                </div>
-              </div>
-
-              {/* Official Commendations & Badges */}
-              <div className="bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-2.5">
-                  <div className="flex items-center gap-2 font-bold text-sm text-neutral-900 dark:text-white">
-                    <Award className="w-4 h-4 text-amber-500" />
-                    <span>Official Operational Commendations</span>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setAwardGuardId(selectedGuardForDossier.id);
-                      setIsAwardModalOpen(true);
-                    }}
-                    className="text-xs font-semibold text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Bestow Award</span>
-                  </button>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {selectedGuardForDossier.recognitionBadges.map((badge, idx) => (
-                    <span 
-                      key={idx}
-                      className="px-3 py-1 text-xs font-bold bg-white dark:bg-neutral-900 text-amber-900 dark:text-amber-200 rounded-lg border border-amber-300 dark:border-amber-700 shadow-xs flex items-center gap-1.5"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                      {badge}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Verified Facility Feedback Reviews */}
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="font-bold text-sm text-neutral-900 dark:text-white flex items-center gap-2">
-                    <MessageSquare className="w-4 h-4 text-blue-600" />
-                    <span>Verified Facility Reviews & Field Commendations</span>
-                  </h4>
-                  <button
-                    onClick={() => {
-                      setFeedbackGuardId(selectedGuardForDossier.id);
-                      setIsAddFeedbackOpen(true);
-                    }}
-                    className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
-                  >
-                    + Add New Review
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  {siteFeedbacks.filter(f => f.guardId === selectedGuardForDossier.id).length === 0 ? (
-                    <div className="text-center py-6 text-neutral-500 text-xs bg-neutral-50 dark:bg-neutral-800 rounded-xl">
-                      No specific client written feedback logged yet for this officer. Click "+ Add New Review" to submit.
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="bg-white dark:bg-neutral-900 p-2.5 rounded-lg border border-neutral-200/60 dark:border-neutral-700/60">
+                    <div className="text-neutral-500 dark:text-neutral-400 text-[11px] mb-0.5">Punctuality & Attendance (Max 25)</div>
+                    <div className="font-bold text-neutral-900 dark:text-white font-mono">
+                      {selectedGuardForDossier.oculusBreakdown?.attendancePunctualityScore ?? 22} pts
                     </div>
-                  ) : (
-                    siteFeedbacks.filter(f => f.guardId === selectedGuardForDossier.id).map(feedback => (
-                      <div 
-                        key={feedback.id}
-                        className="bg-neutral-50 dark:bg-neutral-800/70 p-3.5 rounded-xl border border-neutral-200 dark:border-neutral-700 space-y-2"
-                      >
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <span className="font-bold text-xs text-neutral-900 dark:text-white">
-                              {feedback.siteName}
+                    <div className="text-[10px] text-neutral-400 mt-1">
+                      On-time: {selectedGuardForDossier.onTimeArrivalRate}% • Surge Bonus: +{selectedGuardForDossier.oculusBreakdown?.emergencyBonusPts ?? 0}
+                    </div>
+                  </div>
+
+                  <div className="bg-white dark:bg-neutral-900 p-2.5 rounded-lg border border-neutral-200/60 dark:border-neutral-700/60">
+                    <div className="text-neutral-500 dark:text-neutral-400 text-[11px] mb-0.5">SLA Checkpoints & Timed Sweeps (Max 20)</div>
+                    <div className="font-bold text-neutral-900 dark:text-white font-mono">
+                      {selectedGuardForDossier.oculusBreakdown?.slaCheckpointsScore ?? 18} pts
+                    </div>
+                    <div className="text-[10px] text-neutral-400 mt-1">
+                      Circuit SLA Compliance: {selectedGuardForDossier.slaCheckpointsCompletedRate ?? 90}%
+                    </div>
+                  </div>
+
+                  <div className="bg-white dark:bg-neutral-900 p-2.5 rounded-lg border border-neutral-200/60 dark:border-neutral-700/60">
+                    <div className="text-neutral-500 dark:text-neutral-400 text-[11px] mb-0.5">DAR Logbook Quality (Max 15)</div>
+                    <div className="font-bold text-neutral-900 dark:text-white font-mono">
+                      {selectedGuardForDossier.oculusBreakdown?.darQualityScore ?? 14} pts
+                    </div>
+                    <div className="text-[10px] text-neutral-400 mt-1">
+                      Photo Proof & Audit Rigor: {selectedGuardForDossier.darQualityRate ?? 88}%
+                    </div>
+                  </div>
+
+                  <div className="bg-white dark:bg-neutral-900 p-2.5 rounded-lg border border-neutral-200/60 dark:border-neutral-700/60">
+                    <div className="text-neutral-500 dark:text-neutral-400 text-[11px] mb-0.5">Geofence Post Integrity (-3 pts/breach)</div>
+                    <div className={`font-bold font-mono ${
+                      (selectedGuardForDossier.oculusBreakdown?.geofenceBreachesCount || 0) > 0 ? 'text-rose-600' : 'text-emerald-600'
+                    }`}>
+                      {selectedGuardForDossier.oculusBreakdown?.geofenceBreachesCount || 0} Breaches (-{selectedGuardForDossier.oculusBreakdown?.geofencePenaltyPts || 0} pts)
+                    </div>
+                    <div className="text-[10px] text-neutral-400 mt-1">
+                      Perimeter departures &gt;10m from designated post
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Pillar 2: Client Experience Score (Max 40 pts) */}
+              <div className="bg-neutral-50 dark:bg-neutral-800/40 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+                    <h4 className="font-bold text-xs uppercase tracking-wider text-neutral-900 dark:text-white">
+                      2. Client Experience Score
+                    </h4>
+                  </div>
+                  <span className="font-bold font-mono text-xs text-amber-600 dark:text-amber-400">
+                    {selectedGuardForDossier.oculusBreakdown?.clientExperienceScore ?? 35} / 40.0 Max
+                  </span>
+                </div>
+
+                <div className="p-3 bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200/60 dark:border-neutral-700/60 text-xs">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-bold text-neutral-900 dark:text-white">
+                      Weighted Star Rating: {selectedGuardForDossier.oculusBreakdown?.weightedStarRating.toFixed(2) ?? selectedGuardForDossier.ratingAverage.toFixed(2)} ★
+                    </span>
+                    <span className="text-[11px] text-neutral-400 font-mono">
+                      {selectedGuardForDossier.oculusBreakdown?.isDefaultBaseline ? '4.0★ Prior Baseline (<3 reviews)' : 'Direct Weighted Reviews'}
+                    </span>
+                  </div>
+
+                  {/* Role Weight Multipliers Info */}
+                  <div className="grid grid-cols-3 gap-2 text-center text-[10px] pt-2 border-t border-neutral-100 dark:border-neutral-800">
+                    <div className="p-1.5 bg-neutral-50 dark:bg-neutral-800 rounded">
+                      <div className="font-bold text-neutral-900 dark:text-white">Property Manager (3x)</div>
+                      <div className="text-blue-600 dark:text-blue-400 font-mono">
+                        {selectedGuardForDossier.oculusBreakdown?.reviewWeightBreakdown.propertyManagerCount ?? 0} Reviews
+                      </div>
+                    </div>
+                    <div className="p-1.5 bg-neutral-50 dark:bg-neutral-800 rounded">
+                      <div className="font-bold text-neutral-900 dark:text-white">Supervisor (2x)</div>
+                      <div className="text-purple-600 dark:text-purple-400 font-mono">
+                        {selectedGuardForDossier.oculusBreakdown?.reviewWeightBreakdown.supervisorCount ?? 0} Reviews
+                      </div>
+                    </div>
+                    <div className="p-1.5 bg-neutral-50 dark:bg-neutral-800 rounded">
+                      <div className="font-bold text-neutral-900 dark:text-white">Resident / Tenant (1x)</div>
+                      <div className="text-slate-600 dark:text-slate-400 font-mono">
+                        {selectedGuardForDossier.oculusBreakdown?.reviewWeightBreakdown.residentCount ?? 0} Reviews
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recent Reviews & Feedbacks */}
+              <div>
+                <h5 className="font-bold text-xs uppercase tracking-wider text-neutral-500 mb-2">
+                  Verified Client Reviews & Commendations
+                </h5>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {selectedGuardForDossier.recentFeedbacks && selectedGuardForDossier.recentFeedbacks.length > 0 ? (
+                    selectedGuardForDossier.recentFeedbacks.map((fb, idx) => (
+                      <div key={idx} className="p-3 bg-neutral-50 dark:bg-neutral-800/40 rounded-lg border border-neutral-100 dark:border-neutral-800 text-xs">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-neutral-900 dark:text-white">{fb.reviewerName}</span>
+                            <span className="text-[10px] text-neutral-400">({fb.reviewerTitle})</span>
+                            <span className="text-[9px] px-1.5 py-0.2 bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-mono rounded">
+                              {fb.reviewerRole === 'property_manager' ? '3x Weight' : fb.reviewerRole === 'supervisor' ? '2x Weight' : '1x Weight'}
                             </span>
-                            <div className="text-[11px] text-neutral-500">
-                              By {feedback.reviewerName} ({feedback.reviewerTitle}) • {feedback.date}
-                            </div>
                           </div>
-                          {renderStars(feedback.rating)}
+                          {renderStars(fb.rating)}
                         </div>
-
-                        <p className="text-xs text-neutral-700 dark:text-neutral-300 italic">
-                          "{feedback.comment}"
-                        </p>
-
-                        <div className="flex flex-wrap gap-1">
-                          {feedback.tags.map((t, idx) => (
-                            <span key={idx} className="px-2 py-0.5 text-[10px] bg-neutral-200 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded font-medium">
-                              {t}
-                            </span>
-                          ))}
-                        </div>
+                        <p className="text-neutral-600 dark:text-neutral-300 italic">"{fb.comment}"</p>
                       </div>
                     ))
+                  ) : (
+                    <div className="p-3 text-center text-xs text-neutral-400 bg-neutral-50 dark:bg-neutral-800/30 rounded-lg">
+                      No client reviews logged yet. Baseline 4.0★ (32 pts) applied.
+                    </div>
                   )}
                 </div>
               </div>
             </div>
 
-            {/* Dossier Footer */}
-            <div className="bg-neutral-50 dark:bg-neutral-800/80 px-5 py-3.5 border-t border-neutral-200 dark:border-neutral-700 flex items-center justify-between">
-              <div className="text-xs text-neutral-500">
-                OJT Qualification: <strong>{selectedGuardForDossier.ojtSites.length} of 8 Sites</strong>
-              </div>
-              <div className="flex items-center gap-2">
-                {onNavigateToGuardDirectory && (
-                  <button
-                    onClick={() => {
-                      onNavigateToGuardDirectory(selectedGuardForDossier.id);
-                      setSelectedGuardForDossier(null);
-                    }}
-                    className="px-3 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-lg transition-colors flex items-center gap-1.5"
-                  >
-                    <span>View in Guard Directory</span>
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                <button
-                  onClick={() => setSelectedGuardForDossier(null)}
-                  className="px-4 py-1.5 text-xs font-semibold bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 rounded-lg hover:bg-neutral-800 transition-colors"
-                >
-                  Close Dossier
-                </button>
-              </div>
+            {/* Modal Footer */}
+            <div className="flex justify-end gap-2 pt-4 border-t border-neutral-100 dark:border-neutral-800">
+              <button
+                onClick={() => {
+                  setCoachingGuard(selectedGuardForDossier);
+                  setSelectedGuardForDossier(null);
+                }}
+                className="px-4 py-2 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-neutral-950 rounded-lg transition-colors cursor-pointer"
+              >
+                Schedule Coaching
+              </button>
+              <button
+                onClick={() => setSelectedGuardForDossier(null)}
+                className="px-4 py-2 text-xs font-semibold bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-lg transition-colors cursor-pointer"
+              >
+                Close Dossier
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal 2: Log Site Feedback Modal */}
-      {isAddFeedbackOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div 
-            id="modal-add-site-feedback"
-            className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150"
-          >
-            <div className="bg-blue-600 text-white p-4 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <MessageSquare className="w-5 h-5" />
-                <h3 className="font-bold text-base">Record Site Feedback & Commendation</h3>
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL 2: Interactive Calendar 1-on-1 Performance Coaching */}
+      {/* ------------------------------------------------------------- */}
+      <CoachingSchedulingCalendarModal
+        isOpen={Boolean(coachingGuard)}
+        onClose={() => setCoachingGuard(null)}
+        guard={coachingGuard}
+        guardStats={coachingGuard}
+        initialTopic={coachingTopic}
+      />
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL 3: Incident Log & Geofence Breaches Detail */}
+      {/* ------------------------------------------------------------- */}
+      {incidentLogGuard && (
+        <div className="fixed inset-0 z-50 bg-neutral-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl max-w-lg w-full p-6 shadow-xl relative animate-in fade-in zoom-in-95 duration-150 max-h-[85vh] overflow-y-auto">
+            <button
+              onClick={() => setIncidentLogGuard(null)}
+              className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 p-1 rounded-lg cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 pb-4 border-b border-neutral-100 dark:border-neutral-800">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-600 flex items-center justify-center">
+                <AlertCircle className="w-5 h-5" />
               </div>
-              <button
-                onClick={() => setIsAddFeedbackOpen(false)}
-                className="p-1 text-blue-100 hover:text-white rounded"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div>
+                <h3 className="font-bold text-base text-neutral-900 dark:text-white">
+                  Incident & Geofence Logbook
+                </h3>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Officer: <strong>{incidentLogGuard.name}</strong> ({incidentLogGuard.badgeNumber})
+                </p>
+              </div>
             </div>
 
-            <form onSubmit={handleSaveFeedback} className="p-5 space-y-4 text-xs">
-              {/* Select Guard */}
+            <div className="py-4 space-y-3 text-xs">
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 rounded-xl space-y-1">
+                <div className="font-bold text-rose-900 dark:text-rose-200 flex items-center justify-between">
+                  <span>Geofence Post Breaches (&gt;10m Departure)</span>
+                  <span className="font-mono">{incidentLogGuard.oculusBreakdown?.geofenceBreachesCount || 0} Total</span>
+                </div>
+                <p className="text-[11px] text-rose-700 dark:text-rose-400">
+                  Each unexcused breach deducts -3 points from the Operational Reliability score.
+                </p>
+              </div>
+
+              {/* Sample Log Entries */}
+              <div className="space-y-2">
+                <div className="p-3 bg-neutral-50 dark:bg-neutral-800/50 rounded-lg border border-neutral-200/60 dark:border-neutral-800 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-neutral-800 dark:text-neutral-200">Perimeter Zone Departure (14.2m)</span>
+                    <span className="text-[10px] text-neutral-400 font-mono">3 days ago</span>
+                  </div>
+                  <p className="text-neutral-600 dark:text-neutral-400 text-[11px]">
+                    Site: {incidentLogGuard.topCommendedSite} • Departure duration: 18 mins. Officer was flagged outside geofence buffer.
+                  </p>
+                </div>
+
+                <div className="p-3 bg-neutral-50 dark:bg-neutral-800/50 rounded-lg border border-neutral-200/60 dark:border-neutral-800 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-neutral-800 dark:text-neutral-200">Late Call-Off / Tardiness Flag</span>
+                    <span className="text-[10px] text-neutral-400 font-mono">2 weeks ago</span>
+                  </div>
+                  <p className="text-neutral-600 dark:text-neutral-400 text-[11px]">
+                    Late notification submitted &lt;2 hours before shift commencement.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-neutral-100 dark:border-neutral-800">
+              <button
+                onClick={() => {
+                  setCoachingGuard(incidentLogGuard);
+                  setIncidentLogGuard(null);
+                }}
+                className="px-4 py-2 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-neutral-950 rounded-lg cursor-pointer"
+              >
+                Schedule Remediation
+              </button>
+              <button
+                onClick={() => setIncidentLogGuard(null)}
+                className="px-4 py-2 text-xs font-semibold bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 rounded-lg cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL 4: Log Site Feedback (With Role Weight Multipliers) */}
+      {/* ------------------------------------------------------------- */}
+      {isAddFeedbackOpen && (
+        <div className="fixed inset-0 z-50 bg-neutral-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl max-w-lg w-full p-6 shadow-xl relative animate-in fade-in zoom-in-95 duration-150">
+            <button
+              onClick={() => setIsAddFeedbackOpen(false)}
+              className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 p-1 rounded-lg cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 pb-4 border-b border-neutral-100 dark:border-neutral-800">
+              <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center">
+                <MessageSquare className="w-5 h-5" />
+              </div>
               <div>
-                <label className="block font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                  Guard Officer *
+                <h3 className="font-bold text-base text-neutral-900 dark:text-white">
+                  Log Verified Site Feedback
+                </h3>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Reviews are weighted in the Oculus Client Experience score (Max 40 pts).
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveFeedback} className="space-y-4 py-4">
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                  Target Guard
                 </label>
                 <select
-                  id="select-feedback-guard"
                   value={feedbackGuardId}
                   onChange={(e) => setFeedbackGuardId(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white"
-                  required
+                  className="w-full px-3 py-2 text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                 >
                   {guardsList.map((g) => (
                     <option key={g.id} value={g.id}>
-                      {g.name} ({g.badgeNumber}) - {g.role.toUpperCase()}
+                      {g.name} ({g.badgeNumber}) - {g.role}
                     </option>
                   ))}
                 </select>
               </div>
 
-              {/* Facility Site */}
+              {/* Reviewer Role Multiplier Selector */}
               <div>
-                <label className="block font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                  Facility / Site Post *
+                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                  Reviewer Role & Oculus Weight Multiplier
                 </label>
                 <select
-                  id="select-feedback-site"
-                  value={feedbackSiteName}
-                  onChange={(e) => setFeedbackSiteName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white"
-                  required
+                  value={feedbackReviewerRole}
+                  onChange={(e) => setFeedbackReviewerRole(e.target.value as ReviewerRoleType)}
+                  className="w-full px-3 py-2 text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-900 dark:text-white font-semibold focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="Port Authority - Pier 7">Port Authority - Pier 7</option>
-                  <option value="West Medical Center">West Medical Center</option>
-                  <option value="Corporate HQ">Corporate HQ</option>
-                  <option value="City Airport Gate 4">City Airport Gate 4</option>
-                  <option value="Tech Campus North">Tech Campus North</option>
-                  <option value="Industrial Warehouse">Industrial Warehouse</option>
-                  <option value="Retail Plaza">Retail Plaza</option>
-                  <option value="Hotel Lobby">Hotel Lobby</option>
+                  <option value="property_manager">Property Manager / Client / Facilities (3x Weight)</option>
+                  <option value="supervisor">Operations Supervisor / Lead Officer (2x Weight)</option>
+                  <option value="resident">Resident / Tenant / Visitor (1x Weight)</option>
                 </select>
               </div>
 
-              {/* Star Rating Selector */}
-              <div>
-                <label className="block font-semibold text-neutral-700 dark:text-neutral-300 mb-1.5">
-                  Evaluation Rating: {feedbackRating} / 5 Stars
-                </label>
-                <div className="flex items-center gap-2">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      type="button"
-                      onClick={() => setFeedbackRating(star)}
-                      className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
-                        feedbackRating >= star
-                          ? 'bg-amber-500/15 border-amber-400 text-amber-500'
-                          : 'bg-neutral-100 dark:bg-neutral-800 border-neutral-300 dark:border-neutral-700 text-neutral-400'
-                      }`}
-                    >
-                      <Star className="w-5 h-5 fill-current" />
-                    </button>
-                  ))}
-                  <span className="font-bold text-neutral-800 dark:text-neutral-200 ml-2">
-                    {feedbackRating === 5 ? 'Exceptional (5.0)' : feedbackRating >= 4 ? 'Commended (4.0+)' : 'Satisfactory'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Reviewer Details */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                    Reviewer Name
+                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                    Rating (1-5 Stars)
                   </label>
+                  <select
+                    value={feedbackRating}
+                    onChange={(e) => setFeedbackRating(Number(e.target.value))}
+                    className="w-full px-3 py-2 text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-900 dark:text-white font-bold"
+                  >
+                    <option value={5}>5.0 Stars (Exceptional)</option>
+                    <option value={4}>4.0 Stars (Solid Performance)</option>
+                    <option value={3}>3.0 Stars (Satisfactory)</option>
+                    <option value={2}>2.0 Stars (Needs Improvement)</option>
+                    <option value={1}>1.0 Star (Deficient)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                    Site Location
+                  </label>
+                  <select
+                    value={feedbackSiteName}
+                    onChange={(e) => setFeedbackSiteName(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-900 dark:text-white"
+                  >
+                    {sitesList.map((s) => (
+                      <option key={s.id} value={s.name}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                  Reviewer Name & Title
+                </label>
+                <div className="grid grid-cols-2 gap-2">
                   <input
-                    id="input-reviewer-name"
                     type="text"
-                    placeholder="e.g. Capt. Thomas Vance"
+                    placeholder="E.g. Elena Rostova"
                     value={feedbackReviewerName}
                     onChange={(e) => setFeedbackReviewerName(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white"
+                    className="w-full px-3 py-1.5 text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-900 dark:text-white"
                   />
-                </div>
-                <div>
-                  <label className="block font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                    Reviewer Title / Role
-                  </label>
                   <input
-                    id="input-reviewer-title"
                     type="text"
-                    placeholder="e.g. Operations Director"
+                    placeholder="E.g. Senior Facilities Director"
                     value={feedbackReviewerTitle}
                     onChange={(e) => setFeedbackReviewerTitle(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white"
+                    className="w-full px-3 py-1.5 text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-900 dark:text-white"
                   />
                 </div>
               </div>
 
-              {/* Commendation Tags */}
               <div>
-                <label className="block font-semibold text-neutral-700 dark:text-neutral-300 mb-1.5">
-                  Commendation Tags
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {AVAILABLE_TAGS.map((tag) => {
-                    const isSelected = feedbackTags.includes(tag);
-                    return (
-                      <button
-                        key={tag}
-                        type="button"
-                        onClick={() => handleToggleTag(tag)}
-                        className={`px-2.5 py-1 text-[11px] font-semibold rounded-md border transition-colors cursor-pointer ${
-                          isSelected
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700'
-                        }`}
-                      >
-                        {tag}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Detailed Comments */}
-              <div>
-                <label className="block font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                  Detailed Client Comments / Incident Notes *
+                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                  Evaluation Feedback & Comments
                 </label>
                 <textarea
-                  id="textarea-feedback-comment"
                   rows={3}
-                  placeholder="Describe specific actions, vigilance, customer service, or incident handling performed by the guard..."
                   value={feedbackComment}
                   onChange={(e) => setFeedbackComment(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white"
-                  required
+                  placeholder="Officer performed thorough access control scans and maintained outstanding presence."
+                  className="w-full px-3 py-2 text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-900 dark:text-white"
                 />
               </div>
 
-              {/* Submit Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-200 dark:border-neutral-800">
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setIsAddFeedbackOpen(false)}
-                  className="px-3.5 py-2 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg"
+                  className="px-4 py-2 text-xs font-semibold bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 rounded-lg cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  id="btn-submit-feedback"
-                  className="px-4 py-2 font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors cursor-pointer"
+                  className="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg cursor-pointer shadow-xs"
                 >
-                  Submit Site Feedback
+                  Save Feedback
                 </button>
               </div>
             </form>
@@ -1237,100 +1260,94 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
         </div>
       )}
 
-      {/* Modal 3: Award Official Commendation Modal */}
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL 5: Award Commendation Badge */}
+      {/* ------------------------------------------------------------- */}
       {isAwardModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div 
-            id="modal-award-commendation"
-            className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150"
-          >
-            <div className="bg-amber-500 text-neutral-950 p-4 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <Award className="w-5 h-5 fill-neutral-950" />
-                <h3 className="font-extrabold text-base">Award Operational Commendation</h3>
+        <div className="fixed inset-0 z-50 bg-neutral-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-2xl max-w-lg w-full p-6 shadow-xl relative animate-in fade-in zoom-in-95 duration-150">
+            <button
+              onClick={() => setIsAwardModalOpen(false)}
+              className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 p-1 rounded-lg cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 pb-4 border-b border-neutral-100 dark:border-neutral-800">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
+                <Award className="w-5 h-5" />
               </div>
-              <button
-                onClick={() => setIsAwardModalOpen(false)}
-                className="p-1 text-neutral-900 hover:text-black rounded"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div>
+                <h3 className="font-bold text-base text-neutral-900 dark:text-white">
+                  Award Official Commendation
+                </h3>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Official badge issued to guard profile with permanent admin log entry.
+                </p>
+              </div>
             </div>
 
-            <form onSubmit={handleSaveAward} className="p-5 space-y-4 text-xs">
-              {/* Select Guard */}
+            <form onSubmit={handleSaveAward} className="space-y-4 py-4">
               <div>
-                <label className="block font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                  Recipient Guard Officer *
+                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                  Recipient Guard
                 </label>
                 <select
-                  id="select-award-guard"
                   value={awardGuardId}
                   onChange={(e) => setAwardGuardId(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white"
-                  required
+                  className="w-full px-3 py-2 text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-900 dark:text-white"
                 >
                   {guardsList.map((g) => (
                     <option key={g.id} value={g.id}>
-                      {g.name} ({g.badgeNumber}) - {g.role.toUpperCase()}
+                      {g.name} ({g.badgeNumber}) - {g.role}
                     </option>
                   ))}
                 </select>
               </div>
 
-              {/* Badge Selection */}
               <div>
-                <label className="block font-semibold text-neutral-700 dark:text-neutral-300 mb-1.5">
-                  Recognition Badge
+                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                  Commendation Badge Title
                 </label>
-                <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto p-1 bg-neutral-50 dark:bg-neutral-800/60 rounded-lg border border-neutral-200 dark:border-neutral-700">
-                  {AVAILABLE_BADGES.map((badge) => (
-                    <button
-                      key={badge}
-                      type="button"
-                      onClick={() => setAwardBadgeName(badge)}
-                      className={`px-2.5 py-1.5 text-[11px] font-semibold rounded-md text-left transition-colors cursor-pointer ${
-                        awardBadgeName === badge
-                          ? 'bg-amber-500 text-neutral-950 font-bold'
-                          : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700'
-                      }`}
-                    >
-                      {badge}
-                    </button>
+                <select
+                  value={awardBadgeName}
+                  onChange={(e) => setAwardBadgeName(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-900 dark:text-white font-bold"
+                >
+                  {AVAILABLE_BADGES.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
                   ))}
-                </div>
+                </select>
               </div>
 
-              {/* Optional Custom Citation Notes */}
               <div>
-                <label className="block font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                  Citation Reason / Admin Notes
+                <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
+                  Commendation Citation & Notes
                 </label>
                 <textarea
-                  id="textarea-award-notes"
-                  rows={2}
-                  placeholder="e.g. Recognized for outstanding response during the August midnight maritime convoy surge..."
+                  rows={3}
                   value={awardNotes}
                   onChange={(e) => setAwardNotes(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white"
+                  placeholder="E.g., Exemplary performance during emergency night surge and flawless access control audit."
+                  className="w-full px-3 py-2 text-xs bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-900 dark:text-white"
                 />
               </div>
 
-              {/* Submit Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-neutral-200 dark:border-neutral-800">
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setIsAwardModalOpen(false)}
-                  className="px-3.5 py-2 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg"
+                  className="px-4 py-2 text-xs font-semibold bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 rounded-lg cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  id="btn-confirm-award"
-                  className="px-4 py-2 font-bold bg-amber-500 hover:bg-amber-600 text-neutral-950 rounded-lg transition-colors cursor-pointer"
+                  className="px-4 py-2 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-neutral-950 rounded-lg cursor-pointer shadow-xs"
                 >
-                  Issue Award & Log
+                  Award Commendation
                 </button>
               </div>
             </form>
@@ -1340,16 +1357,3 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
     </div>
   );
 };
-
-// Simple Lucide-style Crown icon component for rank 1
-const CrownIcon: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
-  <svg 
-    xmlns="http://www.w3.org/2000/svg" 
-    viewBox="0 0 24 24" 
-    fill="currentColor" 
-    stroke="none" 
-    className={className}
-  >
-    <path d="M2 4l3 12h14l3-12-5 4-5-6-5 6-5-4zM5 18h14v2H5v-2z" />
-  </svg>
-);
