@@ -386,6 +386,109 @@ export const ShiftAlertPreferencesModal: React.FC<ShiftAlertPreferencesModalProp
               </div>
             </div>
 
+            {/* 2. 24-Hour Pre-Shift Duty Reminder */}
+            <div 
+              id="alert-pref-card-24h-reminder"
+              className={`p-3.5 rounded-xl border transition-all ${
+                alertPreferences.upcomingShift24hReminder !== false
+                  ? 'bg-blue-50/80 dark:bg-blue-950/30 border-blue-300 dark:border-blue-800/80 shadow-2xs' 
+                  : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/60 opacity-85'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className={`p-2 rounded-lg shrink-0 ${
+                    alertPreferences.upcomingShift24hReminder !== false
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
+                  }`}>
+                    <Bell className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-extrabold text-slate-900 dark:text-slate-100 text-xs">
+                        24-Hour Pre-Shift Duty Reminder
+                      </h3>
+                      <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.2 bg-blue-200 dark:bg-blue-900 text-blue-900 dark:text-blue-200 rounded font-mono">
+                        Duty Push
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed">
+                      Receive an automated reminder banner and push notification before your next scheduled shift with 1-tap attendance confirmation to ensure you never miss duty.
+                    </p>
+
+                    {/* Lead Hours selector */}
+                    <div className="mt-2.5 space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                          <Clock className="w-3 h-3 text-blue-500" />
+                          Alert Advance Window:
+                        </span>
+                        <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
+                          {alertPreferences.upcomingReminderLeadHours || 24} Hours Prior
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 pt-0.5">
+                        {[12, 24, 36, 48].map((hours) => (
+                          <button
+                            key={hours}
+                            type="button"
+                            onClick={() => {
+                              updateAlertPreferences({ upcomingReminderLeadHours: hours });
+                              triggerFeedback();
+                            }}
+                            className={`flex-1 py-1 text-[10px] font-mono font-bold rounded border transition-colors cursor-pointer ${
+                              (alertPreferences.upcomingReminderLeadHours || 24) === hours
+                                ? 'bg-blue-600 border-blue-600 text-white shadow-2xs'
+                                : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100'
+                            }`}
+                          >
+                            {hours}h {hours === 24 ? '(Standard)' : ''}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 mt-2.5">
+                      <button
+                        id="test-24h-reminder-btn"
+                        type="button"
+                        onClick={() => {
+                          showToast(
+                            '24h Duty Reminder Test',
+                            `Upcoming Shift: Metro Tech Center at 08:00 tomorrow (${alertPreferences.upcomingReminderLeadHours || 24}h lead time).`,
+                            'info'
+                          );
+                          triggerFeedback();
+                        }}
+                        className="text-[10px] font-bold text-blue-800 dark:text-blue-300 hover:text-blue-950 flex items-center gap-1 bg-blue-100 dark:bg-blue-900/60 border border-blue-300 dark:border-blue-700 px-2.5 py-1 rounded shadow-2xs cursor-pointer"
+                      >
+                        <Play className="w-2.5 h-2.5 fill-current" /> Test Push Alert
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Toggle Switch */}
+                <button
+                  id="toggle-upcoming-reminder-btn"
+                  role="switch"
+                  aria-checked={alertPreferences.upcomingShift24hReminder !== false}
+                  onClick={() => handleToggle('upcomingShift24hReminder')}
+                  className={`w-11 h-6 shrink-0 rounded-full transition-colors relative cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400 ${
+                    alertPreferences.upcomingShift24hReminder !== false ? 'bg-[#1e3a8a] dark:bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
+                  }`}
+                  aria-label="Toggle 24h Pre-Shift Duty Reminder"
+                >
+                  <span
+                    className={`block w-4 h-4 rounded-full bg-white shadow-md transform transition-transform absolute top-1 ${
+                      alertPreferences.upcomingShift24hReminder !== false ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+
             {/* 3. Trade Matches */}
             <div 
               id="alert-pref-card-trades"

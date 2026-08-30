@@ -59,9 +59,10 @@ import { getCurrentLocation, calculateDistance, GeoCoordinates, formatDistance }
 
 interface GuardDutyTerminalProps {
   onOpenAlertPrefs?: () => void;
+  onNavigateToCalendar?: () => void;
 }
 
-export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = () => {
+export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigateToCalendar }) => {
   const { 
     activeGuard, 
     scheduledShifts, 
@@ -1066,12 +1067,24 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = () => {
             <div className="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                  <Calendar className="w-3.5 h-3.5 text-[#1e3a8a] dark:text-blue-400" />
                   <span>Your Upcoming Schedule</span>
                 </span>
-                <span className="text-[10px] font-mono text-slate-400">
-                  {guardUpcomingShifts.length} Shifts Booked
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono text-slate-400">
+                    {guardUpcomingShifts.length} Shifts Booked
+                  </span>
+                  {onNavigateToCalendar && (
+                    <button
+                      type="button"
+                      onClick={onNavigateToCalendar}
+                      className="text-[10px] font-bold text-[#1e3a8a] dark:text-blue-400 hover:underline flex items-center gap-0.5 cursor-pointer"
+                    >
+                      <span>Calendar</span>
+                      <ChevronRight className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-1.5 max-h-48 overflow-y-auto">

@@ -319,6 +319,8 @@ export interface ShiftAlertPreferences {
   emergencyAlerts: boolean; // Critical broadcasts, lockdown & active threat notifications
   urgentOpenShifts: boolean; // Same-day / urgent unfilled shifts & priority open posts
   priorityNext24hPush: boolean; // Priority push notification for unfilled shifts occurring in next 24h
+  upcomingShift24hReminder?: boolean; // 24-hour pre-shift duty push notification & countdown
+  upcomingReminderLeadHours?: number; // Pre-shift reminder lead time (e.g. 24, 12, 2)
   minRestBufferHours: number; // Minimum rest buffer between shifts in hours (default: 6)
   tradeMatches: boolean; // Shift giveaways & swap proposals matching guard's sites or schedule
   siteQualifiedOnly: boolean; // Filter shift notifications to only sites guard is OJT-cleared for
@@ -859,6 +861,10 @@ export interface ScheduledShift {
   clockInVerifiedAt?: string;
   verifiedByMethod?: 'biometrics' | 'credentials' | 'pin' | 'camera_gps';
   
+  // Attendance Confirmation (24h Pre-Shift Acknowledgment)
+  attendanceConfirmed?: boolean;
+  attendanceConfirmedAt?: string;
+
   createdAt?: string;
 }
 
@@ -1222,6 +1228,17 @@ export interface TimeOffRequest {
   reviewedBy?: string;
   reviewedAt?: string;
   adminNotes?: string;
+}
+
+export interface TimeOffDailyStats {
+  date: string;
+  approvedCount: number;
+  maxAllowed: number;
+  remainingSlots: number;
+  isAtCapacity: boolean;
+  isOverCapacity: boolean;
+  approvedRequests: TimeOffRequest[];
+  pendingRequests: TimeOffRequest[];
 }
 
 export type CallOffReason = 

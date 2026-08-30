@@ -5,12 +5,14 @@ import { TradeBoard } from './TradeBoard';
 import { ActiveCallsPanel } from './ActiveCallsPanel';
 import { GuardDutyTerminal } from './GuardDutyTerminal';
 import { LiveRouteView } from './LiveRouteView';
+import { GuardScheduleCalendar } from './GuardScheduleCalendar';
 import { CallAlertModal } from './CallAlertModal';
 import { EmergencyAlertOverlay } from './EmergencyAlertOverlay';
 import { ShiftAlertPreferencesModal } from './ShiftAlertPreferencesModal';
 import { GuardLoginModal } from './GuardLoginModal';
 import { PriorityShiftPushBanner } from './PriorityShiftPushBanner';
 import { TimeSpecificTaskAlertBanner } from './TimeSpecificTaskAlertBanner';
+import { UpcomingShiftReminderBanner } from './UpcomingShiftReminderBanner';
 import { 
   Shield, 
   UserCheck, 
@@ -32,7 +34,8 @@ import {
   KeyRound,
   LogOut,
   UserPlus,
-  Navigation
+  Navigation,
+  CalendarDays
 } from 'lucide-react';
 
 interface GuardViewProps {
@@ -48,6 +51,7 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
     guardsList, 
     setActiveGuard, 
     shifts, 
+    scheduledShifts,
     trades, 
     callsForService,
     activeClockedInShift,
@@ -57,7 +61,7 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
     alertPreferences,
     eligiblePriorityShifts
   } = useShiftOps();
-  const [activeTab, setActiveTab] = useState<'duty_post' | 'live_route' | 'open_board' | 'trade_board' | 'active_calls'>('duty_post');
+  const [activeTab, setActiveTab] = useState<'duty_post' | 'schedule_calendar' | 'live_route' | 'open_board' | 'trade_board' | 'active_calls'>('duty_post');
   const [showGuardMenu, setShowGuardMenu] = useState(false);
   const [isAlertPrefsOpen, setIsAlertPrefsOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -66,6 +70,7 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
   const activeTradesCount = trades.filter((t) => t.status === 'active' || t.status === 'pending_swap').length;
   const activeCallsCount = callsForService.filter((c) => c.status !== 'cleared' && c.status !== 'cancelled').length;
   const boloCount = callsForService.filter((c) => (c.isBolo || c.priority === 'urgent_bolo') && c.status !== 'cleared' && c.status !== 'cancelled').length;
+  const guardUpcomingShiftsCount = scheduledShifts.filter((s) => s.guardId === activeGuard.id && (s.status === 'scheduled' || s.status === 'on_duty' || s.status === 'on_break')).length;
 
   const activeCategoriesCount = [
     alertPreferences.emergencyAlerts,
@@ -337,11 +342,11 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
       )}
 
       {/* Navigation Tabs */}
-      <nav className="flex border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
+      <nav className="flex border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0 overflow-x-auto no-scrollbar">
         <button
           id="guard-tab-duty-post"
           onClick={() => setActiveTab('duty_post')}
-          className={`flex-1 py-3 text-[10px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
+          className={`flex-1 min-w-[72px] py-3 text-[10px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
             activeTab === 'duty_post'
               ? 'border-b-2 border-[#1e3a8a] dark:border-blue-400 text-[#1e3a8a] dark:text-blue-400 bg-blue-50/40 dark:bg-blue-950/30 font-black'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
@@ -355,9 +360,29 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
         </button>
 
         <button
+          id="guard-tab-schedule-cal"
+          onClick={() => setActiveTab('schedule_calendar')}
+          className={`flex-1 min-w-[78px] py-3 text-[10px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
+            activeTab === 'schedule_calendar'
+              ? 'border-b-2 border-[#1e3a8a] dark:border-blue-400 text-[#1e3a8a] dark:text-blue-400 bg-blue-50/40 dark:bg-blue-950/30 font-black'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+          }`}
+        >
+          <CalendarDays className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+          <span>SCHEDULE</span>
+          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+            activeTab === 'schedule_calendar' 
+              ? 'bg-[#1e3a8a] dark:bg-blue-600 text-white' 
+              : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+          }`}>
+            {guardUpcomingShiftsCount}
+          </span>
+        </button>
+
+        <button
           id="guard-tab-live-route"
           onClick={() => setActiveTab('live_route')}
-          className={`flex-1 py-3 text-[10px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
+          className={`flex-1 min-w-[68px] py-3 text-[10px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
             activeTab === 'live_route'
               ? 'border-b-2 border-cyan-500 dark:border-cyan-400 text-cyan-700 dark:text-cyan-400 bg-cyan-50/40 dark:bg-cyan-950/30 font-black'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
@@ -371,13 +396,13 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
         <button
           id="guard-tab-open-board"
           onClick={() => setActiveTab('open_board')}
-          className={`flex-1 py-3 text-[10px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
+          className={`flex-1 min-w-[72px] py-3 text-[10px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
             activeTab === 'open_board'
               ? 'border-b-2 border-[#1e3a8a] dark:border-blue-400 text-[#1e3a8a] dark:text-blue-400 bg-blue-50/40 dark:bg-blue-950/30 font-black'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
           }`}
         >
-          <span>OPEN BOARD</span>
+          <span>OPEN</span>
           <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
             activeTab === 'open_board' 
               ? 'bg-[#1e3a8a] dark:bg-blue-600 text-white' 
@@ -398,7 +423,7 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
         <button
           id="guard-tab-trade-board"
           onClick={() => setActiveTab('trade_board')}
-          className={`flex-1 py-3 text-[10px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
+          className={`flex-1 min-w-[65px] py-3 text-[10px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
             activeTab === 'trade_board'
               ? 'border-b-2 border-[#1e3a8a] dark:border-blue-400 text-[#1e3a8a] dark:text-blue-400 bg-blue-50/40 dark:bg-blue-950/30 font-black'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
@@ -417,7 +442,7 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
         <button
           id="guard-tab-active-calls"
           onClick={() => setActiveTab('active_calls')}
-          className={`flex-1 py-3 text-[10px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
+          className={`flex-1 min-w-[65px] py-3 text-[10px] sm:text-xs font-bold transition-all relative flex items-center justify-center gap-1 cursor-pointer ${
             activeTab === 'active_calls'
               ? 'border-b-2 border-rose-600 text-rose-700 dark:text-rose-400 bg-rose-50/40 dark:bg-rose-950/30 font-black'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
@@ -439,14 +464,36 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
 
       {/* Board Content */}
       <div className="flex-1 flex flex-col overflow-y-auto min-h-0 bg-slate-50 dark:bg-slate-900 p-2 sm:p-3">
+        {/* 24-Hour Pre-Shift Duty Reminder Banner */}
+        <UpcomingShiftReminderBanner 
+          onNavigateToDuty={() => setActiveTab('duty_post')}
+          onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)}
+        />
+
         {/* Time-Specific Task Notification Banner */}
         <TimeSpecificTaskAlertBanner />
 
         {/* Priority 24h Push Alert Banner */}
         <PriorityShiftPushBanner onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />
 
-        {activeTab === 'duty_post' && <GuardDutyTerminal onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
-        {activeTab === 'live_route' && <LiveRouteView onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} onNavigateToDuty={() => setActiveTab('duty_post')} />}
+        {activeTab === 'duty_post' && (
+          <GuardDutyTerminal 
+            onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} 
+            onNavigateToCalendar={() => setActiveTab('schedule_calendar')}
+          />
+        )}
+        {activeTab === 'schedule_calendar' && (
+          <GuardScheduleCalendar 
+            onNavigateToDuty={() => setActiveTab('duty_post')} 
+            onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} 
+          />
+        )}
+        {activeTab === 'live_route' && (
+          <LiveRouteView 
+            onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} 
+            onNavigateToDuty={() => setActiveTab('duty_post')} 
+          />
+        )}
         {activeTab === 'open_board' && <OpenShiftBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
         {activeTab === 'trade_board' && <TradeBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
         {activeTab === 'active_calls' && <ActiveCallsPanel />}

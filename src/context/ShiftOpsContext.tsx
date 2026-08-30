@@ -58,6 +58,7 @@ import {
   ReportSyncStatus,
   SetSchedule,
   TimeOffRequest,
+  TimeOffDailyStats,
   GuardCallOffRecord,
   GuardWeeklyAvailability,
   DailyAvailabilityRule,
@@ -494,6 +495,7 @@ interface ShiftOpsContextType {
   acknowledgeLateAlert: (shiftId: string, note?: string) => void;
   getGuardActiveShift: (guardId: string) => ScheduledShift | undefined;
   getGuardUpcomingShifts: (guardId: string) => ScheduledShift[];
+  confirmShiftAttendance: (shiftId: string) => void;
   getGuardsLiveTracking: () => GuardLiveTrackingItem[];
 
   // Dynamic Rover Route Optimization & Telemetry
@@ -533,7 +535,23 @@ interface ShiftOpsContextType {
   updateGuardAvailability: (guardId: string, availability: Partial<GuardWeeklyAvailability>) => void;
   updateGuardDailyRule: (guardId: string, dayOfWeek: DayOfWeek, rule: Partial<DailyAvailabilityRule>) => void;
 
-  // Time-Off Requests Management
+  // Time-Off Requests Management & Daily Approval Quota
+  maxDailyApprovedTimeOff: number;
+  dateSpecificMaxTimeOffOverrides: Record<string, number>;
+  setMaxDailyApprovedTimeOff: (limit: number) => void;
+  setDateSpecificMaxTimeOff: (dateStr: string, limit: number | null) => void;
+  getTimeOffStatsForDate: (dateStr: string) => TimeOffDailyStats;
+  checkTimeOffApprovalCapacity: (requestIdOrDates: string | { startDate: string; endDate: string }) => {
+    canApproveWithoutExceeding: boolean;
+    affectedDates: {
+      date: string;
+      currentApproved: number;
+      maxAllowed: number;
+      remainingAfterApproval: number;
+      wouldExceed: boolean;
+    }[];
+    datesExceeding: string[];
+  };
   submitTimeOffRequest: (data: Omit<TimeOffRequest, 'id' | 'requestedAt' | 'status'>) => TimeOffRequest;
   reviewTimeOffRequest: (requestId: string, status: 'approved' | 'rejected' | 'denied', adminName?: string, adminBadge?: string, note?: string) => void;
   cancelTimeOffRequest: (requestId: string) => void;
@@ -597,6 +615,8 @@ const STORAGE_KEY_SHIFT_CLAIMS = 'secureshift_claim_requests_v1';
 const STORAGE_KEY_STANDARD_REPORTS = 'secureshift_standard_reports_v1';
 const STORAGE_KEY_SET_SCHEDULES = 'secureshift_set_schedules_v1';
 const STORAGE_KEY_TIME_OFF_REQUESTS = 'secureshift_time_off_requests_v1';
+const STORAGE_KEY_MAX_DAILY_APPROVED_TIME_OFF = 'secureshift_max_daily_approved_time_off_v1';
+const STORAGE_KEY_DATE_SPECIFIC_MAX_TIME_OFF = 'secureshift_date_specific_max_time_off_v1';
 const STORAGE_KEY_CALL_OFF_RECORDS = 'secureshift_call_off_records_v1';
 
 export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -860,6 +880,26 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   });
 
+  // Daily Max Approved Time-Off Quota State (Default: 2)
+  const [maxDailyApprovedTimeOff, setMaxDailyApprovedTimeOffState] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_MAX_DAILY_APPROVED_TIME_OFF);
+      return saved ? Math.max(1, parseInt(saved, 10) || 2) : 2;
+    } catch {
+      return 2;
+    }
+  });
+
+  // Date-Specific Time-Off Capacity Overrides (e.g. { "2026-09-22": 1 })
+  const [dateSpecificMaxTimeOffOverrides, setDateSpecificMaxTimeOffOverrides] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_DATE_SPECIFIC_MAX_TIME_OFF);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
   // Guard Call-Offs & No-Show Records State
   const [callOffRecords, setCallOffRecords] = useState<GuardCallOffRecord[]>(() => {
     try {
@@ -886,6 +926,22 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       console.warn('Failed to save time-off requests', e);
     }
   }, [timeOffRequests]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_MAX_DAILY_APPROVED_TIME_OFF, maxDailyApprovedTimeOff.toString());
+    } catch (e) {
+      console.warn('Failed to save max daily approved time off quota', e);
+    }
+  }, [maxDailyApprovedTimeOff]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_DATE_SPECIFIC_MAX_TIME_OFF, JSON.stringify(dateSpecificMaxTimeOffOverrides));
+    } catch (e) {
+      console.warn('Failed to save date specific max time off overrides', e);
+    }
+  }, [dateSpecificMaxTimeOffOverrides]);
 
   useEffect(() => {
     try {
@@ -5424,6 +5480,39 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
   };
 
+  const confirmShiftAttendance = (shiftId: string) => {
+    const nowIso = new Date().toISOString();
+    const target = scheduledShifts.find((s) => s.id === shiftId);
+    if (!target) return;
+
+    setScheduledShifts((prev) =>
+      prev.map((s) =>
+        s.id === shiftId
+          ? { ...s, attendanceConfirmed: true, attendanceConfirmedAt: nowIso }
+          : s
+      )
+    );
+
+    addAuditLog(
+      'SHIFT_DUTY_CLOCK_IN',
+      target.guardId,
+      `Officer ${target.guardName} (${target.guardBadge}) confirmed 24-hour pre-shift duty attendance for ${target.siteName} (${target.date} ${target.startTime}-${target.endTime}).`,
+      `${target.guardName} (${target.guardBadge})`,
+      'success'
+    );
+
+    logAdminAction({
+      type: 'shift_scheduled',
+      adminName: target.guardName,
+      adminBadge: target.guardBadge,
+      badgeVariant: 'emerald',
+      title: `Duty Attendance Confirmed: ${target.guardName}`,
+      description: `Officer confirmed upcoming shift attendance for ${target.siteName} (${target.date} ${target.startTime}-${target.endTime}).`
+    });
+
+    showToast('Attendance Confirmed', `Confirmed ready for duty at ${target.siteName} (${target.date}).`, 'success');
+  };
+
   const getGuardsLiveTracking = (): GuardLiveTrackingItem[] => {
     const todayStr = new Date().toISOString().split('T')[0];
 
@@ -5776,76 +5865,92 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Guard Availability Tracker Management
   // ==========================================
   const updateGuardAvailability = (guardId: string, availability: Partial<GuardWeeklyAvailability>) => {
-    setGuardsList((prev) =>
-      prev.map((g) => {
-        if (g.id !== guardId) return g;
-        const currentAvail = g.availability || { guardId: g.id, weeklyRules: [], maxWeeklyHours: 40 };
-        return {
-          ...g,
-          availability: {
-            ...currentAvail,
-            ...availability,
-            updatedAt: new Date().toISOString()
-          }
-        };
-      })
-    );
+    const updateHelper = (g: GuardProfile): GuardProfile => {
+      if (g.id !== guardId) return g;
+      const currentAvail = g.availability || { guardId: g.id, weeklyRules: [], maxWeeklyHours: 40 };
+      const rawRules = availability.weeklyRules || availability.rules || currentAvail.weeklyRules || currentAvail.rules || [];
+      const updated: GuardWeeklyAvailability = {
+        ...currentAvail,
+        ...availability,
+        weeklyRules: rawRules,
+        rules: rawRules,
+        updatedAt: new Date().toISOString(),
+        lastUpdated: new Date().toISOString()
+      };
+      return {
+        ...g,
+        availability: updated
+      };
+    };
+
+    setGuardsList((prev) => prev.map(updateHelper));
     if (activeGuard.id === guardId) {
-      setActiveGuard((prev) => {
-        const currentAvail = prev.availability || { guardId: prev.id, weeklyRules: [], maxWeeklyHours: 40 };
-        return {
-          ...prev,
-          availability: {
-            ...currentAvail,
-            ...availability,
-            updatedAt: new Date().toISOString()
-          }
-        };
-      });
+      setActiveGuard((prev) => updateHelper(prev));
     }
     if (authenticatedGuard?.id === guardId) {
-      setAuthenticatedGuard((prev) => {
-        if (!prev) return prev;
-        const currentAvail = prev.availability || { guardId: prev.id, weeklyRules: [], maxWeeklyHours: 40 };
-        return {
-          ...prev,
-          availability: {
-            ...currentAvail,
-            ...availability,
-            updatedAt: new Date().toISOString()
-          }
-        };
-      });
+      setAuthenticatedGuard((prev) => prev ? updateHelper(prev) : prev);
     }
     showToast('Availability Saved', `Weekly schedule availability updated for officer.`, 'success');
   };
 
   const updateGuardDailyRule = (guardId: string, dayOfWeek: DayOfWeek, rule: Partial<DailyAvailabilityRule>) => {
-    setGuardsList((prev) =>
-      prev.map((g) => {
-        if (g.id !== guardId) return g;
-        const currentAvail = g.availability || { guardId: g.id, weeklyRules: [] };
-        const currentRules = currentAvail.weeklyRules || [];
-        const updatedRules = currentRules.map((r) => (r.dayOfWeek === dayOfWeek ? { ...r, ...rule } : r));
-        if (!currentRules.some((r) => r.dayOfWeek === dayOfWeek)) {
-          const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-          updatedRules.push({
-            dayOfWeek,
-            dayLabel: dayNames[dayOfWeek] || 'Day',
-            isAvailable: true,
-            ...rule
-          });
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const updateHelper = (g: GuardProfile): GuardProfile => {
+      if (g.id !== guardId) return g;
+      const currentAvail = g.availability || { guardId: g.id, weeklyRules: [], maxWeeklyHours: 40 };
+      const rawRules = currentAvail.weeklyRules || currentAvail.rules || [];
+      
+      const computedIsAvailable = rule.status ? rule.status !== 'unavailable' : (rule.isAvailable !== undefined ? rule.isAvailable : true);
+      const computedStatus = rule.status || (rule.isAvailable !== undefined ? (rule.isAvailable ? 'available' : 'unavailable') : 'available');
+
+      let found = false;
+      const updatedRules = rawRules.map((r) => {
+        if (r.dayOfWeek === dayOfWeek) {
+          found = true;
+          return {
+            ...r,
+            ...rule,
+            isAvailable: computedIsAvailable,
+            status: computedStatus
+          };
         }
-        return {
-          ...g,
-          availability: {
-            ...currentAvail,
-            weeklyRules: updatedRules,
-            lastUpdated: new Date().toISOString()
-          }
-        };
-      })
-    );
+        return r;
+      });
+
+      if (!found) {
+        updatedRules.push({
+          dayOfWeek,
+          dayLabel: dayNames[dayOfWeek] || 'Day',
+          isAvailable: computedIsAvailable,
+          status: computedStatus,
+          preferredShift: 'any',
+          ...rule
+        });
+      }
+
+      updatedRules.sort((a, b) => a.dayOfWeek - b.dayOfWeek);
+
+      const updatedAvail: GuardWeeklyAvailability = {
+        ...currentAvail,
+        weeklyRules: updatedRules,
+        rules: updatedRules,
+        lastUpdated: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      return {
+        ...g,
+        availability: updatedAvail
+      };
+    };
+
+    setGuardsList((prev) => prev.map(updateHelper));
+    if (activeGuard.id === guardId) {
+      setActiveGuard((prev) => updateHelper(prev));
+    }
+    if (authenticatedGuard?.id === guardId) {
+      setAuthenticatedGuard((prev) => prev ? updateHelper(prev) : prev);
+    }
 
     showToast('Availability Rule Saved', `Updated daily availability rule.`, 'success');
   };
@@ -5884,7 +5989,8 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   ) => {
     const nowIso = new Date().toISOString();
     const target = timeOffRequests.find((r) => r.id === requestId);
-    const normalizedStatus: 'approved' | 'rejected' = status === 'approved' ? 'approved' : 'rejected';
+    const normalizedStatus: 'approved' | 'denied' = status === 'approved' ? 'approved' : 'denied';
+    const finalNote = note || (normalizedStatus === 'approved' ? 'Approved by Operations' : 'Denied per staffing capacity');
 
     setTimeOffRequests((prev) =>
       prev.map((r) =>
@@ -5894,7 +6000,11 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               status: normalizedStatus,
               reviewedAt: nowIso,
               reviewedBy: `${adminName} (${adminBadge})`,
-              adminNotes: note || (status === 'approved' ? 'Approved by Operations' : 'Denied per staffing capacity')
+              resolvedAt: nowIso,
+              resolvedByAdminName: adminName,
+              resolvedByAdminBadge: adminBadge,
+              resolutionNote: finalNote,
+              adminNotes: finalNote
             }
           : r
       )
@@ -5902,28 +6012,151 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     if (target) {
       addAuditLog(
-        status === 'approved' ? 'TIME_OFF_APPROVED' : 'TIME_OFF_REJECTED',
+        normalizedStatus === 'approved' ? 'TIME_OFF_APPROVED' : 'TIME_OFF_REJECTED',
         'system',
-        `Time-off request for ${target.guardName} (${target.startDate} to ${target.endDate}) was ${status.toUpperCase()} by ${adminName}.`,
+        `Time-off request for ${target.guardName} (${target.startDate} to ${target.endDate}) was ${normalizedStatus.toUpperCase()} by ${adminName}. Reason/Note: "${finalNote}".`,
         adminName,
-        status === 'approved' ? 'success' : 'warning'
+        normalizedStatus === 'approved' ? 'success' : 'warning'
       );
 
       logAdminAction({
-        type: status === 'approved' ? 'shift_scheduled' : 'shift_cancelled',
+        type: normalizedStatus === 'approved' ? 'shift_scheduled' : 'shift_cancelled',
         adminName,
         adminBadge,
-        badgeVariant: status === 'approved' ? 'emerald' : 'rose',
-        title: `Time-Off ${status.toUpperCase()}: ${target.guardName}`,
-        description: `${status === 'approved' ? 'Approved' : 'Rejected'} ${target.type} leave for ${target.guardName} (${target.startDate} - ${target.endDate}).`
+        badgeVariant: normalizedStatus === 'approved' ? 'emerald' : 'rose',
+        title: `Time-Off ${normalizedStatus.toUpperCase()}: ${target.guardName}`,
+        description: `${normalizedStatus === 'approved' ? 'Approved' : 'Denied'} ${target.type} leave for ${target.guardName} (${target.startDate} - ${target.endDate}). ${finalNote}`
       });
 
       showToast(
-        `Time-Off ${status === 'approved' ? 'Approved' : 'Rejected'}`,
-        `${target.guardName}'s leave from ${target.startDate} to ${target.endDate} is now ${status}.`,
-        status === 'approved' ? 'success' : 'warning'
+        `Time-Off ${normalizedStatus === 'approved' ? 'Approved' : 'Denied'}`,
+        `${target.guardName}'s ${target.type} request (${target.startDate} to ${target.endDate}) is now ${normalizedStatus.toUpperCase()}.`,
+        normalizedStatus === 'approved' ? 'success' : 'warning'
       );
     }
+  };
+
+  const setMaxDailyApprovedTimeOff = (limit: number) => {
+    const validLimit = Math.max(1, Math.min(20, Math.round(limit)));
+    setMaxDailyApprovedTimeOffState(validLimit);
+    showToast('Daily Quota Updated', `Maximum approved time-off per day set to ${validLimit} officers.`, 'info');
+  };
+
+  const setDateSpecificMaxTimeOff = (dateStr: string, limit: number | null) => {
+    setDateSpecificMaxTimeOffOverrides((prev) => {
+      const updated = { ...prev };
+      if (limit === null || limit === undefined || limit < 0) {
+        delete updated[dateStr];
+      } else {
+        updated[dateStr] = Math.max(0, Math.min(20, Math.round(limit)));
+      }
+      return updated;
+    });
+    if (limit === null) {
+      showToast('Date Quota Reset', `Custom limit removed for ${dateStr}. Default daily limit (${maxDailyApprovedTimeOff}) applies.`, 'info');
+    } else {
+      showToast('Date Quota Set', `Custom time-off limit for ${dateStr} set to ${limit} officers.`, 'info');
+    }
+  };
+
+  const getTimeOffStatsForDate = (dateStr: string): TimeOffDailyStats => {
+    const maxAllowed = dateSpecificMaxTimeOffOverrides[dateStr] ?? maxDailyApprovedTimeOff;
+    const approvedRequests = timeOffRequests.filter(
+      (r) => r.status === 'approved' && r.startDate <= dateStr && r.endDate >= dateStr
+    );
+    const pendingRequests = timeOffRequests.filter(
+      (r) => r.status === 'pending' && r.startDate <= dateStr && r.endDate >= dateStr
+    );
+    const approvedCount = approvedRequests.length;
+    const remainingSlots = Math.max(0, maxAllowed - approvedCount);
+    const isAtCapacity = approvedCount >= maxAllowed;
+    const isOverCapacity = approvedCount > maxAllowed;
+
+    return {
+      date: dateStr,
+      approvedCount,
+      maxAllowed,
+      remainingSlots,
+      isAtCapacity,
+      isOverCapacity,
+      approvedRequests,
+      pendingRequests
+    };
+  };
+
+  const checkTimeOffApprovalCapacity = (
+    requestIdOrDates: string | { startDate: string; endDate: string }
+  ) => {
+    let startDate = '';
+    let endDate = '';
+    let targetRequestId = '';
+
+    if (typeof requestIdOrDates === 'string') {
+      targetRequestId = requestIdOrDates;
+      const targetReq = timeOffRequests.find((r) => r.id === requestIdOrDates);
+      if (targetReq) {
+        startDate = targetReq.startDate;
+        endDate = targetReq.endDate;
+      }
+    } else {
+      startDate = requestIdOrDates.startDate;
+      endDate = requestIdOrDates.endDate;
+    }
+
+    if (!startDate || !endDate) {
+      return {
+        canApproveWithoutExceeding: true,
+        affectedDates: [],
+        datesExceeding: []
+      };
+    }
+
+    const affectedDates: {
+      date: string;
+      currentApproved: number;
+      maxAllowed: number;
+      remainingAfterApproval: number;
+      wouldExceed: boolean;
+    }[] = [];
+
+    const datesExceeding: string[] = [];
+
+    const start = new Date(startDate + 'T00:00:00');
+    const end = new Date(endDate + 'T00:00:00');
+    const cur = new Date(start);
+
+    while (cur <= end) {
+      const dateStr = cur.toISOString().split('T')[0];
+      const maxAllowed = dateSpecificMaxTimeOffOverrides[dateStr] ?? maxDailyApprovedTimeOff;
+      
+      const currentApprovedRequests = timeOffRequests.filter(
+        (r) => r.id !== targetRequestId && r.status === 'approved' && r.startDate <= dateStr && r.endDate >= dateStr
+      );
+      const currentApproved = currentApprovedRequests.length;
+      const newApprovedCount = currentApproved + 1;
+      const wouldExceed = newApprovedCount > maxAllowed;
+      const remainingAfterApproval = maxAllowed - newApprovedCount;
+
+      if (wouldExceed) {
+        datesExceeding.push(dateStr);
+      }
+
+      affectedDates.push({
+        date: dateStr,
+        currentApproved,
+        maxAllowed,
+        remainingAfterApproval,
+        wouldExceed
+      });
+
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    return {
+      canApproveWithoutExceeding: datesExceeding.length === 0,
+      affectedDates,
+      datesExceeding
+    };
   };
 
   const cancelTimeOffRequest = (requestId: string) => {
@@ -6853,9 +7086,16 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         acknowledgeLateAlert,
         getGuardActiveShift,
         getGuardUpcomingShifts,
+        confirmShiftAttendance,
         getGuardsLiveTracking,
         setSchedules,
         timeOffRequests,
+        maxDailyApprovedTimeOff,
+        dateSpecificMaxTimeOffOverrides,
+        setMaxDailyApprovedTimeOff,
+        setDateSpecificMaxTimeOff,
+        getTimeOffStatsForDate,
+        checkTimeOffApprovalCapacity,
         callOffRecords,
         addSetSchedule,
         updateSetSchedule,
