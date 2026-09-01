@@ -14,6 +14,7 @@ import {
   TaskPriority
 } from '../../types/shift';
 import { SiteJsonImportModal } from './SiteJsonImportModal';
+import { GeofenceBoundaryEditorModal } from './GeofenceBoundaryEditorModal';
 import { validateSite, auditAllSites, SiteValidationResult } from '../../utils/siteValidation';
 import { 
   Building2, 
@@ -110,6 +111,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
   const [viewingDossierSite, setViewingDossierSite] = useState<SiteProfile | null>(null);
+  const [geofenceModalSite, setGeofenceModalSite] = useState<SiteProfile | null>(null);
   const [deleteConfirmSite, setDeleteConfirmSite] = useState<SiteProfile | null>(null);
   const [copiedAddressId, setCopiedAddressId] = useState<string | null>(null);
 
@@ -1687,10 +1689,21 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                       type="button"
                       id={`btn-view-dossier-${site.id}`}
                       onClick={() => setViewingDossierSite(site)}
-                      className="px-2.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold shadow-xs flex items-center gap-1 transition-colors"
+                      className="px-2 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold shadow-xs flex items-center gap-1 transition-colors"
+                      title="View Facility Dossier"
                     >
                       <Info className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                      Dossier
+                      <span>Dossier</span>
+                    </button>
+                    <button
+                      type="button"
+                      id={`btn-geofence-boundary-${site.id}`}
+                      onClick={() => setGeofenceModalSite(site)}
+                      className="px-2 py-1.5 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-lg text-xs font-bold shadow-xs flex items-center gap-1 transition-colors"
+                      title="Configure Geofence Envelope, Multi-Point Polygons & Departure Debounce"
+                    >
+                      <Compass className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Boundary</span>
                     </button>
                     <button
                       type="button"
@@ -3578,6 +3591,25 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Geofence Boundary & Multi-Point Polygon Editor Modal */}
+      {geofenceModalSite && (
+        <GeofenceBoundaryEditorModal
+          isOpen={!!geofenceModalSite}
+          site={geofenceModalSite}
+          onClose={() => setGeofenceModalSite(null)}
+          onSave={(updatedFields) => {
+            if (geofenceModalSite) {
+              updateSite(geofenceModalSite.id, updatedFields);
+              showToast(
+                'Geofence Boundary Saved',
+                `${geofenceModalSite.name} geofence boundary & departure debounce updated successfully.`,
+                'success'
+              );
+            }
+          }}
+        />
       )}
     </div>
   );

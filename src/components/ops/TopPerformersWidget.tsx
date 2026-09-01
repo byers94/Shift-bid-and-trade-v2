@@ -35,7 +35,10 @@ import {
   AlertCircle,
   Target,
   SlidersHorizontal,
-  UserCheck
+  UserCheck,
+  Ban,
+  ArrowRightLeft,
+  BarChart3
 } from 'lucide-react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
 import { 
@@ -43,11 +46,14 @@ import {
   GuardPerformanceStats, 
   SiteFeedbackEntry, 
   ReviewerRoleType, 
-  OculusScoreBreakdown 
+  OculusScoreBreakdown,
+  GuardCoachingSession
 } from '../../types/shift';
 import { SiteQualificationCircle } from './SiteQualificationCircle';
 import { ROLE_WEIGHTS } from '../../utils/oculusScoring';
 import { CoachingSchedulingCalendarModal } from './CoachingSchedulingCalendarModal';
+import { AdminReviewAlternateProposalModal } from './AdminReviewAlternateProposalModal';
+import { CoachingPerformanceDashboard } from './CoachingPerformanceDashboard';
 
 interface TopPerformersWidgetProps {
   onNavigateToGuardDirectory?: (guardId?: string) => void;
@@ -79,6 +85,7 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
   const [sortMetric, setSortMetric] = useState<SortMetric>('composite');
   const [timeframe, setTimeframe] = useState<TimeframeFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeViewMode, setActiveViewMode] = useState<'leaderboard' | 'coaching_dashboard'>('leaderboard');
   const [selectedGuardForDossier, setSelectedGuardForDossier] = useState<(GuardProfile & GuardPerformanceStats) | null>(null);
   
   // Coaching Modal State
@@ -93,6 +100,10 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
 
   // Incident & Geofence Log Modal State
   const [incidentLogGuard, setIncidentLogGuard] = useState<(GuardProfile & GuardPerformanceStats) | null>(null);
+
+  // Review Alternate Coaching Proposal Modal State
+  const [reviewProposalSession, setReviewProposalSession] = useState<GuardCoachingSession | null>(null);
+  const [reviewProposalGuard, setReviewProposalGuard] = useState<(GuardProfile & GuardPerformanceStats) | null>(null);
 
   // Middle roster expansion toggle (when guards > 10)
   const [isMiddleRosterExpanded, setIsMiddleRosterExpanded] = useState(false);
@@ -372,27 +383,86 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
                     </span>
                   )}
                   {guard.latestCoachingSession.status === 'alternate_proposed_by_guard' && (
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center flex-wrap gap-1.5">
                       <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800 flex items-center gap-1">
                         <CalendarDays className="w-3 h-3 text-blue-600" />
                         <span>Alt Proposed: {guard.latestCoachingSession.proposedAlternateDate} @ {guard.latestCoachingSession.proposedAlternateTime}</span>
+                      </span>
+
+                      {/* Direct Quick Accept */}
+                      <button
+                        type="button"
+                        id={`btn-quick-accept-alt-${guard.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          acceptAlternateCoaching(guard.latestCoachingSession!.id);
+                        }}
+                        className="px-2 py-0.5 text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md transition-colors flex items-center gap-1 cursor-pointer"
+                        title="Accept Guard's Proposed Alternate Time"
+                      >
+                        <Check className="w-2.5 h-2.5" />
+                        <span>Accept</span>
+                      </button>
+
+                      {/* Review Decision (Accept / Deny / Counter) */}
+                      <button
+                        type="button"
+                        id={`btn-review-proposal-${guard.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setReviewProposalSession(guard.latestCoachingSession!);
+                          setReviewProposalGuard(guard);
+                        }}
+                        className="px-2 py-0.5 text-[10px] font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
+                        title="Review proposal: Accept, Deny, or Counter"
+                      >
+                        <ArrowRightLeft className="w-2.5 h-2.5" />
+                        <span>Review / Counter / Deny</span>
+                      </button>
+                    </div>
+                  )}
+                  {guard.latestCoachingSession.status === 'counter_proposed_by_admin' && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-purple-100 dark:bg-purple-950/80 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-800 flex items-center gap-1">
+                        <ArrowRightLeft className="w-3 h-3 text-purple-600" />
+                        <span>Counter Sent: {guard.latestCoachingSession.counterProposedDate} @ {guard.latestCoachingSession.counterProposedTime} • Awaiting Guard</span>
                       </span>
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          acceptAlternateCoaching(guard.latestCoachingSession!.id);
+                          setReviewProposalSession(guard.latestCoachingSession!);
+                          setReviewProposalGuard(guard);
                         }}
-                        className="px-2 py-0.5 text-[10px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md transition-colors"
+                        className="px-2 py-0.5 text-[10px] font-semibold bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-md transition-colors cursor-pointer"
                       >
-                        Accept Alt
+                        Edit
+                      </button>
+                    </div>
+                  )}
+                  {guard.latestCoachingSession.status === 'alternate_denied' && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800 flex items-center gap-1">
+                        <Ban className="w-3 h-3 text-rose-600" />
+                        <span>Alt Declined • Orig Stands ({guard.latestCoachingSession.scheduledDate} @ {guard.latestCoachingSession.scheduledTime})</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setReviewProposalSession(guard.latestCoachingSession!);
+                          setReviewProposalGuard(guard);
+                        }}
+                        className="px-2 py-0.5 text-[10px] font-semibold bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 rounded-md transition-colors cursor-pointer"
+                      >
+                        Counter Slot
                       </button>
                     </div>
                   )}
                   {guard.latestCoachingSession.status === 'confirmed_by_guard' && (
                     <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
                       <Check className="w-3 h-3" />
-                      <span>Coaching Confirmed ({guard.latestCoachingSession.scheduledDate})</span>
+                      <span>Coaching Confirmed ({guard.latestCoachingSession.scheduledDate} @ {guard.latestCoachingSession.scheduledTime})</span>
                     </span>
                   )}
                 </>
@@ -515,10 +585,70 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
     );
   };
 
+  const completedCoachingCount = coachingSessions.filter(s => s.status === 'completed').length;
+
   return (
     <div id="top-performers-leaderboard-container" className="space-y-6">
-      {/* Leaderboard Top Header & Summary Stats */}
-      <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-5 shadow-xs">
+      {/* Top View Mode Switcher (Leaderboard vs Coaching Dashboard) */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 p-2.5 rounded-2xl shadow-xs">
+        <div className="flex items-center gap-2">
+          <button
+            id="view-tab-leaderboard"
+            type="button"
+            onClick={() => setActiveViewMode('leaderboard')}
+            className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
+              activeViewMode === 'leaderboard'
+                ? 'bg-amber-500 text-neutral-950 shadow-xs'
+                : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white bg-neutral-100 dark:bg-neutral-800'
+            }`}
+          >
+            <Trophy className="w-4 h-4" />
+            <span>Leaderboard & Rankings</span>
+          </button>
+
+          <button
+            id="view-tab-coaching-dashboard"
+            type="button"
+            onClick={() => setActiveViewMode('coaching_dashboard')}
+            className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
+              activeViewMode === 'coaching_dashboard'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white bg-neutral-100 dark:bg-neutral-800'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4" />
+            <span>Coaching Completion & Analytics</span>
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+              activeViewMode === 'coaching_dashboard'
+                ? 'bg-white/20 text-white'
+                : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+            }`}>
+              {completedCoachingCount}/{coachingSessions.length} Completed
+            </span>
+          </button>
+        </div>
+
+        <div className="text-xs text-neutral-500 dark:text-neutral-400 font-medium px-2">
+          {activeViewMode === 'leaderboard' 
+            ? '100-Pt Oculus composite metric engine' 
+            : 'Visual completion rates per guard & improvement tracking'}
+        </div>
+      </div>
+
+      {activeViewMode === 'coaching_dashboard' ? (
+        <CoachingPerformanceDashboard 
+          onScheduleCoachingClick={(guard) => {
+            if (guard) {
+              setCoachingGuard(guard as any);
+            } else if (rankedGuards.length > 0) {
+              setCoachingGuard(rankedGuards[0]);
+            }
+          }}
+        />
+      ) : (
+        <>
+          {/* Leaderboard Top Header & Summary Stats */}
+          <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-5 shadow-xs">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-neutral-100 dark:border-neutral-800">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center border border-amber-500/20 shadow-inner">
@@ -803,6 +933,8 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* ------------------------------------------------------------- */}
       {/* MODAL 1: Comprehensive Guard Dossier & Oculus Breakdown */}
@@ -1023,6 +1155,19 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
         guard={coachingGuard}
         guardStats={coachingGuard}
         initialTopic={coachingTopic}
+      />
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL 2.5: Admin Review Alternate Coaching Proposal (Accept / Deny / Counter) */}
+      {/* ------------------------------------------------------------- */}
+      <AdminReviewAlternateProposalModal
+        isOpen={Boolean(reviewProposalSession)}
+        onClose={() => {
+          setReviewProposalSession(null);
+          setReviewProposalGuard(null);
+        }}
+        session={reviewProposalSession}
+        guard={reviewProposalGuard || undefined}
       />
 
       {/* ------------------------------------------------------------- */}

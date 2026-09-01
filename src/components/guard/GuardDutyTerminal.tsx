@@ -46,16 +46,18 @@ import {
   Lock,
   Unlock,
   CheckCircle,
-  BellRing
+  BellRing,
+  AlertOctagon
 } from 'lucide-react';
-import { ScheduledShift, TimeSpecificTask, StandardReportType } from '../../types/shift';
+import { ScheduledShift, TimeSpecificTask, StandardReportType, DepartureReasonType } from '../../types/shift';
 import { VerificationCameraModal } from './VerificationCameraModal';
 import { TimeSpecificTaskAlertBanner } from './TimeSpecificTaskAlertBanner';
 import { GuardTimedTasksSection } from './GuardTimedTasksSection';
 import { StandardReportingModal } from './StandardReportingModal';
 import { GuardThirtyMinIntervalTracker } from './GuardThirtyMinIntervalTracker';
 import { GuardReportsLogSection } from './GuardReportsLogSection';
-import { getCurrentLocation, calculateDistance, GeoCoordinates, formatDistance } from '../../utils/geo';
+import { GuardDeparturePromptModal } from './GuardDeparturePromptModal';
+import { getCurrentLocation, calculateDistance, GeoCoordinates, formatDistance, verifySiteGeofence } from '../../utils/geo';
 
 interface GuardDutyTerminalProps {
   onOpenAlertPrefs?: () => void;
@@ -86,8 +88,15 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
     clearAdHocInterception,
     standardReports,
     submitStandardReport,
-    getLastActivityReportForGuard
+    getLastActivityReportForGuard,
+    updateGuardGeofenceState,
+    submitDepartureReason,
+    clearGeofenceBreach,
+    escalateGeofenceBreach
   } = useShiftOps();
+
+  // Geofence Departure Reason Prompt Modal State
+  const [isDeparturePromptOpen, setIsDeparturePromptOpen] = useState<boolean>(false);
 
   // Standard Shift Reporting Modal State
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
@@ -292,6 +301,78 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
     setIsClockOutModalOpen(false);
   };
 
+  // Handle guard submitting departure reason from mobile prompt
+  const handleSubmitDepartureReason = (reason: DepartureReasonType, notes: string) => {
+    if (!activeClockedInShift) return;
+    submitDepartureReason(activeClockedInShift.id, reason, notes);
+    setIsDeparturePromptOpen(false);
+  };
+
+  // Handle manual "Verify I'm Back On-Site"
+  const handleVerifyReturnOnSite = async () => {
+    if (!activeClockedInShift) return;
+    const site = sitesList.find((s) => s.name === activeClockedInShift.siteName || s.id === activeClockedInShift.siteId);
+    if (!site) return;
+
+    try {
+      const coords = await getCurrentLocation(
+        site.latitude && site.longitude ? { latitude: site.latitude, longitude: site.longitude } : undefined
+      );
+      const result = verifySiteGeofence(coords, site, site.name);
+      updateGuardGeofenceState(activeClockedInShift.id, {
+        inGeofence: result.inGeofence,
+        distanceMeters: result.distanceMeters,
+        matchedParcelName: result.matchedParcelName,
+        currentGps: coords
+      });
+
+      if (result.inGeofence) {
+        showToast('On-Site Verified', `Verified inside ${site.name} boundary (${result.matchedParcelName || 'Main Zone'}).`, 'success');
+        setIsDeparturePromptOpen(false);
+      } else {
+        showToast('Still Outside Perimeter', `Current GPS is still ${formatDistance(result.distanceMeters)} outside ${site.name}.`, 'warning');
+      }
+    } catch (err: any) {
+      showToast('GPS Check Error', err.message || 'Unable to fetch coordinates', 'danger');
+    }
+  };
+
+  // Quick simulation controls for testing
+  const handleSimulateMoveOffSite = (distanceMeters: number = 280) => {
+    if (!activeClockedInShift) return;
+    const site = sitesList.find((s) => s.name === activeClockedInShift.siteName || s.id === activeClockedInShift.siteId);
+    const baseLat = site?.latitude || 47.6062;
+    const baseLng = site?.longitude || -122.3321;
+    // Offset ~280 meters north-west
+    const simulatedGps = {
+      latitude: baseLat + (distanceMeters / 111111),
+      longitude: baseLng - (distanceMeters / (111111 * Math.cos(baseLat * Math.PI / 180)))
+    };
+
+    updateGuardGeofenceState(activeClockedInShift.id, {
+      inGeofence: false,
+      distanceMeters,
+      currentGps: simulatedGps
+    });
+    setIsDeparturePromptOpen(true);
+  };
+
+  const handleSimulateReturnOnSite = () => {
+    if (!activeClockedInShift) return;
+    const site = sitesList.find((s) => s.name === activeClockedInShift.siteName || s.id === activeClockedInShift.siteId);
+    const baseLat = site?.latitude || 47.6062;
+    const baseLng = site?.longitude || -122.3321;
+    const simulatedGps = { latitude: baseLat, longitude: baseLng };
+
+    updateGuardGeofenceState(activeClockedInShift.id, {
+      inGeofence: true,
+      distanceMeters: 12,
+      matchedParcelName: site?.multiParcels?.[0]?.name || 'Primary Facility Perimeter',
+      currentGps: simulatedGps
+    });
+    setIsDeparturePromptOpen(false);
+  };
+
   const handleExecuteStartBreak = (e: React.FormEvent) => {
     e.preventDefault();
     startGuardBreak(activeGuard.id, breakType, breakNote);
@@ -382,18 +463,121 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
 
               {/* Verification Badges & Evidence Photos */}
               <div className="pt-2 border-t border-white/10 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {/* GPS Status */}
-                <div className="p-2 rounded-lg bg-slate-900/90 border border-emerald-500/30 flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-emerald-950 border border-emerald-500/50 flex items-center justify-center text-emerald-400 shrink-0">
-                    <MapPin className="w-3.5 h-3.5" />
+                {/* GPS & Geofence Departure Monitoring */}
+                <div className={`p-2.5 rounded-lg border transition-all ${
+                  activeClockedInShift.offSiteBreachStatus === 'breached_unacknowledged'
+                    ? 'bg-rose-950/60 border-rose-500/60 shadow-lg shadow-rose-950/40'
+                    : activeClockedInShift.offSiteBreachStatus === 'debounce_pending'
+                    ? 'bg-amber-950/60 border-amber-500/60 animate-pulse shadow-lg shadow-amber-950/40'
+                    : activeClockedInShift.offSiteBreachStatus === 'excused'
+                    ? 'bg-blue-950/60 border-blue-500/50'
+                    : 'bg-slate-900/90 border-emerald-500/30'
+                }`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 ${
+                        activeClockedInShift.offSiteBreachStatus === 'breached_unacknowledged'
+                          ? 'bg-rose-900 border-rose-400 text-rose-200'
+                          : activeClockedInShift.offSiteBreachStatus === 'debounce_pending'
+                          ? 'bg-amber-900 border-amber-400 text-amber-200'
+                          : activeClockedInShift.offSiteBreachStatus === 'excused'
+                          ? 'bg-blue-900 border-blue-400 text-blue-200'
+                          : 'bg-emerald-950 border-emerald-500/50 text-emerald-400'
+                      }`}>
+                        {activeClockedInShift.offSiteBreachStatus === 'breached_unacknowledged' ? (
+                          <AlertOctagon className="w-3.5 h-3.5" />
+                        ) : activeClockedInShift.offSiteBreachStatus === 'debounce_pending' ? (
+                          <Timer className="w-3.5 h-3.5" />
+                        ) : (
+                          <MapPin className="w-3.5 h-3.5" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-[9px] font-mono uppercase font-bold ${
+                            activeClockedInShift.offSiteBreachStatus === 'breached_unacknowledged'
+                              ? 'text-rose-400'
+                              : activeClockedInShift.offSiteBreachStatus === 'debounce_pending'
+                              ? 'text-amber-400'
+                              : activeClockedInShift.offSiteBreachStatus === 'excused'
+                              ? 'text-blue-400'
+                              : 'text-emerald-400'
+                          }`}>
+                            {activeClockedInShift.offSiteBreachStatus === 'breached_unacknowledged'
+                              ? '🚨 Off-Site Breach'
+                              : activeClockedInShift.offSiteBreachStatus === 'debounce_pending'
+                              ? '⚠️ Perimeter Departure'
+                              : activeClockedInShift.offSiteBreachStatus === 'excused'
+                              ? '✓ Excused Departure'
+                              : 'Geofence Compliance'}
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-semibold text-slate-200 block truncate">
+                          {activeClockedInShift.offSiteBreachStatus === 'debounce_pending'
+                            ? `Buffer: ${Math.floor((activeClockedInShift.debounceSecondsRemaining || 180) / 60)}m ${(activeClockedInShift.debounceSecondsRemaining || 180) % 60}s remaining`
+                            : activeClockedInShift.offSiteBreachStatus === 'breached_unacknowledged'
+                            ? `Outside boundary (${activeClockedInShift.currentGeofenceDistanceMeters || 250}m) - Escalated`
+                            : activeClockedInShift.offSiteBreachStatus === 'excused'
+                            ? `${activeClockedInShift.lastDepartureReason || 'Authorized Excusal'}`
+                            : activeClockedInShift.currentMatchedParcelName
+                            ? `Inside ${activeClockedInShift.currentMatchedParcelName}`
+                            : `${activeClockedInShift.currentGeofenceDistanceMeters || 20}m from site center (Inside)`}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Action button */}
+                    {(activeClockedInShift.offSiteBreachStatus === 'debounce_pending' || 
+                      activeClockedInShift.offSiteBreachStatus === 'breached_unacknowledged' || 
+                      activeClockedInShift.offSiteBreachStatus === 'excused') ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsDeparturePromptOpen(true)}
+                        className="px-2 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded text-[10px] shrink-0 shadow transition-colors"
+                      >
+                        {activeClockedInShift.offSiteBreachStatus === 'excused' ? 'Edit Reason' : 'Log Reason'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setIsDeparturePromptOpen(true)}
+                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded text-[10px] shrink-0 border border-slate-700 transition-colors"
+                        title="Manually log an authorized departure"
+                      >
+                        Log Departure
+                      </button>
+                    )}
                   </div>
-                  <div className="min-w-0">
-                    <span className="text-[9px] font-mono uppercase text-emerald-400 font-bold block">Geofence Compliance</span>
-                    <span className="text-[11px] font-semibold text-slate-200 block truncate">
-                      {activeClockedInShift.geofenceDistanceMeters !== undefined 
-                        ? `${activeClockedInShift.geofenceDistanceMeters}m from Post Center`
-                        : 'On-Site Verified'}
-                    </span>
+
+                  {/* Quick test simulation pills for demo verification */}
+                  <div className="mt-2 pt-1.5 border-t border-white/10 flex items-center justify-between gap-1 text-[9px]">
+                    <span className="text-slate-400 font-mono">GPS Test:</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleSimulateMoveOffSite(320)}
+                        className="px-1.5 py-0.5 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-700/60 text-rose-300 font-mono"
+                        title="Simulate guard stepping 320m outside site perimeter"
+                      >
+                        Walk Off-Site (320m)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSimulateReturnOnSite}
+                        className="px-1.5 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 text-emerald-300 font-mono"
+                        title="Simulate guard returning inside site perimeter"
+                      >
+                        Return On-Site
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleVerifyReturnOnSite}
+                        className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-mono"
+                        title="Poll live device GPS to verify location"
+                      >
+                        Check GPS
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1322,6 +1506,20 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
           submitStandardReport(reportData);
         }}
       />
+
+      {/* GEOFENCE DEPARTURE REASON PROMPT MODAL */}
+      {activeClockedInShift && (
+        <GuardDeparturePromptModal
+          isOpen={isDeparturePromptOpen || activeClockedInShift.offSiteBreachStatus === 'debounce_pending'}
+          activeShift={activeClockedInShift}
+          site={sitesList.find((s) => s.name === activeClockedInShift.siteName || s.id === activeClockedInShift.siteId)}
+          currentDistanceMeters={activeClockedInShift.currentGeofenceDistanceMeters || 180}
+          debounceSecondsRemaining={activeClockedInShift.debounceSecondsRemaining ?? 180}
+          onSubmitReason={handleSubmitDepartureReason}
+          onCheckReturnOnSite={handleVerifyReturnOnSite}
+          onDismissAlert={() => setIsDeparturePromptOpen(false)}
+        />
+      )}
     </div>
   );
 };

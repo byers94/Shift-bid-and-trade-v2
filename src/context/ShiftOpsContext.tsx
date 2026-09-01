@@ -67,8 +67,17 @@ import {
   GenerateSetSchedulesOptions,
   GeneratedScheduleEntry,
   GenerateSetSchedulesResult,
-  SetScheduleAiSuggestion
+  SetScheduleAiSuggestion,
+  OffSiteBreachStatus,
+  DepartureReasonType,
+  GeofenceParcel
 } from '../types/shift';
+import {
+  verifySiteGeofence,
+  calculateDistance,
+  formatDistance,
+  GeoCoordinates
+} from '../utils/geo';
 import {
   enqueueOfflineReport,
   getOfflineReportQueue,
@@ -149,7 +158,9 @@ import {
   playTaskAlertSound,
   playTaskCompletedSound,
   playReportSubmittedSound,
-  playEmergencyEscalationSound
+  playEmergencyEscalationSound,
+  playGeofenceDepartureWarningSound,
+  playGeofenceBreachSound
 } from '../utils/audioAlert';
 
 
@@ -273,6 +284,16 @@ interface ShiftOpsContextType {
     notes?: string
   ) => GuardCoachingSession | undefined;
   confirmGuardCoaching: (sessionId: string, guardNotes?: string) => void;
+  completeGuardCoaching: (
+    sessionId: string,
+    data?: {
+      completionNotes?: string;
+      improvementOutcome?: string;
+      performanceScoreAfter?: number;
+      attendanceVerified?: boolean;
+      actionItems?: string[];
+    }
+  ) => void;
   proposeAlternateCoaching: (
     sessionId: string,
     alternateDate: string,
@@ -280,6 +301,13 @@ interface ShiftOpsContextType {
     reason?: string
   ) => { success: boolean; message: string };
   acceptAlternateCoaching: (sessionId: string, adminNotes?: string) => void;
+  denyAlternateCoaching: (sessionId: string, denialReason?: string) => void;
+  counterAlternateCoaching: (
+    sessionId: string,
+    counterDate: string,
+    counterTime: string,
+    counterReason?: string
+  ) => void;
   cancelCoachingSession: (sessionId: string, reason?: string) => void;
   getGuardCoachingSessions: (guardId: string) => GuardCoachingSession[];
   getGuardPerformance: (guardId: string) => GuardPerformanceStats;
@@ -530,6 +558,32 @@ interface ShiftOpsContextType {
   getGuardUpcomingShifts: (guardId: string) => ScheduledShift[];
   confirmShiftAttendance: (shiftId: string) => void;
   getGuardsLiveTracking: () => GuardLiveTrackingItem[];
+
+  // Live Geofence Departure & Breach Management
+  verifyGuardGeofenceLocation: (guardId: string, coords: { latitude: number; longitude: number }) => {
+    inGeofence: boolean;
+    distanceMeters: number;
+    matchedParcelName?: string;
+    siteName: string;
+  };
+  updateGuardGeofenceState: (
+    shiftId: string, 
+    data: {
+      inGeofence: boolean;
+      distanceMeters?: number;
+      matchedParcelName?: string;
+      currentGps?: { latitude: number; longitude: number };
+    }
+  ) => void;
+  submitDepartureReason: (
+    shiftId: string, 
+    reason: DepartureReasonType,
+    notes?: string
+  ) => void;
+  escalateGeofenceBreach: (shiftId: string) => void;
+  clearGeofenceBreach: (shiftId: string, supervisorNote?: string) => void;
+  excuseGeofenceDepartureByOps: (shiftId: string, reason: string, adminBadge?: string) => void;
+
 
   // Dynamic Rover Route Optimization & Telemetry
   rovers: RoverVehicle[];
@@ -2390,11 +2444,22 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const session = coachingSessions.find((s) => s.id === sessionId);
     if (!session) return;
 
+    // If session was counter-proposed by admin, accepting it locks in the counter date/time
+    const targetDate = session.status === 'counter_proposed_by_admin' && session.counterProposedDate
+      ? session.counterProposedDate
+      : session.scheduledDate;
+
+    const targetTime = session.status === 'counter_proposed_by_admin' && session.counterProposedTime
+      ? session.counterProposedTime
+      : session.scheduledTime;
+
     setCoachingSessions((prev) =>
       prev.map((s) =>
         s.id === sessionId
           ? {
               ...s,
+              scheduledDate: targetDate,
+              scheduledTime: targetTime,
               status: 'confirmed_by_guard' as const,
               guardResponseNotes: guardNotes || s.guardResponseNotes,
               updatedAt: new Date().toISOString()
@@ -2406,16 +2471,16 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     logAdminAction({
       type: 'user_updated',
       title: `Coaching Session Confirmed by ${session.guardName}`,
-      description: `Officer ${session.guardName} confirmed coaching session for ${session.scheduledDate} at ${session.scheduledTime}.`,
+      description: `Officer ${session.guardName} confirmed coaching session for ${targetDate} at ${targetTime}.`,
       adminName: 'Guard Response Terminal',
       adminBadge: session.guardBadge,
       badgeVariant: 'emerald',
-      metadata: { sessionId, guardNotes }
+      metadata: { sessionId, guardNotes, targetDate, targetTime }
     });
 
     showToast(
       'Coaching Confirmed',
-      `Officer ${session.guardName} confirmed attendance for coaching on ${session.scheduledDate} at ${session.scheduledTime}.`,
+      `Officer ${session.guardName} confirmed attendance for coaching on ${targetDate} at ${targetTime}.`,
       'success'
     );
   };
@@ -2507,6 +2572,146 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     showToast(
       'Alternate Time Approved',
       `Coaching for Officer ${session.guardName} rescheduled to ${newDate} at ${newTime}.`,
+      'success'
+    );
+  };
+
+  const denyAlternateCoaching = (sessionId: string, denialReason?: string) => {
+    const session = coachingSessions.find((s) => s.id === sessionId);
+    if (!session) return;
+
+    const reason = denialReason?.trim() || 'Operational coverage requires original schedule or updated request.';
+
+    setCoachingSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId
+          ? {
+              ...s,
+              status: 'alternate_denied' as const,
+              adminDenialReason: reason,
+              adminActionNotes: reason,
+              adminDecisionAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            }
+          : s
+      )
+    );
+
+    logAdminAction({
+      type: 'user_updated',
+      title: `Supervisor Denied Alternate Coaching for ${session.guardName}`,
+      description: `Alternate proposed time (${session.proposedAlternateDate} @ ${session.proposedAlternateTime}) was declined. Reason: ${reason}. Original slot stands: ${session.scheduledDate} @ ${session.scheduledTime}.`,
+      adminName: "Commander Mark O'Connor",
+      adminBadge: "OPS-CMD-01",
+      badgeVariant: 'amber',
+      metadata: { sessionId, denialReason: reason }
+    });
+
+    showToast(
+      'Alternate Proposal Denied',
+      `Declined alternate proposal for Officer ${session.guardName}. Original schedule stands.`,
+      'warning'
+    );
+  };
+
+  const counterAlternateCoaching = (
+    sessionId: string,
+    counterDate: string,
+    counterTime: string,
+    counterReason?: string
+  ) => {
+    const session = coachingSessions.find((s) => s.id === sessionId);
+    if (!session) return;
+
+    const reason = counterReason?.trim() || 'Command counter-proposed time slot.';
+
+    setCoachingSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId
+          ? {
+              ...s,
+              status: 'counter_proposed_by_admin' as const,
+              counterProposedDate: counterDate,
+              counterProposedTime: counterTime,
+              counterProposedReason: reason,
+              adminActionNotes: reason,
+              adminDecisionAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            }
+          : s
+      )
+    );
+
+    logAdminAction({
+      type: 'user_updated',
+      title: `Supervisor Counter-Proposed Coaching for ${session.guardName}`,
+      description: `Counter-proposal dispatched to Officer ${session.guardName}: ${counterDate} at ${counterTime}. Directive: ${reason}`,
+      adminName: "Commander Mark O'Connor",
+      adminBadge: "OPS-CMD-01",
+      badgeVariant: 'blue',
+      metadata: { sessionId, counterDate, counterTime, counterReason: reason }
+    });
+
+    showToast(
+      'Counter-Proposal Sent',
+      `Counter-proposal for ${counterDate} at ${counterTime} sent to Officer ${session.guardName}.`,
+      'info'
+    );
+  };
+
+  const completeGuardCoaching = (
+    sessionId: string,
+    data?: {
+      completionNotes?: string;
+      improvementOutcome?: string;
+      performanceScoreAfter?: number;
+      attendanceVerified?: boolean;
+      actionItems?: string[];
+    }
+  ) => {
+    const session = coachingSessions.find((s) => s.id === sessionId);
+    if (!session) return;
+
+    const scoreBefore = session.performanceScoreBefore ?? 78;
+    const scoreAfter = data?.performanceScoreAfter ?? (scoreBefore + 12);
+    const scoreDelta = scoreAfter - scoreBefore;
+    const notes = data?.completionNotes?.trim() || 'Coaching completed successfully. Officer reviewed SLA requirements and demonstrated mastery of key post protocols.';
+    const outcome = data?.improvementOutcome?.trim() || `Verified Mastery & Operational Improvement (+${scoreDelta} pts score delta)`;
+
+    setCoachingSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId
+          ? {
+              ...s,
+              status: 'completed' as const,
+              completedAt: new Date().toISOString(),
+              completedByAdminName: "Commander Mark O'Connor",
+              completionNotes: notes,
+              improvementOutcome: outcome,
+              performanceScoreBefore: scoreBefore,
+              performanceScoreAfter: scoreAfter,
+              scoreDelta,
+              attendanceVerified: data?.attendanceVerified ?? true,
+              actionItems: data?.actionItems || ['Review DAR verification checklist', 'Maintain punctuality and SLA checkpoints'],
+              updatedAt: new Date().toISOString()
+            }
+          : s
+      )
+    );
+
+    logAdminAction({
+      type: 'user_updated',
+      title: `Coaching Completed for ${session.guardName}`,
+      description: `Topic: "${session.topic}". Outcome: ${outcome}. Score progression: ${scoreBefore} → ${scoreAfter} (+${scoreDelta} pts).`,
+      adminName: "Commander Mark O'Connor",
+      adminBadge: "OPS-CMD-01",
+      badgeVariant: 'emerald',
+      metadata: { sessionId, scoreBefore, scoreAfter, scoreDelta, outcome }
+    });
+
+    showToast(
+      'Coaching Completed',
+      `Coaching for Officer ${session.guardName} marked completed (+${scoreDelta} pts performance delta recorded).`,
       'success'
     );
   };
@@ -5946,13 +6151,349 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         selfiePhotoUrl: currentShift?.selfiePhotoUrl,
         equipmentPhotoUrl: currentShift?.equipmentPhotoUrl,
         verifiedByMethod: currentShift?.verifiedByMethod,
-        clockInVerifiedAt: currentShift?.clockInVerifiedAt
+        clockInVerifiedAt: currentShift?.clockInVerifiedAt,
+        offSiteBreachStatus: currentShift?.offSiteBreachStatus,
+        outOfBoundsSince: currentShift?.outOfBoundsSince,
+        debounceSecondsRemaining: currentShift?.debounceSecondsRemaining,
+        currentInsideGeofence: currentShift?.currentInsideGeofence,
+        matchedParcelName: currentShift?.currentMatchedParcelName,
+        lastDepartureReason: currentShift?.lastDepartureReason,
+        departureExcusedByOps: currentShift?.departureExcusedByOps
       };
     });
   };
 
   // ==========================================
-  // Set Schedules & Standing Shift Templates
+  // Live Geofence Departure & Breach Management
+  // ==========================================
+
+  // 1. Validate guard location against site geofence (Circle, Polygon, Multi-Parcel)
+  const verifyGuardGeofenceLocation = (guardId: string, coords: { latitude: number; longitude: number }) => {
+    const activeShift = scheduledShifts.find(
+      (s) => s.guardId === guardId && (s.status === 'on_duty' || s.status === 'on_break')
+    );
+    if (!activeShift) {
+      return { inGeofence: true, distanceMeters: 0, siteName: 'No Active Shift' };
+    }
+
+    const site = sitesList.find((s) => s.name === activeShift.siteName || s.id === activeShift.siteId);
+    if (!site) {
+      return { inGeofence: true, distanceMeters: 0, siteName: activeShift.siteName };
+    }
+
+    const result = verifySiteGeofence(coords, site, site.name);
+    return {
+      inGeofence: result.inGeofence,
+      distanceMeters: result.distanceMeters,
+      matchedParcelName: result.matchedParcelName,
+      siteName: site.name
+    };
+  };
+
+  // 2. Update active shift geofence status with anti-drift debounce tracking
+  const updateGuardGeofenceState = (
+    shiftId: string, 
+    data: {
+      inGeofence: boolean;
+      distanceMeters?: number;
+      matchedParcelName?: string;
+      currentGps?: { latitude: number; longitude: number };
+    }
+  ) => {
+    setScheduledShifts((prev) =>
+      prev.map((shift) => {
+        if (shift.id !== shiftId) return shift;
+
+        const currentStatus = shift.offSiteBreachStatus || 'normal';
+
+        if (data.inGeofence) {
+          // Guard is back inside boundary!
+          const wasOutOfZone = currentStatus === 'debounce_pending' || currentStatus === 'breached_unacknowledged';
+
+          if (wasOutOfZone) {
+            addAuditLog(
+              'GEOFENCE_REENTERED',
+              shift.guardId,
+              `Officer ${shift.guardName} (${shift.guardBadge}) returned inside ${shift.siteName} boundary perimeter (${data.distanceMeters || 0}m). Breach resolved.`,
+              shift.guardName,
+              'success'
+            );
+            logAdminAction({
+              type: 'shift_scheduled',
+              adminName: shift.guardName,
+              adminBadge: shift.guardBadge,
+              badgeVariant: 'emerald',
+              title: `Guard Returned On-Site: ${shift.guardName}`,
+              description: `Returned inside ${shift.siteName} perimeter boundary (${data.matchedParcelName || 'Main Zone'}).`
+            });
+            showToast('Returned Inside Perimeter', `Officer ${shift.guardName} has returned inside ${shift.siteName} boundary.`, 'success');
+          }
+
+          return {
+            ...shift,
+            offSiteBreachStatus: wasOutOfZone ? 'resolved' : 'normal',
+            currentInsideGeofence: true,
+            currentGeofenceDistanceMeters: data.distanceMeters ?? 0,
+            currentMatchedParcelName: data.matchedParcelName,
+            outOfBoundsSince: undefined,
+            debounceSecondsRemaining: 180,
+            consecutiveOutOfBoundsReadings: 0,
+            gpsCoordinates: data.currentGps ? { ...data.currentGps, accuracy: 5 } : shift.gpsCoordinates
+          };
+        } else {
+          // Guard is outside boundary!
+          if (currentStatus === 'normal' || currentStatus === 'resolved') {
+            // First out of bounds reading: trigger 3-minute debounce countdown!
+            playGeofenceDepartureWarningSound();
+
+            const debounceSec = (sitesList.find(s => s.name === shift.siteName)?.departureDebounceMinutes || 3) * 60;
+
+            addAuditLog(
+              'GEOFENCE_DEPARTURE_DETECTED',
+              shift.guardId,
+              `Perimeter departure detected for ${shift.guardName} at ${shift.siteName} (${data.distanceMeters || 0}m outside boundary). 3-minute dwell buffer active.`,
+              'System Geofence Engine',
+              'warning'
+            );
+
+            logAdminAction({
+              type: 'geofence_departure_warning',
+              adminName: "System Engine",
+              adminBadge: 'GEOFENCE-AI',
+              badgeVariant: 'amber',
+              title: `Site Departure: ${shift.guardName}`,
+              description: `Officer moved ~${data.distanceMeters || 75}m outside ${shift.siteName}. Awaiting guard departure reason or return (${Math.round(debounceSec / 60)}m debounce).`
+            });
+
+            showToast(
+              'Geofence Departure Detected',
+              `${shift.guardName} is outside ${shift.siteName} boundary (${data.distanceMeters || 0}m). 3m dwell buffer started.`,
+              'warning'
+            );
+
+            return {
+              ...shift,
+              offSiteBreachStatus: 'debounce_pending',
+              outOfBoundsSince: new Date().toISOString(),
+              debounceSecondsRemaining: debounceSec,
+              consecutiveOutOfBoundsReadings: (shift.consecutiveOutOfBoundsReadings || 0) + 1,
+              currentInsideGeofence: false,
+              currentGeofenceDistanceMeters: data.distanceMeters,
+              currentMatchedParcelName: undefined,
+              gpsCoordinates: data.currentGps ? { ...data.currentGps, accuracy: 5 } : shift.gpsCoordinates
+            };
+          } else {
+            // Already debounce_pending, breached_unacknowledged, or excused
+            return {
+              ...shift,
+              currentInsideGeofence: false,
+              currentGeofenceDistanceMeters: data.distanceMeters,
+              consecutiveOutOfBoundsReadings: (shift.consecutiveOutOfBoundsReadings || 0) + 1,
+              gpsCoordinates: data.currentGps ? { ...data.currentGps, accuracy: 5 } : shift.gpsCoordinates
+            };
+          }
+        }
+      })
+    );
+  };
+
+  // 3. Guard submits verified departure reason
+  const submitDepartureReason = (
+    shiftId: string, 
+    reason: DepartureReasonType,
+    notes?: string
+  ) => {
+    const target = scheduledShifts.find((s) => s.id === shiftId);
+    if (!target) return;
+
+    const nowIso = new Date().toISOString();
+
+    setScheduledShifts((prev) =>
+      prev.map((s) => {
+        if (s.id !== shiftId) return s;
+        return {
+          ...s,
+          offSiteBreachStatus: 'excused',
+          lastDepartureReason: reason,
+          lastDepartureNotes: notes,
+          departureAcknowledgedByGuardAt: nowIso,
+          departureExcusedByOps: true,
+          departureExcusedReason: `Guard Verified: ${reason}${notes ? ` - ${notes}` : ''}`,
+          departureExcusedAt: nowIso
+        };
+      })
+    );
+
+    addAuditLog(
+      'GEOFENCE_DEPARTURE_EXCUSED',
+      target.guardId,
+      `Officer ${target.guardName} (${target.guardBadge}) submitted authorized departure reason: "${reason}" (${notes || 'No extra notes'}). CAD escalation suppressed.`,
+      target.guardName,
+      'info'
+    );
+
+    logAdminAction({
+      type: 'departure_reason_submitted',
+      adminName: target.guardName,
+      adminBadge: target.guardBadge,
+      badgeVariant: 'blue',
+      title: `Departure Reason Logged: ${target.guardName}`,
+      description: `Authorized departure recorded: "${reason}" at ${target.siteName}. ${notes ? `Note: ${notes}` : ''}`
+    });
+
+    showToast('Departure Reason Logged', `Reason "${reason}" recorded for ${target.siteName}. Escalation suppressed.`, 'success');
+  };
+
+  // 4. Escalate unacknowledged breach when 3-minute debounce runs out
+  const escalateGeofenceBreach = (shiftId: string) => {
+    const target = scheduledShifts.find((s) => s.id === shiftId);
+    if (!target) return;
+
+    playGeofenceBreachSound();
+
+    setScheduledShifts((prev) =>
+      prev.map((s) => {
+        if (s.id !== shiftId) return s;
+        return {
+          ...s,
+          offSiteBreachStatus: 'breached_unacknowledged'
+        };
+      })
+    );
+
+    addAuditLog(
+      'GEOFENCE_BREACH_ESCALATED',
+      target.guardId,
+      `CRITICAL ALERT: Officer ${target.guardName} (${target.guardBadge}) has exceeded 3-minute dwell buffer outside ${target.siteName} without authorized reason. Dispatch CAD flagged with Off-Site Breach badge.`,
+      'System Geofence Engine',
+      'danger'
+    );
+
+    logAdminAction({
+      type: 'geofence_breach_escalated',
+      adminName: 'Dispatch CAD Engine',
+      adminBadge: 'CAD-AUTO-01',
+      badgeVariant: 'rose',
+      title: `🚨 Off-Site Breach: ${target.guardName}`,
+      description: `Guard remained outside ${target.siteName} past 3-minute debounce without response. Dispatcher attention required.`
+    });
+
+    showToast('Off-Site Breach Escalation', `🚨 CRITICAL: ${target.guardName} flagged for unexcused off-site breach at ${target.siteName}!`, 'danger');
+  };
+
+  // 5. Clear / Reset breach
+  const clearGeofenceBreach = (shiftId: string, supervisorNote?: string) => {
+    const target = scheduledShifts.find((s) => s.id === shiftId);
+    if (!target) return;
+
+    setScheduledShifts((prev) =>
+      prev.map((s) => {
+        if (s.id !== shiftId) return s;
+        return {
+          ...s,
+          offSiteBreachStatus: 'normal',
+          currentInsideGeofence: true,
+          debounceSecondsRemaining: 180,
+          outOfBoundsSince: undefined,
+          consecutiveOutOfBoundsReadings: 0
+        };
+      })
+    );
+
+    addAuditLog(
+      'GEOFENCE_BREACH_CLEARED',
+      target.guardId,
+      `Off-site breach for ${target.guardName} at ${target.siteName} cleared by supervisor. ${supervisorNote ? `Note: ${supervisorNote}` : ''}`,
+      "Lt. Mark O'Connor",
+      'success'
+    );
+
+    logAdminAction({
+      type: 'geofence_breach_cleared',
+      adminName: "Lt. Mark O'Connor",
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'emerald',
+      title: `Breach Cleared: ${target.guardName}`,
+      description: `Supervisor cleared off-site breach for ${target.siteName}. ${supervisorNote ? `Note: ${supervisorNote}` : ''}`
+    });
+
+    showToast('Breach Cleared', `Off-site breach status cleared for ${target.guardName}.`, 'info');
+  };
+
+  // 6. Excuse departure directly by Ops Admin
+  const excuseGeofenceDepartureByOps = (shiftId: string, reason: string, adminBadge: string = 'OPS-CMD-01') => {
+    const target = scheduledShifts.find((s) => s.id === shiftId);
+    if (!target) return;
+
+    const nowIso = new Date().toISOString();
+
+    setScheduledShifts((prev) =>
+      prev.map((s) => {
+        if (s.id !== shiftId) return s;
+        return {
+          ...s,
+          offSiteBreachStatus: 'excused',
+          departureExcusedByOps: true,
+          departureExcusedByAdminBadge: adminBadge,
+          departureExcusedReason: reason,
+          departureExcusedAt: nowIso
+        };
+      })
+    );
+
+    addAuditLog(
+      'GEOFENCE_EXCUSED_BY_ADMIN',
+      target.guardId,
+      `Supervisor ${adminBadge} excused off-site departure for ${target.guardName} at ${target.siteName}. Reason: "${reason}".`,
+      adminBadge,
+      'info'
+    );
+
+    logAdminAction({
+      type: 'departure_excused_by_admin',
+      adminName: "Lt. Mark O'Connor",
+      adminBadge: adminBadge,
+      badgeVariant: 'blue',
+      title: `Departure Excused by Ops: ${target.guardName}`,
+      description: `Excused off-site departure for ${target.siteName}. Reason: ${reason}`
+    });
+
+    showToast('Departure Excused', `Officer ${target.guardName}'s departure excused by Dispatch.`, 'success');
+  };
+
+  // Active Debounce Countdown Interval Timer
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setScheduledShifts((prev) => {
+        let hasChanges = false;
+        const updated = prev.map((shift) => {
+          if (shift.offSiteBreachStatus === 'debounce_pending' && shift.debounceSecondsRemaining !== undefined) {
+            hasChanges = true;
+            const newRemaining = shift.debounceSecondsRemaining - 1;
+            if (newRemaining <= 0) {
+              // Timer expired without excuse: Escalate!
+              playGeofenceBreachSound();
+              return {
+                ...shift,
+                offSiteBreachStatus: 'breached_unacknowledged' as OffSiteBreachStatus,
+                debounceSecondsRemaining: 0
+              };
+            } else {
+              return {
+                ...shift,
+                debounceSecondsRemaining: newRemaining
+              };
+            }
+          }
+          return shift;
+        });
+        return hasChanges ? updated : prev;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   // ==========================================
   const addSetSchedule = (data: Omit<SetSchedule, 'id' | 'createdAt' | 'updatedAt'>): SetSchedule => {
     const nowIso = new Date().toISOString();
@@ -7542,8 +8083,11 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         coachingSessions,
         scheduleGuardCoaching,
         confirmGuardCoaching,
+        completeGuardCoaching,
         proposeAlternateCoaching,
         acceptAlternateCoaching,
+        denyAlternateCoaching,
+        counterAlternateCoaching,
         cancelCoachingSession,
         getGuardCoachingSessions,
         getGuardPerformance,

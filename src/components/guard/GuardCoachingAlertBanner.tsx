@@ -13,7 +13,9 @@ import {
   ShieldAlert,
   Sparkles,
   Check,
-  X
+  X,
+  ArrowRightLeft,
+  Ban
 } from 'lucide-react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
 import { GuardCoachingSession } from '../../types/shift';
@@ -56,20 +58,25 @@ export const GuardCoachingAlertBanner: React.FC<GuardCoachingAlertBannerProps> =
   }
 
   const handleStartPropose = (session: GuardCoachingSession) => {
-    // Default to +2 days from original, or tomorrow
-    const orig = new Date(session.scheduledDate + 'T12:00:00');
+    // Default to +2 days from original or counter proposed date
+    const baseDateStr = session.counterProposedDate || session.scheduledDate;
+    const orig = new Date(baseDateStr + 'T12:00:00');
     orig.setDate(orig.getDate() + 2);
     const defaultAlt = orig.toISOString().split('T')[0];
 
     setProposingSessionId(session.id);
+    setExpandedSessionId(session.id);
     setAlternateDate(defaultAlt);
-    setAlternateTime(session.scheduledTime || '11:00');
+    setAlternateTime(session.counterProposedTime || session.scheduledTime || '11:00');
     setProposalReason('');
     setProposalError('');
   };
 
   const handleConfirm = (session: GuardCoachingSession) => {
     confirmGuardCoaching(session.id);
+    if (proposingSessionId === session.id) {
+      setProposingSessionId(null);
+    }
   };
 
   const handleSubmitProposal = (session: GuardCoachingSession) => {
@@ -104,6 +111,8 @@ export const GuardCoachingAlertBanner: React.FC<GuardCoachingAlertBannerProps> =
       {guardSessions.map((session) => {
         const isPendingAction = session.status === 'pending_guard_action';
         const isAlternateProposed = session.status === 'alternate_proposed_by_guard';
+        const isCounterProposed = session.status === 'counter_proposed_by_admin';
+        const isAlternateDenied = session.status === 'alternate_denied';
         const isConfirmed = session.status === 'confirmed_by_guard';
         const isProposing = proposingSessionId === session.id;
         const isExpanded = expandedSessionId === session.id;
@@ -121,6 +130,10 @@ export const GuardCoachingAlertBanner: React.FC<GuardCoachingAlertBannerProps> =
             className={`rounded-2xl border transition-all overflow-hidden ${
               isPendingAction
                 ? 'bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-amber-500/30 dark:border-amber-500/40 shadow-md ring-1 ring-amber-500/20'
+                : isCounterProposed
+                ? 'bg-gradient-to-r from-purple-500/10 via-purple-500/5 to-transparent border-purple-500/30 dark:border-purple-500/40 shadow-md ring-1 ring-purple-500/20'
+                : isAlternateDenied
+                ? 'bg-gradient-to-r from-rose-500/10 via-rose-500/5 to-transparent border-rose-500/30 dark:border-rose-500/40 shadow-md ring-1 ring-rose-500/20'
                 : isAlternateProposed
                 ? 'bg-blue-50/70 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800/60'
                 : 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60'
@@ -135,11 +148,21 @@ export const GuardCoachingAlertBanner: React.FC<GuardCoachingAlertBannerProps> =
                   <div className={`p-3 rounded-xl shrink-0 mt-0.5 ${
                     isPendingAction
                       ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
+                      : isCounterProposed
+                      ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
+                      : isAlternateDenied
+                      ? 'bg-rose-600 text-white shadow-md shadow-rose-600/20'
                       : isAlternateProposed
                       ? 'bg-blue-500 text-white'
                       : 'bg-emerald-500 text-white'
                   }`}>
-                    <CalendarCheck className="w-5 h-5" />
+                    {isCounterProposed ? (
+                      <ArrowRightLeft className="w-5 h-5" />
+                    ) : isAlternateDenied ? (
+                      <Ban className="w-5 h-5" />
+                    ) : (
+                      <CalendarCheck className="w-5 h-5" />
+                    )}
                   </div>
 
                   <div>
@@ -147,12 +170,20 @@ export const GuardCoachingAlertBanner: React.FC<GuardCoachingAlertBannerProps> =
                       <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider ${
                         isPendingAction
                           ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
+                          : isCounterProposed
+                          ? 'bg-purple-100 dark:bg-purple-950/80 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-700 animate-pulse'
+                          : isAlternateDenied
+                          ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-700'
                           : isAlternateProposed
                           ? 'bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-700'
                           : 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
                       }`}>
                         {isPendingAction
                           ? 'Action Required: Confirm Coaching'
+                          : isCounterProposed
+                          ? 'Action Required: Command Counter-Proposal'
+                          : isAlternateDenied
+                          ? 'Action Required: Alternate Declined'
                           : isAlternateProposed
                           ? 'Alternate Proposed • Awaiting Command'
                           : 'Coaching Confirmed'}
@@ -173,26 +204,38 @@ export const GuardCoachingAlertBanner: React.FC<GuardCoachingAlertBannerProps> =
                       1-on-1 Performance Coaching: {session.topic}
                     </h4>
 
+                    {/* Active Time Slot Display */}
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-neutral-600 dark:text-neutral-300 mt-1.5 font-medium">
-                      <div className="flex items-center gap-1.5">
-                        <Calendar className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                        <span>
-                          {new Date(session.scheduledDate + 'T12:00:00').toLocaleDateString(undefined, {
-                            weekday: 'short',
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric'
-                          })}
-                        </span>
-                      </div>
+                      {isCounterProposed ? (
+                        <div className="flex items-center gap-1.5 font-bold text-purple-700 dark:text-purple-300">
+                          <Clock className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                          <span>
+                            Counter Slot: {session.counterProposedDate} @ {session.counterProposedTime} ({session.durationMinutes || 45} Min)
+                          </span>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                            <span>
+                              {new Date(session.scheduledDate + 'T12:00:00').toLocaleDateString(undefined, {
+                                weekday: 'short',
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric'
+                              })}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                            <span>{session.scheduledTime || '10:00'} ({session.durationMinutes || 45} Minutes)</span>
+                          </div>
+                        </>
+                      )}
 
                       <div className="flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                        <span>{session.scheduledTime || '10:00'} ({session.durationMinutes || 45} Minutes)</span>
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        <User className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        <User className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
                         <span>Supervisor: {session.scheduledBy || "Commander Mark O'Connor"}</span>
                       </div>
                     </div>
@@ -206,7 +249,7 @@ export const GuardCoachingAlertBanner: React.FC<GuardCoachingAlertBannerProps> =
                       <button
                         type="button"
                         onClick={() => handleStartPropose(session)}
-                        className="px-3.5 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-200 bg-white dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700 border border-neutral-300 dark:border-neutral-700 rounded-xl transition-all shadow-xs"
+                        className="px-3.5 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-200 bg-white dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700 border border-neutral-300 dark:border-neutral-700 rounded-xl transition-all shadow-xs cursor-pointer"
                       >
                         Propose Alternate Time
                       </button>
@@ -214,10 +257,52 @@ export const GuardCoachingAlertBanner: React.FC<GuardCoachingAlertBannerProps> =
                       <button
                         type="button"
                         onClick={() => handleConfirm(session)}
-                        className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-98 rounded-xl transition-all shadow-md shadow-emerald-600/20 flex items-center gap-1.5"
+                        className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-98 rounded-xl transition-all shadow-md shadow-emerald-600/20 flex items-center gap-1.5 cursor-pointer"
                       >
                         <Check className="w-4 h-4" />
                         <span>Confirm & Accept</span>
+                      </button>
+                    </>
+                  )}
+
+                  {isCounterProposed && !isProposing && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleStartPropose(session)}
+                        className="px-3.5 py-2 text-xs font-semibold text-purple-800 dark:text-purple-200 bg-white dark:bg-neutral-800 hover:bg-purple-50 dark:hover:bg-neutral-700 border border-purple-300 dark:border-purple-700 rounded-xl transition-all shadow-xs cursor-pointer"
+                      >
+                        Propose Different Slot
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleConfirm(session)}
+                        className="px-4 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 active:scale-98 rounded-xl transition-all shadow-md shadow-purple-600/20 flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>Accept Counter Slot</span>
+                      </button>
+                    </>
+                  )}
+
+                  {isAlternateDenied && !isProposing && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleStartPropose(session)}
+                        className="px-3.5 py-2 text-xs font-semibold text-rose-800 dark:text-rose-200 bg-white dark:bg-neutral-800 hover:bg-rose-50 dark:hover:bg-neutral-700 border border-rose-300 dark:border-rose-700 rounded-xl transition-all shadow-xs cursor-pointer"
+                      >
+                        Propose New Alternate
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleConfirm(session)}
+                        className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-98 rounded-xl transition-all shadow-md shadow-emerald-600/20 flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>Accept Original Time</span>
                       </button>
                     </>
                   )}
@@ -228,7 +313,7 @@ export const GuardCoachingAlertBanner: React.FC<GuardCoachingAlertBannerProps> =
                         Proposed: {session.proposedAlternateDate} at {session.proposedAlternateTime}
                       </span>
                       <span className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                        Awaiting Command Approval
+                        Awaiting Command Review
                       </span>
                     </div>
                   )}
@@ -243,7 +328,7 @@ export const GuardCoachingAlertBanner: React.FC<GuardCoachingAlertBannerProps> =
                   <button
                     type="button"
                     onClick={() => setExpandedSessionId(isExpanded ? null : session.id)}
-                    className="p-2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+                    className="p-2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
                     title={isExpanded ? 'Hide details' : 'Show details'}
                   >
                     {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -254,6 +339,45 @@ export const GuardCoachingAlertBanner: React.FC<GuardCoachingAlertBannerProps> =
               {/* Collapsible Session Details & Supervisor Directive */}
               {isExpanded && (
                 <div className="mt-4 pt-3 border-t border-neutral-200 dark:border-neutral-800 text-xs space-y-2">
+                  {/* Supervisor Counter Information */}
+                  {isCounterProposed && (
+                    <div className="p-3 bg-purple-50 dark:bg-purple-950/40 rounded-xl border border-purple-200 dark:border-purple-800/60 text-purple-900 dark:text-purple-200">
+                      <span className="font-bold flex items-center gap-1.5 mb-1">
+                        <ArrowRightLeft className="w-4 h-4 text-purple-600" />
+                        Supervisor Counter-Proposal:
+                      </span>
+                      <p className="leading-relaxed">
+                        Command reviewed your request for <strong>{session.proposedAlternateDate} @ {session.proposedAlternateTime}</strong> and proposed <strong>{session.counterProposedDate} @ {session.counterProposedTime}</strong> instead.
+                      </p>
+                      {session.counterProposedReason && (
+                        <p className="mt-1 text-purple-700 dark:text-purple-300 font-medium">
+                          Note: {session.counterProposedReason}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Supervisor Denial Information */}
+                  {isAlternateDenied && (
+                    <div className="p-3 bg-rose-50 dark:bg-rose-950/40 rounded-xl border border-rose-200 dark:border-rose-800/60 text-rose-900 dark:text-rose-200">
+                      <span className="font-bold flex items-center gap-1.5 mb-1">
+                        <Ban className="w-4 h-4 text-rose-600" />
+                        Alternate Time Declined:
+                      </span>
+                      <p className="leading-relaxed">
+                        Command was unable to accommodate your requested time (<strong>{session.proposedAlternateDate} @ {session.proposedAlternateTime}</strong>).
+                      </p>
+                      {session.adminDenialReason && (
+                        <p className="mt-1 text-rose-700 dark:text-rose-300 font-medium">
+                          Reason: {session.adminDenialReason}
+                        </p>
+                      )}
+                      <p className="mt-1 text-neutral-600 dark:text-neutral-400">
+                        Please confirm the original session on <strong>{session.scheduledDate} @ {session.scheduledTime}</strong> or propose a different slot within 7 days.
+                      </p>
+                    </div>
+                  )}
+
                   {session.notes && (
                     <div className="p-3 bg-white/80 dark:bg-neutral-900/80 rounded-xl border border-neutral-200 dark:border-neutral-700/60">
                       <span className="font-bold text-neutral-800 dark:text-neutral-200 block mb-1">

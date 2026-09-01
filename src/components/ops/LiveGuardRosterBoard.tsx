@@ -22,7 +22,11 @@ import {
   ExternalLink,
   ChevronRight,
   Shield,
-  Sparkles
+  Sparkles,
+  AlertOctagon,
+  Timer,
+  Check,
+  X
 } from 'lucide-react';
 import { ShiftDutyStatus } from '../../types/shift';
 
@@ -45,13 +49,20 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
     sitesList,
     guardsList,
     opsPhone,
-    showToast
+    showToast,
+    excuseGeofenceDepartureByOps,
+    clearGeofenceBreach
   } = useShiftOps();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterSite, setFilterSite] = useState<string>('all');
   const [tick, setTick] = useState(0);
+
+  // Modal state for excusing departure as supervisor
+  const [excusalModalShiftId, setExcusalModalShiftId] = useState<string | null>(null);
+  const [excusalReasonInput, setExcusalReasonInput] = useState<string>('Authorized Meal Break');
+  const [excusalNotesInput, setExcusalNotesInput] = useState<string>('');
 
   // Live timer tick every second for real-time elapsed seconds
   useEffect(() => {
@@ -65,6 +76,7 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
   const onDutyCount = liveGuards.filter((g) => g.currentStatus === 'on_duty').length;
   const onBreakCount = liveGuards.filter((g) => g.currentStatus === 'on_break').length;
   const lateCount = liveGuards.filter((g) => g.currentStatus === 'late' || (g.activeShift?.isLate && g.currentStatus === 'scheduled')).length;
+  const breachCount = liveGuards.filter((g) => g.offSiteBreachStatus === 'breached_unacknowledged' || g.offSiteBreachStatus === 'debounce_pending').length;
   const scheduledTodayCount = liveGuards.filter((g) => g.currentStatus === 'scheduled').length;
 
   const filteredGuards = liveGuards.filter((item) => {
@@ -76,6 +88,7 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
 
     const matchesStatus = 
       filterStatus === 'all' ? true :
+      filterStatus === 'breach' ? (item.offSiteBreachStatus === 'breached_unacknowledged' || item.offSiteBreachStatus === 'debounce_pending') :
       filterStatus === 'on_duty' ? item.currentStatus === 'on_duty' :
       filterStatus === 'on_break' ? item.currentStatus === 'on_break' :
       filterStatus === 'late' ? (item.currentStatus === 'late' || item.activeShift?.isLate) :
@@ -87,6 +100,18 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
 
     return matchesSearch && matchesStatus && matchesSite;
   });
+
+  const handleExecuteExcuseDeparture = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!excusalModalShiftId) return;
+    const finalReason = excusalNotesInput.trim() 
+      ? `${excusalReasonInput} - ${excusalNotesInput.trim()}`
+      : excusalReasonInput;
+
+    excuseGeofenceDepartureByOps(excusalModalShiftId, finalReason, 'OPS-CMD-01');
+    setExcusalModalShiftId(null);
+    setExcusalNotesInput('');
+  };
 
   return (
     <div id="live-guard-roster-board" className="space-y-4">
@@ -110,6 +135,20 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
 
         {/* Status Counters */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+          {breachCount > 0 && (
+            <button
+              onClick={() => setFilterStatus('breach')}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 animate-pulse ${
+                filterStatus === 'breach'
+                  ? 'bg-rose-600 text-white border-rose-500 shadow-md'
+                  : 'bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-200 border-rose-400 dark:border-rose-700'
+              }`}
+            >
+              <AlertOctagon className="w-3.5 h-3.5" />
+              <span>🚨 {breachCount} Off-Site Breaches</span>
+            </button>
+          )}
+
           <button
             onClick={() => setFilterStatus('on_duty')}
             className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
@@ -192,6 +231,7 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
             className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 dark:text-slate-200 focus:outline-hidden"
           >
             <option value="all">All Statuses ({liveGuards.length})</option>
+            {breachCount > 0 && <option value="breach">🚨 Off-Site Breaches ({breachCount})</option>}
             <option value="on_duty">● Active On Duty ({onDutyCount})</option>
             <option value="on_break">☕ On Break ({onBreakCount})</option>
             <option value="late">⚠️ Late / Overdue ({lateCount})</option>
@@ -222,17 +262,24 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
           const isLate = item.currentStatus === 'late' || item.activeShift?.isLate;
           const isScheduled = item.currentStatus === 'scheduled';
           const isCompleted = item.currentStatus === 'completed';
+          const isBreached = item.offSiteBreachStatus === 'breached_unacknowledged';
+          const isDebouncing = item.offSiteBreachStatus === 'debounce_pending';
+          const isExcused = item.offSiteBreachStatus === 'excused';
 
           return (
             <div
               key={item.guardId}
               className={`rounded-2xl border p-4 shadow-xs transition-all flex flex-col justify-between ${
-                isOnDuty
+                isBreached
+                  ? 'bg-rose-50/70 dark:bg-rose-950/40 border-rose-500 ring-2 ring-rose-500/50 shadow-md shadow-rose-950/20'
+                  : isDebouncing
+                  ? 'bg-amber-50/60 dark:bg-amber-950/30 border-amber-500 ring-2 ring-amber-500/40 animate-pulse'
+                  : isLate
+                  ? 'bg-rose-50/40 dark:bg-rose-950/30 border-rose-400 dark:border-rose-800 ring-2 ring-rose-500/30'
+                  : isOnDuty
                   ? 'bg-white dark:bg-slate-900 border-emerald-400/80 dark:border-emerald-800/80 ring-1 ring-emerald-500/20'
                   : isOnBreak
                   ? 'bg-white dark:bg-slate-900 border-amber-400/80 dark:border-amber-800/80 ring-1 ring-amber-500/20'
-                  : isLate
-                  ? 'bg-rose-50/40 dark:bg-rose-950/30 border-rose-400 dark:border-rose-800 ring-2 ring-rose-500/30'
                   : isScheduled
                   ? 'bg-white dark:bg-slate-900 border-blue-200 dark:border-slate-800'
                   : 'bg-slate-50/70 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 opacity-85'
@@ -243,6 +290,8 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
                 <div className="flex items-start justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2.5">
                   <div className="flex items-center gap-2.5">
                     <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs text-white ${
+                      isBreached ? 'bg-rose-700 animate-bounce' :
+                      isDebouncing ? 'bg-amber-600' :
                       isOnDuty ? 'bg-emerald-600' :
                       isOnBreak ? 'bg-amber-600' :
                       isLate ? 'bg-rose-600' :
@@ -266,26 +315,44 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
                   </div>
 
                   {/* Status Badge */}
-                  <div>
-                    {isOnDuty && (
+                  <div className="flex flex-col items-end gap-1">
+                    {isBreached && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-600 text-white shadow-sm animate-pulse">
+                        <AlertOctagon className="w-3 h-3" />
+                        Off-Site Breach
+                      </span>
+                    )}
+                    {isDebouncing && !isBreached && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-slate-950 shadow-sm animate-pulse">
+                        <Timer className="w-3 h-3" />
+                        Buffer: {Math.floor((item.debounceSecondsRemaining || 180) / 60)}m {(item.debounceSecondsRemaining || 180) % 60}s
+                      </span>
+                    )}
+                    {isExcused && !isBreached && !isDebouncing && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-400">
+                        <Check className="w-3 h-3" />
+                        Excused
+                      </span>
+                    )}
+                    {!isBreached && !isDebouncing && isOnDuty && (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
                         On Duty
                       </span>
                     )}
-                    {isOnBreak && (
+                    {!isBreached && !isDebouncing && isOnBreak && (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
                         <Coffee className="w-3 h-3" />
                         On Break
                       </span>
                     )}
-                    {isLate && (
+                    {isLate && !isBreached && (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-700 animate-pulse">
                         <AlertTriangle className="w-3 h-3 text-rose-600" />
                         Late (+{item.activeShift?.lateMinutes || 15}m)
                       </span>
                     )}
-                    {isScheduled && !isLate && (
+                    {isScheduled && !isLate && !isOnDuty && !isOnBreak && (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700">
                         Scheduled
                       </span>
@@ -295,13 +362,103 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
                         Completed
                       </span>
                     )}
-                    {!isOnDuty && !isOnBreak && !isLate && !isScheduled && !isCompleted && (
+                    {!isOnDuty && !isOnBreak && !isLate && !isScheduled && !isCompleted && !isBreached && (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold text-slate-400 bg-slate-100 dark:bg-slate-800">
                         Off Duty
                       </span>
                     )}
                   </div>
                 </div>
+
+                {/* CAD Breach Escalation Alert Banner */}
+                {isBreached && item.activeShift && (
+                  <div className="mt-2.5 p-2.5 bg-rose-950/80 border border-rose-600/80 rounded-xl text-xs text-rose-100 space-y-1.5 animate-in fade-in">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-bold text-rose-300 text-[11px] uppercase tracking-wide">
+                        <AlertOctagon className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                        <span>CAD Critical: Perimeter Breach</span>
+                      </div>
+                      <span className="text-[10px] font-mono text-rose-300 font-bold bg-rose-900/90 px-1.5 py-0.5 rounded">
+                        +{item.currentGeofenceDistanceMeters || 250}m Outside
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-rose-200">
+                      Officer departed designated boundary at {item.currentSiteName}. 3-minute dwell grace period elapsed with no verified excuse.
+                    </p>
+                    <div className="flex items-center gap-1.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExcusalModalShiftId(item.activeShift!.id);
+                          setExcusalReasonInput('Authorized Meal Break');
+                          setExcusalNotesInput('');
+                        }}
+                        className="px-2 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-lg text-[10px] transition-colors"
+                      >
+                        Excuse Departure
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => clearGeofenceBreach(item.activeShift!.id, 'Cleared by Dispatcher CAD')}
+                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-lg text-[10px] border border-slate-700 transition-colors"
+                      >
+                        Clear Breach
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Debounce Buffer Pending Warning Banner */}
+                {isDebouncing && item.activeShift && (
+                  <div className="mt-2.5 p-2.5 bg-amber-950/80 border border-amber-600/80 rounded-xl text-xs text-amber-100 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-bold text-amber-300 text-[11px] uppercase tracking-wide">
+                        <Timer className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span>Perimeter Departure Buffer</span>
+                      </div>
+                      <span className="text-[10px] font-mono text-amber-300 font-bold bg-amber-900/90 px-1.5 py-0.5 rounded">
+                        {Math.floor((item.debounceSecondsRemaining || 180) / 60)}m {(item.debounceSecondsRemaining || 180) % 60}s
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-amber-200">
+                      Officer is outside perimeter. Escalating to Breach in {item.debounceSecondsRemaining || 180}s unless acknowledged.
+                    </p>
+                    <div className="flex items-center gap-1.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExcusalModalShiftId(item.activeShift!.id);
+                          setExcusalReasonInput('Authorized Perimeter Patrol');
+                          setExcusalNotesInput('');
+                        }}
+                        className="px-2 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-lg text-[10px] transition-colors"
+                      >
+                        Grant Excusal
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Excused Departure Details */}
+                {isExcused && item.lastDepartureReason && (
+                  <div className="mt-2.5 p-2 bg-blue-950/60 border border-blue-600/40 rounded-xl text-xs text-blue-200 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                      <span className="text-[11px] font-medium truncate">
+                        Excused: <strong className="text-white">{item.lastDepartureReason}</strong>
+                      </span>
+                    </div>
+                    {item.activeShift && (
+                      <button
+                        type="button"
+                        onClick={() => clearGeofenceBreach(item.activeShift!.id, 'Reset by Dispatcher')}
+                        className="text-[10px] text-blue-400 hover:text-blue-300 underline font-mono shrink-0 ml-2"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 {/* Body Content */}
                 <div className="py-2.5 space-y-2 text-xs">
@@ -314,7 +471,7 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
                         </span>
                         {item.activeShift?.gpsVerified && (
                           <span className="text-[9px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">
-                            ✓ GPS Verified
+                            ✓ GPS Verified {item.matchedParcelName ? `(${item.matchedParcelName})` : ''}
                           </span>
                         )}
                       </div>
@@ -420,6 +577,82 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
           <Users className="w-8 h-8 text-slate-400 mx-auto" />
           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">No Guards Match Filter</h3>
           <p className="text-xs text-slate-500">Try adjusting your search keywords or status filter</p>
+        </div>
+      )}
+
+      {/* SUPERVISOR CAD EXCUSAL MODAL */}
+      {excusalModalShiftId && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-5 text-white shadow-2xl space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-amber-500/20 text-amber-400 rounded-xl">
+                  <AlertOctagon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-100">Authorize Perimeter Departure</h3>
+                  <p className="text-xs text-slate-400 font-mono">CAD Supervisor Override</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExcusalModalShiftId(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleExecuteExcuseDeparture} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                  Departure Category
+                </label>
+                <select
+                  value={excusalReasonInput}
+                  onChange={(e) => setExcusalReasonInput(e.target.value)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+                >
+                  <option value="Authorized Meal Break">Authorized Meal Break / Rest Period</option>
+                  <option value="Incident Response / Pursuit">Incident Response / Exterior Pursuit</option>
+                  <option value="Client / VIP Escort">Client / VIP Escort to Vehicle/Transit</option>
+                  <option value="Perimeter Fence Line Inspection">Perimeter Fence Line / Outer Boundary Patrol</option>
+                  <option value="Medical / Emergency Support">Medical / Emergency First Responder Support</option>
+                  <option value="Equipment / Supply Retrieval">Equipment / Supply Retrieval</option>
+                  <option value="Supervisor Authorized Task">Supervisor Authorized Task</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
+                  Supervisor CAD Notes (Optional)
+                </label>
+                <textarea
+                  value={excusalNotesInput}
+                  onChange={(e) => setExcusalNotesInput(e.target.value)}
+                  placeholder="e.g. Authorized by Ops Mgr via Radio Channel 2. Expected return in 20m."
+                  rows={2}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setExcusalModalShiftId(null)}
+                  className="px-3 py-2 rounded-xl text-xs font-bold text-slate-400 hover:bg-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold shadow-md"
+                >
+                  Confirm & Excuse Departure
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

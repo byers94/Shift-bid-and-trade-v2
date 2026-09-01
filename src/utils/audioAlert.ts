@@ -584,6 +584,57 @@ export function playEmergencyEscalationSound() {
   }
 }
 
+/**
+ * Geofence Departure Debounce Warning Tone (Guard mobile prompt)
+ */
+export function playGeofenceDepartureWarningSound() {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    [0, 0.18].forEach((offset) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, now + offset); // D5
+      gain.gain.setValueAtTime(0.2, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + offset + 0.14);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.14);
+    });
+  } catch (e) {
+    console.warn('Geofence departure warning sound failed:', e);
+  }
+}
+
+/**
+ * Geofence Off-Site Breach Escalation Alarm Tone (Dispatch CAD notification)
+ */
+export function playGeofenceBreachSound() {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    [0, 0.2, 0.4].forEach((offset, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(idx === 1 ? 520 : 780, now + offset);
+      gain.gain.setValueAtTime(0.22, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + offset + 0.18);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.18);
+    });
+  } catch (e) {
+    console.warn('Geofence breach audio failed:', e);
+  }
+}
+
+
 
 
 

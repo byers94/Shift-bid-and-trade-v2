@@ -21,6 +21,7 @@ import { StandardReportsHub } from './StandardReportsHub';
 import { SetSchedulesManager } from './SetSchedulesManager';
 import { GuardAvailabilityTracker } from './GuardAvailabilityTracker';
 import { CallOffQueuePanel } from './CallOffQueuePanel';
+import { CoachingPerformanceDashboard } from './CoachingPerformanceDashboard';
 import { 
   ShieldCheck, 
   Activity, 
@@ -52,7 +53,8 @@ import {
   Navigation,
   CheckSquare,
   PhoneOff,
-  CalendarRange
+  CalendarRange,
+  BarChart3
 } from 'lucide-react';
 
 interface OpsAdminViewProps {
@@ -92,7 +94,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   } = useShiftOps();
 
   const [activeMainTab, setActiveMainTabState] = useState<
-    'operations' | 'live_tracking' | 'rover_routing' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal'
+    'operations' | 'live_tracking' | 'rover_routing' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'audit_terminal'
   >(() => {
     try {
       const saved = localStorage.getItem(STORAGE_OPS_MAIN_TAB_KEY);
@@ -110,6 +112,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         saved === 'site_directory' || 
         saved === 'guard_directory' || 
         saved === 'top_performers' || 
+        saved === 'coaching_analytics' ||
         saved === 'audit_terminal'
       ) {
         return saved as any;
@@ -118,7 +121,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
     return 'operations';
   });
 
-  const setActiveMainTab = (tab: 'operations' | 'live_tracking' | 'rover_routing' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'audit_terminal') => {
+  const setActiveMainTab = (tab: 'operations' | 'live_tracking' | 'rover_routing' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'audit_terminal') => {
     setActiveMainTabState(tab);
     try {
       localStorage.setItem(STORAGE_OPS_MAIN_TAB_KEY, tab);
@@ -671,6 +674,28 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
             </span>
           </button>
 
+          {/* Coaching & Analytics Sub-Nav Tab */}
+          <button
+            id="tab-coaching-analytics-btn"
+            type="button"
+            onClick={() => setActiveMainTab('coaching_analytics')}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              activeMainTab === 'coaching_analytics'
+                ? 'bg-indigo-600 text-white font-black shadow-xs'
+                : 'text-indigo-300 hover:text-white hover:bg-indigo-950/60 dark:hover:bg-slate-800'
+            }`}
+          >
+            <BarChart3 className="w-3.5 h-3.5 text-indigo-300" />
+            <span>Coaching & Analytics</span>
+            <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full font-mono ${
+              activeMainTab === 'coaching_analytics'
+                ? 'bg-white text-indigo-900'
+                : 'bg-indigo-950 text-indigo-300 border border-indigo-700/60'
+            }`}>
+              Analytics
+            </span>
+          </button>
+
           <button
             id="tab-audit-terminal-btn"
             type="button"
@@ -931,6 +956,16 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         <div className="flex-1 p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
           <TopPerformersWidget 
             onNavigateToGuardDirectory={() => setActiveMainTab('guard_directory')}
+          />
+        </div>
+      )}
+
+      {activeMainTab === 'coaching_analytics' && (
+        <div className="flex-1 p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
+          <CoachingPerformanceDashboard 
+            onScheduleCoachingClick={() => {
+              setActiveMainTab('top_performers');
+            }}
           />
         </div>
       )}

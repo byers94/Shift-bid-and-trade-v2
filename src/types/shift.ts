@@ -243,6 +243,11 @@ export type AdminActionType =
   | 'shift_claim_approved'
   | 'shift_claim_denied'
   | 'late_shift_alert_acknowledged'
+  | 'geofence_departure_warning'
+  | 'departure_reason_submitted'
+  | 'geofence_breach_escalated'
+  | 'geofence_breach_cleared'
+  | 'departure_excused_by_admin'
   | 'traffic_condition_updated'
   | 'route_optimizer_mode'
   | 'routes_reoptimized'
@@ -411,6 +416,8 @@ export type CoachingSessionStatus =
   | 'pending_guard_action' 
   | 'confirmed_by_guard' 
   | 'alternate_proposed_by_guard' 
+  | 'counter_proposed_by_admin'
+  | 'alternate_denied'
   | 'completed' 
   | 'cancelled';
 
@@ -437,8 +444,69 @@ export interface GuardCoachingSession {
   proposedAlternateDate?: string;
   proposedAlternateTime?: string;
   proposedAlternateReason?: string;
+  alternateProposalReason?: string;
+  // Admin Review / Alternate Decision fields
+  adminDenialReason?: string;
+  counterProposedDate?: string;
+  counterProposedTime?: string;
+  counterProposedReason?: string;
+  adminActionNotes?: string;
+  adminDecisionAt?: string;
+  // Completion & Performance Improvement Tracking fields
+  completedAt?: string;
+  completedByAdminName?: string;
+  completionNotes?: string;
+  improvementOutcome?: string;
+  performanceScoreBefore?: number;
+  performanceScoreAfter?: number;
+  scoreDelta?: number;
+  attendanceVerified?: boolean;
+  actionItems?: string[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface GuardCoachingMetrics {
+  guardId: string;
+  guardName: string;
+  guardBadge: string;
+  role?: string;
+  totalSessionsAssigned: number;
+  completedCount: number;
+  pendingCount: number;
+  confirmedCount: number;
+  alternateCount: number;
+  cancelledCount: number;
+  completionRate: number; // percentage e.g. 85.7
+  avgPerformanceDelta: number; // e.g. +8.5
+  currentOculusScore: number;
+  currentOnTimeRate: number;
+  latestSessionDate?: string;
+  latestTopic?: string;
+  statusSummary: string;
+}
+
+export interface CoachingTimelineDataPoint {
+  period: string; // e.g., "May 2026", "Jun 2026", "Jul 2026", "Aug 2026", "Sep 2026"
+  shortPeriod: string; // "May", "Jun", "Jul", "Aug", "Sep"
+  assignedSessions: number;
+  completedSessions: number;
+  completionRatePct: number;
+  avgOculusScore: number;
+  avgOnTimeArrivalRate: number;
+  geofenceComplianceRate: number;
+}
+
+export interface GuardCoachingHistoricalTrend {
+  guardId: string;
+  guardName: string;
+  dataPoints: {
+    month: string;
+    completed: number;
+    completionRate: number;
+    oculusScore: number;
+    onTimeRate: number;
+  }[];
 }
 
 export interface GuardPerformanceStats {
@@ -588,6 +656,33 @@ export const ROVING_GROUP_CONFIGS: Record<RovingGroup, RovingGroupConfig> = {
   }
 };
 
+export interface GeofenceParcel {
+  id: string;
+  name: string; // e.g. "Main Tower Perimeter", "North Parking Structure", "Loading Bay Annex"
+  type: 'polygon' | 'circle';
+  coordinates?: { latitude: number; longitude: number }[]; // For polygon parcels
+  center?: { latitude: number; longitude: number }; // For circular parcels
+  radiusMeters?: number; // For circular parcels
+  color?: string; // Hex or theme color e.g. '#3b82f6', '#10b981', '#f59e0b'
+  zoneType?: 'primary' | 'annex' | 'parking' | 'perimeter' | 'restricted';
+  notes?: string;
+}
+
+export type OffSiteBreachStatus = 
+  | 'normal' 
+  | 'debounce_pending' 
+  | 'breached_unacknowledged' 
+  | 'excused' 
+  | 'resolved';
+
+export type DepartureReasonType = 
+  | 'Authorized Break' 
+  | 'Incident Escort' 
+  | 'Perimeter Sweep' 
+  | 'Emergency Response' 
+  | 'Other';
+
+
 export interface SiteProfile {
   id: string;
   name: string;
@@ -628,6 +723,10 @@ export interface SiteProfile {
   geofenceRadiusMeters?: number; // Allowed clock-in perimeter (e.g. 50, 100, 200m)
   requireGeofence?: boolean; // Whether GPS validation is mandatory
   geofenceStrictEnforce?: boolean; // Whether out-of-bounds clock-ins are blocked vs logged
+  geofenceType?: 'circle' | 'polygon' | 'multi_parcel';
+  polygonCoordinates?: { latitude: number; longitude: number }[];
+  multiParcels?: GeofenceParcel[];
+  departureDebounceMinutes?: number; // Debounce time before breach escalation (default: 3)
 
   // Time-Specific Scheduled Tasks & Amenities Closures
   timeSpecificTasks?: TimeSpecificTask[];
@@ -946,6 +1045,22 @@ export interface ScheduledShift {
   attendanceConfirmed?: boolean;
   attendanceConfirmedAt?: string;
 
+  // Live Departure Monitoring & Anti-Drift Debounce
+  offSiteBreachStatus?: OffSiteBreachStatus;
+  outOfBoundsSince?: string; // ISO timestamp
+  debounceSecondsRemaining?: number; // 180s countdown down to 0
+  consecutiveOutOfBoundsReadings?: number;
+  currentInsideGeofence?: boolean;
+  currentGeofenceDistanceMeters?: number;
+  currentMatchedParcelName?: string;
+  lastDepartureReason?: string; // e.g. "Authorized Break", "Incident Escort", etc.
+  lastDepartureNotes?: string;
+  departureAcknowledgedByGuardAt?: string;
+  departureExcusedByOps?: boolean;
+  departureExcusedByAdminBadge?: string;
+  departureExcusedReason?: string;
+  departureExcusedAt?: string;
+
   createdAt?: string;
 }
 
@@ -1237,6 +1352,14 @@ export interface GuardLiveTrackingItem {
   equipmentPhotoUrl?: string;
   geofencePassed?: boolean;
   geofenceDistanceMeters?: number;
+  currentGeofenceDistanceMeters?: number;
+  offSiteBreachStatus?: OffSiteBreachStatus;
+  outOfBoundsSince?: string;
+  debounceSecondsRemaining?: number;
+  currentInsideGeofence?: boolean;
+  matchedParcelName?: string;
+  lastDepartureReason?: string;
+  departureExcusedByOps?: boolean;
 }
 
 // ----------------------------------------------------
