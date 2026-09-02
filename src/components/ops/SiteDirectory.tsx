@@ -126,7 +126,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
   const [formCategory, setFormCategory] = useState<SiteCategory>('corporate');
   const [formSecurityTier, setFormSecurityTier] = useState<SiteSecurityTier>('Tier 2 - Elevated');
   const [formServiceType, setFormServiceType] = useState<SiteServiceType>('dedicated');
-  const [formRovingGroup, setFormRovingGroup] = useState<RovingGroup>('Alpha Group');
+  const [formRovingGroup, setFormRovingGroup] = useState<RovingGroup>('Metro');
   const [formRovingNotes, setFormRovingNotes] = useState('');
   const [formRouteOrder, setFormRouteOrder] = useState<number | ''>('');
   const [formPatrolFrequency, setFormPatrolFrequency] = useState('Hourly Sweep');
@@ -507,7 +507,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
     setFormCategory('corporate');
     setFormSecurityTier('Tier 2 - Elevated');
     setFormServiceType(presetRovingGroup ? 'roving' : 'dedicated');
-    setFormRovingGroup(presetRovingGroup || 'Alpha Group');
+    setFormRovingGroup(presetRovingGroup || 'Metro');
     setFormRovingNotes('');
     setFormRouteOrder('');
     setFormPatrolFrequency('Hourly Sweep');
@@ -546,7 +546,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
     setFormCategory(site.category);
     setFormSecurityTier(site.securityTier);
     setFormServiceType(site.serviceType || 'dedicated');
-    setFormRovingGroup(site.rovingGroup || 'Alpha Group');
+    setFormRovingGroup(site.rovingGroup || 'Metro');
     setFormRovingNotes(site.rovingNotes || '');
     setFormRouteOrder(site.routeOrder ?? '');
     setFormPatrolFrequency(site.patrolFrequency || (site.serviceType === 'roving' ? 'Hourly Sweep' : ''));
@@ -578,13 +578,13 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
       serviceType: 'roving',
       rovingGroup: newGroup
     });
-    showToast('Roving Group Updated', `Site assigned to ${newGroup}.`, 'success');
+    showToast('Mobile Patrol Sector Updated', `Site assigned to ${newGroup}.`, 'success');
   };
 
   // Quick Change Service Type Handler
   const handleQuickToggleServiceType = (site: SiteProfile) => {
     const nextType: SiteServiceType = (site.serviceType || 'dedicated') === 'dedicated' ? 'roving' : 'dedicated';
-    const nextGroup: RovingGroup | undefined = nextType === 'roving' ? (site.rovingGroup || 'Alpha Group') : undefined;
+    const nextGroup: RovingGroup | undefined = nextType === 'roving' ? (site.rovingGroup || 'Metro') : undefined;
     updateSite(site.id, {
       serviceType: nextType,
       rovingGroup: nextGroup,
@@ -592,7 +592,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
     });
     showToast(
       'Service Type Changed', 
-      `${site.name} is now classified as ${nextType === 'roving' ? 'Roving Patrol' : 'Dedicated Post'}.`,
+      `${site.name} is now classified as ${nextType === 'roving' ? 'Mobile Patrol' : 'Dedicated Post'}.`,
       'info'
     );
   };
@@ -606,7 +606,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
     }
 
     if (formServiceType === 'roving' && !formRovingGroup) {
-      showToast('Validation Error', 'Please assign a Roving Property Group (Alpha, Bravo, Charlie, Delta, Echo, Foxtrot).', 'warning');
+      showToast('Validation Error', 'Please assign a Mobile Patrol Sector (Metro, North West, North East, South West, South East).', 'warning');
       return;
     }
 
@@ -811,12 +811,12 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
 
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Roving Properties</span>
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Mobile Patrol Properties</span>
             <Car className="w-4 h-4 text-cyan-500" />
           </div>
           <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{metrics.rovingCount}</p>
           <span className="text-[11px] text-cyan-600 dark:text-cyan-400 font-medium flex items-center gap-1 mt-0.5">
-            Across 6 patrol groups
+            Across 5 mobile sectors
           </span>
         </div>
 
@@ -1013,7 +1013,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
               }`}
             >
               <Car className="w-3.5 h-3.5" />
-              Roving Patrol Circuit
+              Mobile Patrol Circuit
               <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
                 serviceTypeFilter === 'roving' ? 'bg-cyan-700 text-white' : 'bg-cyan-100 dark:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300'
               }`}>
@@ -1063,7 +1063,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                     ? 'bg-cyan-600 text-white shadow-xs' 
                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
                 }`}
-                title="Roving Patrol Route Matrix (Alpha, Bravo, Charlie, Delta, Echo, Foxtrot)"
+                title="Mobile Patrol Sector Matrix (Metro, North West, North East, South West, South East)"
               >
                 <Route className="w-3.5 h-3.5" />
                 <span>Patrol Matrix</span>
@@ -1077,7 +1077,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs bg-slate-50 dark:bg-slate-800/40 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
             <span className="text-slate-500 dark:text-slate-400 text-[11px] font-semibold mr-1 shrink-0 flex items-center gap-1">
               <Car className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-              Patrol Groups:
+              Mobile Sectors:
             </span>
             <button
               type="button"
@@ -1088,7 +1088,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                   : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
               }`}
             >
-              All Groups ({sitesList.filter(s => s.serviceType === 'roving').length})
+              All Sectors ({sitesList.filter(s => s.serviceType === 'roving').length})
             </button>
             {ROVING_GROUPS.map((grp) => {
               const cfg = ROVING_GROUP_CONFIGS[grp];
@@ -1126,7 +1126,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
               id="input-search-sites"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search site name, code (PORT-P7), address, sector zone, roving group (Alpha, Bravo...), contact or certs..."
+              placeholder="Search site name, code (PORT-P7), address, sector zone, mobile unit (Metro, Northwest...), contact or certs..."
               className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             {searchQuery && (
@@ -1228,7 +1228,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
           </button>
         </div>
       ) : viewMode === 'roving_matrix' ? (
-        /* Roving Patrol Matrix Board (Alpha, Bravo, Charlie, Delta, Echo, Foxtrot) */
+        /* Mobile Patrol Matrix Board (Metro, North West, North East, South West, South East) */
         <div className="space-y-4">
           <div className="bg-gradient-to-r from-slate-900 via-cyan-950 to-slate-900 text-white p-4 rounded-xl border border-cyan-900/60 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-md">
             <div>
@@ -1237,16 +1237,16 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                   <Route className="w-5 h-5" />
                 </span>
                 <h3 className="text-base font-bold text-white">
-                  Roving Service Patrol Groups & Multi-Property Circuits
+                  Mobile Patrol Sectors & Multi-Property Circuits
                 </h3>
               </div>
               <p className="text-xs text-cyan-200/80 mt-1">
-                Roving guards service a collection of properties throughout their shift. Properties are organized into 6 operational patrol groups around town.
+                Mobile units service a collection of properties throughout their shift. Properties are organized into 5 operational sectors around town.
               </p>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-mono font-bold px-3 py-1 rounded-lg bg-cyan-900/60 border border-cyan-700 text-cyan-200">
-                {metrics.rovingCount} Properties in Roving Circuits
+                {metrics.rovingCount} Properties in Mobile Circuits
               </span>
             </div>
           </div>
@@ -2393,17 +2393,17 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                         checked={formServiceType === 'roving'}
                         onChange={() => {
                           setFormServiceType('roving');
-                          if (!formRovingGroup) setFormRovingGroup('Alpha Group');
+                          if (!formRovingGroup) setFormRovingGroup('Metro');
                         }}
                         className="mt-0.5 text-cyan-600 focus:ring-cyan-500"
                       />
                       <div>
                         <span className="font-bold text-slate-900 dark:text-white text-xs flex items-center gap-1.5">
                           <Car className="w-3.5 h-3.5 text-cyan-600" />
-                          Roving Service Circuit
+                          Mobile Patrol Circuit
                         </span>
                         <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                          Property is serviced by roving guards as part of a multi-site property patrol group.
+                          Property is serviced by mobile patrol units as part of a multi-site sector circuit.
                         </p>
                       </div>
                     </label>
@@ -2414,10 +2414,10 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                     <div className="pt-3 border-t border-slate-200 dark:border-slate-700 space-y-3 animate-in fade-in-50 duration-150">
                       <div className="flex items-center justify-between">
                         <label className="block text-cyan-800 dark:text-cyan-300 font-bold text-xs">
-                          Assign Property Group *
+                          Assign Mobile Sector *
                         </label>
                         <span className="text-[11px] text-slate-400">
-                          6 Roving Operational Groups
+                          5 Mobile Operational Sectors
                         </span>
                       </div>
 

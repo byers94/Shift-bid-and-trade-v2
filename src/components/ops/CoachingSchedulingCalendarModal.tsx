@@ -236,7 +236,7 @@ export const CoachingSchedulingCalendarModal: React.FC<CoachingSchedulingCalenda
               </div>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
                 Officer: <span className="font-semibold text-neutral-800 dark:text-neutral-200">{guard.name}</span> ({guard.badgeNumber}) • 
-                Oculus Score: <span className="font-bold text-amber-600 dark:text-amber-400">{guardStats?.oculusScore?.toFixed(1) || 'N/A'} / 100</span>
+                ASR Score: <span className="font-bold text-amber-600 dark:text-amber-400">{(guardStats?.asrScore ?? guardStats?.oculusScore)?.toFixed(1) || 'N/A'} / 100</span>
               </p>
             </div>
           </div>

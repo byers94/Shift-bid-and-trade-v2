@@ -308,7 +308,7 @@ export const CallsForServicePanel: React.FC = () => {
     if (chosenRover) {
       dispatchAdHocInterception(targetCall.id, targetCall.locationDetails, chosenRover.id);
       showToast?.(
-        'Rover Unit Assigned & Intercept Pushed',
+        'Mobile Unit Assigned & Intercept Pushed',
         `Call ${targetCall.id} assigned to ${chosenRover.unitNumber} (${chosenRover.assignedGuardName || 'Officer'}). Route order updated!`,
         'success'
       );
@@ -757,10 +757,10 @@ export const CallsForServicePanel: React.FC = () => {
                             <div>
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="text-[10px] font-black uppercase tracking-wider text-cyan-300">
-                                  Dispatched Rover Unit:
+                                  Dispatched Mobile Unit:
                                 </span>
                                 <span className="bg-cyan-500 text-slate-950 text-[11px] font-mono font-black px-2 py-0.5 rounded-full shadow-xs">
-                                  {call.assignedRoverUnit || matchedRover?.callSign || 'ROVER FLEET'}
+                                  {call.assignedRoverUnit || matchedRover?.callSign || 'MOBILE UNIT'}
                                 </span>
                                 {call.assignedRovingGroup && (
                                   <span className="bg-cyan-950 text-cyan-200 border border-cyan-700/80 text-[10px] font-bold px-1.5 py-0.5 rounded">
@@ -768,7 +768,7 @@ export const CallsForServicePanel: React.FC = () => {
                                   </span>
                                 )}
 
-                                {/* Visual Rover Assignment & Status Indicator */}
+                                {/* Visual Mobile Unit Assignment & Status Indicator */}
                                 <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border ${
                                   roverStatus === 'intercepting' || call.status === 'dispatched'
                                     ? 'bg-rose-500/20 text-rose-300 border-rose-500/60 animate-pulse'
@@ -795,7 +795,7 @@ export const CallsForServicePanel: React.FC = () => {
                               
                               <p className="text-xs font-bold text-slate-100 mt-1 flex items-center gap-1.5">
                                 <User className="w-3 h-3 text-cyan-400" />
-                                <span>Responding Officer: <strong>{call.assignedGuardName || matchedRover?.assignedGuardName || 'Roving Officer'}</strong> {call.assignedGuardBadge || matchedRover?.assignedGuardBadge ? `(${call.assignedGuardBadge || matchedRover?.assignedGuardBadge})` : ''}</span>
+                                <span>Responding Officer: <strong>{call.assignedGuardName || matchedRover?.assignedGuardName || 'Mobile Patrol Officer'}</strong> {call.assignedGuardBadge || matchedRover?.assignedGuardBadge ? `(${call.assignedGuardBadge || matchedRover?.assignedGuardBadge})` : ''}</span>
                               </p>
                             </div>
                           </div>
@@ -820,7 +820,7 @@ export const CallsForServicePanel: React.FC = () => {
                           </div>
                         </div>
 
-                        {/* Live Rover Telemetry Grid */}
+                        {/* Live Mobile Telemetry Grid */}
                         {matchedRover && (
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[10px] font-mono bg-slate-950/80 p-2 rounded-lg border border-cyan-900/60">
                             <div>
@@ -860,7 +860,7 @@ export const CallsForServicePanel: React.FC = () => {
                     <div className="bg-slate-50 dark:bg-slate-950/50 border border-dashed border-slate-300 dark:border-slate-700/80 rounded-xl p-2.5 flex items-center justify-between gap-2 text-xs">
                       <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
                         <Car className="w-4 h-4 text-slate-400 shrink-0" />
-                        <span>Static Post Call • No Rover Assigned</span>
+                        <span>Static Post Call • No Mobile Unit Assigned</span>
                       </div>
                       <button
                         type="button"
@@ -871,7 +871,7 @@ export const CallsForServicePanel: React.FC = () => {
                         className="px-2.5 py-1 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
                       >
                         <Zap className="w-3 h-3 text-slate-950" />
-                        <span>⚡ Dispatch to Rover</span>
+                        <span>Dispatch to MPU</span>
                       </button>
                     </div>
                   ) : null}
@@ -1325,12 +1325,12 @@ export const CallsForServicePanel: React.FC = () => {
                 </div>
               )}
 
-              {/* Rover Unit Assignment & Dynamic Interception Selector */}
+              {/* Mobile Patrol Unit Assignment & Dynamic Interception Selector */}
               <div className="p-3.5 bg-gradient-to-r from-slate-900 to-cyan-950/90 rounded-xl border border-cyan-500/40 text-white space-y-2.5">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-black uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
                     <Car className="w-4 h-4 text-cyan-400" />
-                    <span>Assign to Roving Patrol Unit (Dynamic Intercept)</span>
+                    <span>Assign to Mobile Patrol Unit (Dynamic Intercept)</span>
                   </label>
                   <span className="text-[10px] font-mono text-cyan-300 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-700/60">
                     Live Route Queue Sync
@@ -1340,15 +1340,15 @@ export const CallsForServicePanel: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                   <div>
                     <label className="block text-[10px] text-slate-300 uppercase font-bold mb-1">
-                      Target Rover Unit / Group
+                      Target Mobile Unit / Sector
                     </label>
                     <select
                       value={assignedRoverSelection}
                       onChange={(e) => setAssignedRoverSelection(e.target.value)}
                       className="w-full px-2.5 py-1.5 bg-slate-950 border border-cyan-500/50 rounded-lg text-white font-semibold text-xs focus:ring-1 focus:ring-cyan-400 focus:outline-hidden"
                     >
-                      <option value="unassigned">Broadcast to Static Facility Post (No Rover Assigned)</option>
-                      <option value="nearest">⚡ Nearest Available Rover (Auto-Calculate Distance & Traffic)</option>
+                      <option value="unassigned">Broadcast to Static Facility Post (No Mobile Unit Assigned)</option>
+                      <option value="nearest">⚡ Nearest Available Mobile Unit (Auto-Calculate Distance & Traffic)</option>
                       {rovers.map(rover => (
                         <option key={rover.id} value={rover.id}>
                           {rover.unitNumber} ({rover.rovingGroup}) • {rover.assignedGuardName || 'Unassigned'} [{rover.status.toUpperCase()}]
@@ -1364,7 +1364,7 @@ export const CallsForServicePanel: React.FC = () => {
                       </span>
                     ) : (
                       <span className="text-cyan-300 font-mono">
-                        ⚡ <strong>Dynamic Intercept:</strong> Immediately injects as #1 priority stop on the rover's route and alerts the on-duty guard.
+                        ⚡ <strong>Dynamic Intercept:</strong> Immediately injects as #1 priority stop on the mobile unit's route and alerts the on-duty guard.
                       </span>
                     )}
                   </div>
@@ -1510,10 +1510,10 @@ export const CallsForServicePanel: React.FC = () => {
               </div>
               <div>
                 <h3 className="text-sm font-black text-slate-900 dark:text-white">
-                  Dispatch / Reassign to Rover Unit
+                  Dispatch / Reassign to Mobile Unit
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Select a mobile patrol unit. The call will be immediately injected into the rover&apos;s active circuit route queue.
+                  Select a mobile patrol unit. The call will be immediately injected into the mobile unit&apos;s active circuit route queue.
                 </p>
               </div>
             </div>
@@ -1521,14 +1521,14 @@ export const CallsForServicePanel: React.FC = () => {
             <form onSubmit={handleExecuteReassign} className="space-y-3">
               <div>
                 <label className="block text-[10px] uppercase font-bold text-slate-600 dark:text-slate-400 mb-1">
-                  Target Patrol Rover
+                  Target Mobile Patrol Unit
                 </label>
                 <select
                   value={reassignRoverId}
                   onChange={(e) => setReassignRoverId(e.target.value)}
                   className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 font-semibold"
                 >
-                  <option value="nearest">⚡ Auto-Calculate Nearest Available Rover</option>
+                  <option value="nearest">⚡ Auto-Calculate Nearest Available Mobile Unit</option>
                   {rovers.map(rover => (
                     <option key={rover.id} value={rover.id}>
                       {rover.unitNumber} ({rover.rovingGroup}) — Officer {rover.assignedGuardName || 'Unassigned'} [{rover.status.toUpperCase()}]
@@ -1543,7 +1543,7 @@ export const CallsForServicePanel: React.FC = () => {
                   Dynamic Interception & Route Re-Calculation:
                 </p>
                 <p className="text-[11px] text-cyan-800 dark:text-cyan-300">
-                  The target rover&apos;s turn-by-turn itinerary will instantly reprioritize this emergency stop. The assigned guard will receive a real-time priority notification.
+                  The target mobile unit&apos;s turn-by-turn itinerary will instantly reprioritize this emergency stop. The assigned guard will receive a real-time priority notification.
                 </p>
               </div>
 
@@ -1696,7 +1696,7 @@ export const CallsForServicePanel: React.FC = () => {
                                 <span>•</span>
                                 <span className="inline-flex items-center gap-1 bg-cyan-100 text-cyan-900 dark:bg-cyan-950 dark:text-cyan-300 font-mono text-[10px] font-bold px-2 py-0.5 rounded-full border border-cyan-300 dark:border-cyan-800">
                                   <Car className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
-                                  <span>{receipt.assignedRoverUnit || 'ROVER UNIT'}</span>
+                                  <span>{receipt.assignedRoverUnit || 'MOBILE UNIT'}</span>
                                   {receipt.assignedRovingGroup && (
                                     <span className="opacity-75 font-sans">({receipt.assignedRovingGroup})</span>
                                   )}

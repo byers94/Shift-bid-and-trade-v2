@@ -216,7 +216,7 @@ export const RoverRouteOptimizationPanel: React.FC<RoverRouteOptimizationPanelPr
               </div>
               <div>
                 <h2 className="text-lg sm:text-xl font-black tracking-tight text-white flex items-center gap-2">
-                  Dynamic Rover Route Optimization
+                  Dynamic Mobile Route Optimization
                   <span className="bg-blue-500/20 text-cyan-300 text-[10px] uppercase font-mono px-2 py-0.5 rounded-full border border-cyan-500/30">
                     SLA & Geo-Clustered
                   </span>
@@ -235,7 +235,7 @@ export const RoverRouteOptimizationPanel: React.FC<RoverRouteOptimizationPanelPr
               type="button"
               onClick={() => reoptimizeRoverRoutes()}
               className="px-3 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-lg shadow-md hover:shadow-blue-900/30 flex items-center gap-1.5 transition-all cursor-pointer"
-              title="Recalculate 2-Opt TSP & SLA windows across all rover circuits"
+              title="Recalculate 2-Opt TSP & SLA windows across all mobile circuits"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               <span>Re-Optimize Fleet</span>
@@ -246,7 +246,7 @@ export const RoverRouteOptimizationPanel: React.FC<RoverRouteOptimizationPanelPr
               type="button"
               onClick={() => setIsInterceptModalOpen(true)}
               className="px-3 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-black rounded-lg shadow-md hover:shadow-rose-900/40 flex items-center gap-1.5 transition-all cursor-pointer animate-pulse"
-              title="Reroute nearest rover unit to emergency call or alarm drop"
+              title="Reroute nearest mobile unit to emergency call or alarm drop"
             >
               <Zap className="w-3.5 h-3.5 fill-current" />
               <span>Dispatch Emergency Intercept</span>
@@ -258,7 +258,7 @@ export const RoverRouteOptimizationPanel: React.FC<RoverRouteOptimizationPanelPr
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 mt-4 pt-4 border-t border-slate-800/80">
           <div className="bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80">
             <span className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
-              <Car className="w-3 h-3 text-cyan-400" /> Active Rovers
+              <Car className="w-3 h-3 text-cyan-400" /> Active Mobile Units
             </span>
             <p className="text-base sm:text-lg font-black font-mono text-white mt-0.5">
               {rovers.length}{' '}
@@ -578,7 +578,7 @@ export const RoverRouteOptimizationPanel: React.FC<RoverRouteOptimizationPanelPr
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
                 <Car className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                Mobile Rover Units ({rovers.length})
+                Mobile Patrol Units ({rovers.length})
               </h3>
               <span className="text-[10px] font-mono text-slate-400">
                 Live Status
@@ -1107,14 +1107,14 @@ export const RoverRouteOptimizationPanel: React.FC<RoverRouteOptimizationPanelPr
                 <div>
                   <h4 className="text-xs font-black uppercase tracking-wider text-cyan-400 flex items-center gap-2">
                     <Radio className="w-4 h-4 text-cyan-400 animate-pulse" />
-                    Live Rover Telemetry & Passive Geofence Stream
+                    Live Mobile Telemetry & Passive Geofence Stream
                   </h4>
                   <p className="text-[11px] text-slate-400">
                     Passive arrival/departure timestamps, dwell compliance meters, speed anomalies, and dispatch reroutes.
                   </p>
                 </div>
 
-                {/* Filter by Rover Unit */}
+                {/* Filter by Mobile Unit */}
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-slate-400">Unit Filter:</span>
                   <select
@@ -1122,7 +1122,7 @@ export const RoverRouteOptimizationPanel: React.FC<RoverRouteOptimizationPanelPr
                     onChange={(e) => setTelemetryFilterRover(e.target.value)}
                     className="text-xs bg-slate-900 border border-slate-700 rounded px-2.5 py-1 text-white focus:outline-none"
                   >
-                    <option value="all">All Rover Units ({rovers.length})</option>
+                    <option value="all">All Mobile Units ({rovers.length})</option>
                     {rovers.map(r => (
                       <option key={r.id} value={r.id}>{r.unitNumber}</option>
                     ))}
@@ -1200,7 +1200,7 @@ export const RoverRouteOptimizationPanel: React.FC<RoverRouteOptimizationPanelPr
                     Dispatch Dynamic Ad-Hoc Interception
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Reroutes nearest available rover unit to emergency call or alarm drop.
+                    Reroutes nearest available mobile unit to emergency call or alarm drop.
                   </p>
                 </div>
               </div>
@@ -1248,10 +1248,10 @@ export const RoverRouteOptimizationPanel: React.FC<RoverRouteOptimizationPanelPr
                 />
               </div>
 
-              {/* Rover Override Option */}
+              {/* Mobile Unit Override Option */}
               <div className="space-y-1">
                 <label className="text-xs font-bold text-slate-300">
-                  Assigned Rover Unit (Default: Auto-Ranked Nearest by GPS ETA):
+                  Assigned Mobile Unit (Default: Auto-Ranked Nearest by GPS ETA):
                 </label>
                 <select
                   value={selectedRoverOverride}

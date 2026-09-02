@@ -72,7 +72,7 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
     getRoverForGuard(activeGuard.id) || 
     (activeClockedInShift?.assignedRoverId ? rovers.find(r => r.id === activeClockedInShift.assignedRoverId) : undefined) ||
     (activeClockedInShift?.rovingGroup ? getRoverByGroup(activeClockedInShift.rovingGroup) : undefined) ||
-    (activeGuard.isRovingGuard ? getRoverByGroup(activeGuard.rovingGroup || 'Alpha Group') : undefined) ||
+    (activeGuard.isRovingGuard ? getRoverByGroup(activeGuard.rovingGroup || 'Metro') : undefined) ||
     rovers[0];
 
   const [selectedRoverId, setSelectedRoverId] = useState<string>(defaultAssignedRover?.id || rovers[0]?.id || 'rover-1');

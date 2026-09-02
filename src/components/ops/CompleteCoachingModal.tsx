@@ -60,7 +60,7 @@ export const CompleteCoachingModal: React.FC<CompleteCoachingModalProps> = ({
       );
       setImprovementOutcome(
         session.improvementOutcome ||
-        `Verified Operational Improvement (+${after - before} pts Oculus index progression)`
+        `Verified Operational Improvement (+${after - before} pts ASR index progression)`
       );
       setAttendanceVerified(session.attendanceVerified ?? true);
       setActionItems(
@@ -103,7 +103,7 @@ export const CompleteCoachingModal: React.FC<CompleteCoachingModalProps> = ({
   };
 
   const presetOutcomes = [
-    `Significant Improvement (+${scoreDelta} pts Oculus index, 100% checklist compliance)`,
+    `Significant Improvement (+${scoreDelta} pts ASR index, 100% checklist compliance)`,
     'Exemplary Operational Mastery & Leadership Recognition',
     'Satisfactory Attendance & Punctuality Remediation',
     'De-escalation & Client Concierge Protocol Certified',

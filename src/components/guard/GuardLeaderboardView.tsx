@@ -42,7 +42,7 @@ export const GuardLeaderboardView: React.FC<GuardLeaderboardViewProps> = ({ onOp
   const [activeTab, setActiveTab] = useState<'my_score' | 'top_five'>('my_score');
   const [showFormulaDetails, setShowFormulaDetails] = useState(false);
 
-  // Full leaderboard calculated via Oculus Score
+  // Full leaderboard calculated via ASR (Aegis Score & Rank)
   const fullLeaderboard = useMemo(() => {
     return getLeaderboard('composite', 'all');
   }, [getLeaderboard, guardsList, siteFeedbacks]);
@@ -62,7 +62,8 @@ export const GuardLeaderboardView: React.FC<GuardLeaderboardViewProps> = ({ onOp
     return fullLeaderboard.slice(0, 5);
   }, [fullLeaderboard]);
 
-  const myOculus = myStats.oculusBreakdown || {
+  const myAsr = myStats.asrBreakdown || myStats.oculusBreakdown || {
+    asrScore: 90,
     oculusScore: 90,
     tier: 'gold',
     tierLabel: 'Master Gold Tier',
@@ -101,7 +102,7 @@ export const GuardLeaderboardView: React.FC<GuardLeaderboardViewProps> = ({ onOp
   };
 
   return (
-    <div id="guard-oculus-leaderboard-view" className="space-y-4 pb-6 animate-in fade-in duration-150">
+    <div id="guard-asr-leaderboard-view" className="space-y-4 pb-6 animate-in fade-in duration-150">
       {/* View Header */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 shadow-xs">
         <div className="flex items-center justify-between gap-3">
@@ -111,13 +112,13 @@ export const GuardLeaderboardView: React.FC<GuardLeaderboardViewProps> = ({ onOp
             </div>
             <div>
               <h2 className="text-sm font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-1.5">
-                <span>Oculus Guard Ranking</span>
+                <span>ASR Guard Ranking</span>
                 <span className="text-[10px] px-1.5 py-0.2 bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-bold rounded">
-                  100-Pt Index
+                  100-Pt ASR Index
                 </span>
               </h2>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Transparent performance & client experience scoring
+                Aegis Score & Rank: Operational reliability & client experience
               </p>
             </div>
           </div>
@@ -133,7 +134,7 @@ export const GuardLeaderboardView: React.FC<GuardLeaderboardViewProps> = ({ onOp
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
               }`}
             >
-              My Oculus
+              My ASR
             </button>
             <button
               id="guard-tab-top-five"
@@ -152,7 +153,7 @@ export const GuardLeaderboardView: React.FC<GuardLeaderboardViewProps> = ({ onOp
 
       {activeTab === 'my_score' ? (
         <div className="space-y-4">
-          {/* Officer Oculus Score Hero Card */}
+          {/* Officer ASR Score Hero Card */}
           <div className="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 text-white rounded-xl p-4 shadow-md border border-blue-900/60 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-36 h-36 bg-blue-500/10 rounded-full blur-2xl pointer-events-none" />
             
@@ -182,18 +183,18 @@ export const GuardLeaderboardView: React.FC<GuardLeaderboardViewProps> = ({ onOp
                   <div className="text-xs text-blue-200/80 flex items-center gap-2 mt-0.5">
                     <span>Rank <strong>#{myRank}</strong> of {guardsList.length} Officers</span>
                     <span>•</span>
-                    <span className={`px-1.5 py-0.2 text-[10px] font-bold rounded ${getTierBadgeStyle(myOculus.tier)}`}>
-                      {myOculus.tierLabel}
+                    <span className={`px-1.5 py-0.2 text-[10px] font-bold rounded ${getTierBadgeStyle(myAsr.tier)}`}>
+                      {myAsr.tierLabel}
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Total Composite Oculus Score Gauge */}
+              {/* Total Composite ASR Score Gauge */}
               <div className="text-right">
-                <div className="text-[10px] uppercase font-bold text-amber-300 tracking-wider">Oculus Score</div>
+                <div className="text-[10px] uppercase font-bold text-amber-300 tracking-wider">ASR Score</div>
                 <div className="text-3xl font-black text-white flex items-baseline justify-end gap-1">
-                  <span>{myOculus.oculusScore}</span>
+                  <span>{myAsr.asrScore ?? myAsr.oculusScore}</span>
                   <span className="text-sm font-semibold text-blue-300">/ 100</span>
                 </div>
               </div>
@@ -204,34 +205,34 @@ export const GuardLeaderboardView: React.FC<GuardLeaderboardViewProps> = ({ onOp
               <div className="bg-blue-900/40 rounded-lg p-2.5 border border-blue-700/40">
                 <div className="flex items-center justify-between text-[11px] mb-1">
                   <span className="text-blue-200 font-medium">Operational Reliability</span>
-                  <span className="font-bold text-white font-mono">{myOculus.operationalReliabilityScore}/60 pts</span>
+                  <span className="font-bold text-white font-mono">{myAsr.operationalReliabilityScore}/60 pts</span>
                 </div>
                 <div className="w-full bg-blue-950 h-2 rounded-full overflow-hidden">
                   <div 
                     className="bg-emerald-400 h-full rounded-full transition-all duration-500" 
-                    style={{ width: `${(myOculus.operationalReliabilityScore / 60) * 100}%` }}
+                    style={{ width: `${(myAsr.operationalReliabilityScore / 60) * 100}%` }}
                   />
                 </div>
                 <div className="text-[9px] text-blue-300 mt-1 flex justify-between">
                   <span>Punctuality, SLA, DAR & Geofence</span>
-                  <span>{Math.round((myOculus.operationalReliabilityScore / 60) * 100)}%</span>
+                  <span>{Math.round((myAsr.operationalReliabilityScore / 60) * 100)}%</span>
                 </div>
               </div>
 
               <div className="bg-blue-900/40 rounded-lg p-2.5 border border-blue-700/40">
                 <div className="flex items-center justify-between text-[11px] mb-1">
                   <span className="text-blue-200 font-medium">Client Experience</span>
-                  <span className="font-bold text-amber-300 font-mono">{myOculus.clientExperienceScore}/40 pts</span>
+                  <span className="font-bold text-amber-300 font-mono">{myAsr.clientExperienceScore}/40 pts</span>
                 </div>
                 <div className="w-full bg-blue-950 h-2 rounded-full overflow-hidden">
                   <div 
                     className="bg-amber-400 h-full rounded-full transition-all duration-500" 
-                    style={{ width: `${(myOculus.clientExperienceScore / 40) * 100}%` }}
+                    style={{ width: `${(myAsr.clientExperienceScore / 40) * 100}%` }}
                   />
                 </div>
                 <div className="text-[9px] text-blue-300 mt-1 flex justify-between">
-                  <span>{myOculus.weightedStarRating.toFixed(1)}★ ({myOculus.reviewCount} reviews)</span>
-                  <span>{Math.round((myOculus.clientExperienceScore / 40) * 100)}%</span>
+                  <span>{myAsr.weightedStarRating.toFixed(1)}★ ({myAsr.reviewCount} reviews)</span>
+                  <span>{Math.round((myAsr.clientExperienceScore / 40) * 100)}%</span>
                 </div>
               </div>
             </div>
@@ -247,7 +248,7 @@ export const GuardLeaderboardView: React.FC<GuardLeaderboardViewProps> = ({ onOp
                 </h4>
               </div>
               <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                {myOculus.operationalReliabilityScore} / 60.0 Max
+                {myAsr.operationalReliabilityScore} / 60.0 Max
               </span>
             </div>
 
@@ -262,7 +263,7 @@ export const GuardLeaderboardView: React.FC<GuardLeaderboardViewProps> = ({ onOp
                     </span>
                   </div>
                   <span className="font-bold font-mono text-slate-900 dark:text-white">
-                    {myOculus.attendancePunctualityScore} / 25 pts
+                    {myAsr.attendancePunctualityScore} / 25 pts
                   </span>
                 </div>
                 <div className="text-[11px] text-slate-500 space-y-0.5">
@@ -272,16 +273,16 @@ export const GuardLeaderboardView: React.FC<GuardLeaderboardViewProps> = ({ onOp
                       {(Math.min(22, (myStats.onTimeArrivalRate / 100) * 22)).toFixed(1)} pts
                     </span>
                   </div>
-                  {myOculus.emergencyBonusPts > 0 && (
+                  {myAsr.emergencyBonusPts > 0 && (
                     <div className="flex justify-between text-rose-600 dark:text-rose-400">
                       <span>• Emergency shift coverage bonus ({myStats.emergencyShiftsFulfilled} fills):</span>
-                      <span className="font-bold">+{myOculus.emergencyBonusPts} pts</span>
+                      <span className="font-bold">+{myAsr.emergencyBonusPts} pts</span>
                     </div>
                   )}
-                  {myOculus.callOffPenaltyPts > 0 && (
+                  {myAsr.callOffPenaltyPts > 0 && (
                     <div className="flex justify-between text-rose-600">
                       <span>• Call-off penalties:</span>
-                      <span className="font-bold">-{myOculus.callOffPenaltyPts} pts</span>
+                      <span className="font-bold">-{myAsr.callOffPenaltyPts} pts</span>
                     </div>
                   )}
                 </div>
@@ -297,7 +298,7 @@ export const GuardLeaderboardView: React.FC<GuardLeaderboardViewProps> = ({ onOp
                     </span>
                   </div>
                   <span className="font-bold font-mono text-slate-900 dark:text-white">
-                    {myOculus.slaCheckpointsScore} / 20 pts
+                    {myAsr.slaCheckpointsScore} / 20 pts
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-500">
@@ -315,7 +316,7 @@ export const GuardLeaderboardView: React.FC<GuardLeaderboardViewProps> = ({ onOp
                     </span>
                   </div>
                   <span className="font-bold font-mono text-slate-900 dark:text-white">
-                    {myOculus.darQualityScore} / 15 pts
+                    {myAsr.darQualityScore} / 15 pts
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-500">
@@ -333,9 +334,9 @@ export const GuardLeaderboardView: React.FC<GuardLeaderboardViewProps> = ({ onOp
                     </span>
                   </div>
                   <span className={`font-bold font-mono ${
-                    myOculus.geofencePenaltyPts > 0 ? 'text-rose-600' : 'text-emerald-600 dark:text-emerald-400'
+                    myAsr.geofencePenaltyPts > 0 ? 'text-rose-600' : 'text-emerald-600 dark:text-emerald-400'
                   }`}>
-                    {myOculus.geofencePenaltyPts > 0 ? `-${myOculus.geofencePenaltyPts} pts penalty` : '0 Breaches (Clean)'}
+                    {myAsr.geofencePenaltyPts > 0 ? `-${myAsr.geofencePenaltyPts} pts penalty` : '0 Breaches (Clean)'}
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-500">
@@ -355,7 +356,7 @@ export const GuardLeaderboardView: React.FC<GuardLeaderboardViewProps> = ({ onOp
                 </h4>
               </div>
               <span className="text-xs font-mono font-bold text-amber-600 dark:text-amber-400">
-                {myOculus.clientExperienceScore} / 40.0 Max
+                {myAsr.clientExperienceScore} / 40.0 Max
               </span>
             </div>
 
@@ -363,16 +364,16 @@ export const GuardLeaderboardView: React.FC<GuardLeaderboardViewProps> = ({ onOp
               <div className="flex items-center justify-between">
                 <div>
                   <span className="font-bold text-slate-900 dark:text-white">
-                    Weighted Star Rating: {myOculus.weightedStarRating.toFixed(2)} ★
+                    Weighted Star Rating: {myAsr.weightedStarRating.toFixed(2)} ★
                   </span>
                   <div className="text-[11px] text-slate-500 mt-0.5">
-                    {myOculus.isDefaultBaseline 
+                    {myAsr.isDefaultBaseline 
                       ? 'Baseline 4.0★ applied (<3 verified client reviews)' 
-                      : `Based on ${myOculus.reviewCount} client evaluations`}
+                      : `Based on ${myAsr.reviewCount} client evaluations`}
                   </div>
                 </div>
                 <div className="text-right font-mono font-bold text-amber-700 dark:text-amber-300">
-                  {myOculus.clientExperienceScore} pts
+                  {myAsr.clientExperienceScore} pts
                 </div>
               </div>
 
@@ -381,17 +382,17 @@ export const GuardLeaderboardView: React.FC<GuardLeaderboardViewProps> = ({ onOp
                 <div className="bg-white/80 dark:bg-slate-900/70 p-1.5 rounded border border-amber-200/50">
                   <div className="font-bold text-slate-900 dark:text-white">3x Weight</div>
                   <div className="text-[9px] text-slate-500">Property Manager</div>
-                  <div className="font-mono text-blue-600 dark:text-blue-400">{myOculus.reviewWeightBreakdown.propertyManagerCount} logged</div>
+                  <div className="font-mono text-blue-600 dark:text-blue-400">{myAsr.reviewWeightBreakdown.propertyManagerCount} logged</div>
                 </div>
                 <div className="bg-white/80 dark:bg-slate-900/70 p-1.5 rounded border border-amber-200/50">
                   <div className="font-bold text-slate-900 dark:text-white">2x Weight</div>
                   <div className="text-[9px] text-slate-500">Supervisor</div>
-                  <div className="font-mono text-purple-600 dark:text-purple-400">{myOculus.reviewWeightBreakdown.supervisorCount} logged</div>
+                  <div className="font-mono text-purple-600 dark:text-purple-400">{myAsr.reviewWeightBreakdown.supervisorCount} logged</div>
                 </div>
                 <div className="bg-white/80 dark:bg-slate-900/70 p-1.5 rounded border border-amber-200/50">
                   <div className="font-bold text-slate-900 dark:text-white">1x Weight</div>
                   <div className="text-[9px] text-slate-500">Resident</div>
-                  <div className="font-mono text-slate-600 dark:text-slate-400">{myOculus.reviewWeightBreakdown.residentCount} logged</div>
+                  <div className="font-mono text-slate-600 dark:text-slate-400">{myAsr.reviewWeightBreakdown.residentCount} logged</div>
                 </div>
               </div>
             </div>
@@ -413,11 +414,11 @@ export const GuardLeaderboardView: React.FC<GuardLeaderboardViewProps> = ({ onOp
             </div>
           </div>
 
-          {/* Actionable Tips to Boost Oculus Score */}
+          {/* Actionable Tips to Boost ASR Score */}
           <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 rounded-xl p-3.5 text-xs space-y-1.5">
             <div className="font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
               <Zap className="w-3.5 h-3.5 text-amber-500" />
-              <span>How to Boost Your Oculus Score:</span>
+              <span>How to Boost Your ASR (Aegis Score & Rank):</span>
             </div>
             <ul className="text-[11px] text-blue-800 dark:text-blue-300 space-y-1 list-disc pl-4">
               <li>Accept open Emergency / Surge shifts for a <strong>+1 pt attendance bonus</strong> (up to 4 pts).</li>
@@ -445,7 +446,7 @@ export const GuardLeaderboardView: React.FC<GuardLeaderboardViewProps> = ({ onOp
           {topFiveGuards.map((guard, index) => {
             const rank = index + 1;
             const isMe = guard.id === activeGuard.id;
-            const breakdown = guard.oculusBreakdown;
+            const breakdown = guard.asrBreakdown || guard.oculusBreakdown;
 
             return (
               <div
@@ -493,7 +494,7 @@ export const GuardLeaderboardView: React.FC<GuardLeaderboardViewProps> = ({ onOp
 
                   <div className="text-right">
                     <div className="text-sm font-black text-slate-900 dark:text-white">
-                      {guard.oculusScore ?? breakdown?.oculusScore ?? 90}
+                      {guard.asrScore ?? guard.oculusScore ?? breakdown?.asrScore ?? breakdown?.oculusScore ?? 90}
                       <span className="text-[10px] text-slate-400 font-normal ml-0.5">pts</span>
                     </div>
                     <div className="text-[10px] text-amber-500 font-bold flex items-center justify-end gap-0.5">

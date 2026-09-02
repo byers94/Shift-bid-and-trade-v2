@@ -112,7 +112,7 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
   ) || (
     activeClockedInShift?.rovingGroup ? getRoverByGroup(activeClockedInShift.rovingGroup) : undefined
   ) || (
-    activeGuard.isRovingGuard ? getRoverByGroup(activeGuard.rovingGroup || 'Alpha Group') : undefined
+    activeGuard.isRovingGuard ? getRoverByGroup(activeGuard.rovingGroup || 'Metro') : undefined
   );
   const activeRoverPlan = assignedRover ? roverPlans[assignedRover.id] : undefined;
   const currentRoverStop = activeRoverPlan && assignedRover 
@@ -751,13 +751,13 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
                     </div>
                     <div>
                       <h3 className="text-xs font-black text-white flex items-center gap-1.5 flex-wrap">
-                        <span>Roving Patrol Circuit: {assignedRover.unitNumber}</span>
+                        <span>Mobile Patrol Circuit: {assignedRover.unitNumber}</span>
                         <span className="text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-500/40 px-2 py-0.2 rounded font-mono font-bold">
                           {assignedRover.rovingGroup}
                         </span>
                       </h3>
                       <p className="text-[11px] text-slate-400 font-mono">
-                        Assigned Officer: <strong className="text-slate-200">{activeGuard.name}</strong> • Rover ID: {assignedRover.id}
+                        Assigned Officer: <strong className="text-slate-200">{activeGuard.name}</strong> • Mobile Unit ID: {assignedRover.id}
                       </p>
                     </div>
                   </div>

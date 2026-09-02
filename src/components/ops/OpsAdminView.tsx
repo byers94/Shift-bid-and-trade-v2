@@ -447,7 +447,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
             </span>
           </button>
 
-          {/* Rover Fleet Route Optimization & Dispatch Sub-Nav Tab */}
+          {/* Mobile Fleet Route Optimization & Dispatch Sub-Nav Tab */}
           <button
             id="tab-rover-routing-btn"
             type="button"
@@ -459,7 +459,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
             }`}
           >
             <Navigation className="w-3.5 h-3.5" />
-            <span>Rover Route Optimization</span>
+            <span>Mobile Route Optimization</span>
             <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${
               activeInterceptions.length > 0
                 ? 'bg-rose-500 text-white animate-pulse'

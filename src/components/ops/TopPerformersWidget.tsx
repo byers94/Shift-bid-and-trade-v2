@@ -46,11 +46,12 @@ import {
   GuardPerformanceStats, 
   SiteFeedbackEntry, 
   ReviewerRoleType, 
+  ASRScoreBreakdown,
   OculusScoreBreakdown,
   GuardCoachingSession
 } from '../../types/shift';
 import { SiteQualificationCircle } from './SiteQualificationCircle';
-import { ROLE_WEIGHTS } from '../../utils/oculusScoring';
+import { ROLE_WEIGHTS } from '../../utils/asrScoring';
 import { CoachingSchedulingCalendarModal } from './CoachingSchedulingCalendarModal';
 import { AdminReviewAlternateProposalModal } from './AdminReviewAlternateProposalModal';
 import { CoachingPerformanceDashboard } from './CoachingPerformanceDashboard';
@@ -156,9 +157,9 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
   }, [rankedGuards, isTieredView, totalGuardsCount]);
 
   // Aggregate Stats
-  const avgOculusScore = useMemo(() => {
+  const avgAsrScore = useMemo(() => {
     if (rankedGuards.length === 0) return 0;
-    const sum = rankedGuards.reduce((acc, g) => acc + (g.oculusScore || 85), 0);
+    const sum = rankedGuards.reduce((acc, g) => acc + (g.asrScore ?? g.oculusScore ?? 85), 0);
     return Math.round(sum / rankedGuards.length);
   }, [rankedGuards]);
 
@@ -287,7 +288,7 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
     rankNumber: number,
     sectionType: 'recognition' | 'middle' | 'coaching'
   ) => {
-    const oculus = guard.oculusBreakdown;
+    const asr = guard.asrBreakdown || guard.oculusBreakdown;
     const isTopThree = rankNumber <= 3;
     const isCoaching = sectionType === 'coaching';
 
@@ -347,8 +348,8 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
               <span className="text-[10px] font-mono px-1.5 py-0.2 bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 rounded">
                 {guard.badgeNumber}
               </span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${getTierBadgeStyle(oculus?.tier)}`}>
-                {oculus?.tierLabel || 'Rank Tier'}
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${getTierBadgeStyle(asr?.tier)}`}>
+                {asr?.tierLabel || 'Rank Tier'}
               </span>
             </div>
 
@@ -362,12 +363,12 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
                 <Clock className="w-3.5 h-3.5" />
                 <span>{guard.onTimeArrivalRate}% On-time</span>
               </span>
-              {oculus?.geofenceBreachesCount && oculus.geofenceBreachesCount > 0 ? (
+              {asr?.geofenceBreachesCount && asr.geofenceBreachesCount > 0 ? (
                 <>
                   <span>•</span>
                   <span className="text-rose-600 font-bold flex items-center gap-0.5 text-[11px]">
                     <AlertTriangle className="w-3 h-3" />
-                    <span>{oculus.geofenceBreachesCount} Geofence {oculus.geofenceBreachesCount === 1 ? 'Breach' : 'Breaches'} (&gt;10m)</span>
+                    <span>{asr.geofenceBreachesCount} Geofence {asr.geofenceBreachesCount === 1 ? 'Breach' : 'Breaches'} (&gt;10m)</span>
                   </span>
                 </>
               ) : null}
@@ -471,13 +472,13 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
           </div>
         </div>
 
-        {/* Middle: Oculus Score & Sub-scores Breakdown */}
+        {/* Middle: ASR (Aegis Score & Rank) & Sub-scores Breakdown */}
         <div className="flex items-center flex-wrap gap-4 py-1 md:py-0 border-t md:border-t-0 border-neutral-100 dark:border-neutral-800 pt-2 md:pt-0">
-          {/* Oculus Total Score Gauge */}
+          {/* ASR Total Score Gauge */}
           <div className="text-center bg-neutral-50 dark:bg-neutral-800/60 px-3 py-1.5 rounded-lg border border-neutral-200/60 dark:border-neutral-700/60">
-            <div className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">Oculus Score</div>
+            <div className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider">ASR Score</div>
             <div className="text-lg font-black text-neutral-900 dark:text-white flex items-baseline justify-center gap-0.5">
-              <span>{guard.oculusScore ?? oculus?.oculusScore ?? 85}</span>
+              <span>{guard.asrScore ?? guard.oculusScore ?? asr?.asrScore ?? asr?.oculusScore ?? 85}</span>
               <span className="text-[10px] font-semibold text-neutral-400">/100</span>
             </div>
           </div>
@@ -487,19 +488,19 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
             <div className="flex items-center justify-between text-[11px]">
               <span className="text-neutral-500 dark:text-neutral-400 font-medium">Reliability</span>
               <span className="font-bold text-neutral-800 dark:text-neutral-200 font-mono">
-                {oculus?.operationalReliabilityScore ?? 50}/60
+                {asr?.operationalReliabilityScore ?? 50}/60
               </span>
             </div>
             <div className="w-24 sm:w-28 bg-neutral-200 dark:bg-neutral-700 h-1.5 rounded-full overflow-hidden">
               <div 
                 className={`h-full rounded-full transition-all ${
-                  (oculus?.operationalReliabilityScore ?? 50) >= 50
+                  (asr?.operationalReliabilityScore ?? 50) >= 50
                     ? 'bg-emerald-500'
-                    : (oculus?.operationalReliabilityScore ?? 50) >= 40
+                    : (asr?.operationalReliabilityScore ?? 50) >= 40
                     ? 'bg-amber-500'
                     : 'bg-rose-500'
                 }`}
-                style={{ width: `${((oculus?.operationalReliabilityScore ?? 50) / 60) * 100}%` }}
+                style={{ width: `${((asr?.operationalReliabilityScore ?? 50) / 60) * 100}%` }}
               />
             </div>
           </div>
@@ -509,18 +510,18 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
             <div className="flex items-center justify-between text-[11px]">
               <span className="text-neutral-500 dark:text-neutral-400 font-medium">Client Exp</span>
               <span className="font-bold text-amber-600 dark:text-amber-400 font-mono">
-                {oculus?.clientExperienceScore ?? 35}/40
+                {asr?.clientExperienceScore ?? 35}/40
               </span>
             </div>
             <div className="w-24 sm:w-28 bg-neutral-200 dark:bg-neutral-700 h-1.5 rounded-full overflow-hidden">
               <div 
                 className="bg-amber-400 h-full rounded-full transition-all"
-                style={{ width: `${((oculus?.clientExperienceScore ?? 35) / 40) * 100}%` }}
+                style={{ width: `${((asr?.clientExperienceScore ?? 35) / 40) * 100}%` }}
               />
             </div>
             <div className="text-[10px] text-neutral-400 flex items-center gap-1">
               <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
-              <span>{guard.ratingAverage.toFixed(1)}★ ({oculus?.reviewCount ?? guard.recentFeedbacks?.length ?? 0})</span>
+              <span>{guard.ratingAverage.toFixed(1)}★ ({asr?.reviewCount ?? guard.recentFeedbacks?.length ?? 0})</span>
             </div>
           </div>
         </div>
@@ -630,7 +631,7 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
 
         <div className="text-xs text-neutral-500 dark:text-neutral-400 font-medium px-2">
           {activeViewMode === 'leaderboard' 
-            ? '100-Pt Oculus composite metric engine' 
+            ? '100-Pt ASR composite metric engine' 
             : 'Visual completion rates per guard & improvement tracking'}
         </div>
       </div>
@@ -660,7 +661,7 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
                   Guard Performance Ranking & Leaderboard
                 </h2>
                 <span className="px-2 py-0.5 text-xs font-black uppercase tracking-wider bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 rounded-md border border-blue-300/40 dark:border-blue-800/50">
-                  100-Pt Oculus Index
+                  100-Pt ASR Index
                 </span>
               </div>
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
@@ -701,11 +702,11 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4">
           <div className="bg-neutral-50 dark:bg-neutral-800/50 p-3 rounded-lg border border-neutral-100 dark:border-neutral-800">
             <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 text-xs mb-1">
-              <span>Avg Oculus Score</span>
+              <span>Avg ASR Score</span>
               <Sparkles className="w-3.5 h-3.5 text-amber-500" />
             </div>
             <div className="text-xl font-black text-neutral-900 dark:text-white flex items-baseline gap-1">
-              <span>{avgOculusScore}</span>
+              <span>{avgAsrScore}</span>
               <span className="text-xs text-neutral-400 font-normal">/ 100</span>
             </div>
             <div className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-0.5 font-medium">
@@ -722,7 +723,7 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
               {topPerformer?.name || 'Officer'}
             </div>
             <div className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5 font-bold">
-              {topPerformer?.oculusScore || 96} Pts • {topPerformer?.topCommendedSite}
+              {topPerformer?.asrScore || topPerformer?.oculusScore || 96} Pts • {topPerformer?.topCommendedSite}
             </div>
           </div>
 
@@ -793,7 +794,7 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
                   : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900'
               }`}
             >
-              Oculus Score
+              ASR Score
             </button>
 
             <button
@@ -937,7 +938,7 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
       )}
 
       {/* ------------------------------------------------------------- */}
-      {/* MODAL 1: Comprehensive Guard Dossier & Oculus Breakdown */}
+      {/* MODAL 1: Comprehensive Guard Dossier & ASR Breakdown */}
       {/* ------------------------------------------------------------- */}
       {selectedGuardForDossier && (
         <div className="fixed inset-0 z-50 bg-neutral-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
@@ -962,8 +963,8 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
                   <span className="font-mono text-xs px-2 py-0.5 bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 rounded">
                     {selectedGuardForDossier.badgeNumber}
                   </span>
-                  <span className={`text-xs px-2 py-0.5 rounded-md ${getTierBadgeStyle(selectedGuardForDossier.oculusBreakdown?.tier)}`}>
-                    {selectedGuardForDossier.oculusBreakdown?.tierLabel || 'Active Tier'}
+                  <span className={`text-xs px-2 py-0.5 rounded-md ${getTierBadgeStyle((selectedGuardForDossier.asrBreakdown || selectedGuardForDossier.oculusBreakdown)?.tier)}`}>
+                    {(selectedGuardForDossier.asrBreakdown || selectedGuardForDossier.oculusBreakdown)?.tierLabel || 'Active Tier'}
                   </span>
                 </div>
 
@@ -974,17 +975,17 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
                 </div>
               </div>
 
-              {/* Oculus Score Big Badge */}
+              {/* ASR Score Big Badge */}
               <div className="text-right bg-neutral-50 dark:bg-neutral-800/80 p-3 rounded-xl border border-neutral-200 dark:border-neutral-700">
-                <div className="text-[10px] uppercase font-bold text-neutral-400">Composite Oculus</div>
+                <div className="text-[10px] uppercase font-bold text-neutral-400">Composite ASR</div>
                 <div className="text-2xl font-black text-neutral-900 dark:text-white">
-                  {selectedGuardForDossier.oculusScore ?? selectedGuardForDossier.oculusBreakdown?.oculusScore ?? 85}
+                  {selectedGuardForDossier.asrScore ?? selectedGuardForDossier.oculusScore ?? (selectedGuardForDossier.asrBreakdown || selectedGuardForDossier.oculusBreakdown)?.asrScore ?? (selectedGuardForDossier.asrBreakdown || selectedGuardForDossier.oculusBreakdown)?.oculusScore ?? 85}
                   <span className="text-xs font-normal text-neutral-400">/100</span>
                 </div>
               </div>
             </div>
 
-            {/* Dossier Body: Oculus Score Pillars Breakdown */}
+            {/* Dossier Body: ASR Score Pillars Breakdown */}
             <div className="py-4 space-y-4">
               {/* Pillar 1: Operational Reliability (Max 60 pts) */}
               <div className="bg-neutral-50 dark:bg-neutral-800/40 p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 space-y-3">
@@ -996,7 +997,7 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
                     </h4>
                   </div>
                   <span className="font-bold font-mono text-xs text-emerald-600 dark:text-emerald-400">
-                    {selectedGuardForDossier.oculusBreakdown?.operationalReliabilityScore ?? 50} / 60.0 Max
+                    {(selectedGuardForDossier.asrBreakdown || selectedGuardForDossier.oculusBreakdown)?.operationalReliabilityScore ?? 50} / 60.0 Max
                   </span>
                 </div>
 
@@ -1004,17 +1005,17 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
                   <div className="bg-white dark:bg-neutral-900 p-2.5 rounded-lg border border-neutral-200/60 dark:border-neutral-700/60">
                     <div className="text-neutral-500 dark:text-neutral-400 text-[11px] mb-0.5">Punctuality & Attendance (Max 25)</div>
                     <div className="font-bold text-neutral-900 dark:text-white font-mono">
-                      {selectedGuardForDossier.oculusBreakdown?.attendancePunctualityScore ?? 22} pts
+                      {(selectedGuardForDossier.asrBreakdown || selectedGuardForDossier.oculusBreakdown)?.attendancePunctualityScore ?? 22} pts
                     </div>
                     <div className="text-[10px] text-neutral-400 mt-1">
-                      On-time: {selectedGuardForDossier.onTimeArrivalRate}% • Surge Bonus: +{selectedGuardForDossier.oculusBreakdown?.emergencyBonusPts ?? 0}
+                      On-time: {selectedGuardForDossier.onTimeArrivalRate}% • Surge Bonus: +{(selectedGuardForDossier.asrBreakdown || selectedGuardForDossier.oculusBreakdown)?.emergencyBonusPts ?? 0}
                     </div>
                   </div>
 
                   <div className="bg-white dark:bg-neutral-900 p-2.5 rounded-lg border border-neutral-200/60 dark:border-neutral-700/60">
                     <div className="text-neutral-500 dark:text-neutral-400 text-[11px] mb-0.5">SLA Checkpoints & Timed Sweeps (Max 20)</div>
                     <div className="font-bold text-neutral-900 dark:text-white font-mono">
-                      {selectedGuardForDossier.oculusBreakdown?.slaCheckpointsScore ?? 18} pts
+                      {(selectedGuardForDossier.asrBreakdown || selectedGuardForDossier.oculusBreakdown)?.slaCheckpointsScore ?? 18} pts
                     </div>
                     <div className="text-[10px] text-neutral-400 mt-1">
                       Circuit SLA Compliance: {selectedGuardForDossier.slaCheckpointsCompletedRate ?? 90}%
@@ -1024,7 +1025,7 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
                   <div className="bg-white dark:bg-neutral-900 p-2.5 rounded-lg border border-neutral-200/60 dark:border-neutral-700/60">
                     <div className="text-neutral-500 dark:text-neutral-400 text-[11px] mb-0.5">DAR Logbook Quality (Max 15)</div>
                     <div className="font-bold text-neutral-900 dark:text-white font-mono">
-                      {selectedGuardForDossier.oculusBreakdown?.darQualityScore ?? 14} pts
+                      {(selectedGuardForDossier.asrBreakdown || selectedGuardForDossier.oculusBreakdown)?.darQualityScore ?? 14} pts
                     </div>
                     <div className="text-[10px] text-neutral-400 mt-1">
                       Photo Proof & Audit Rigor: {selectedGuardForDossier.darQualityRate ?? 88}%
@@ -1034,9 +1035,9 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
                   <div className="bg-white dark:bg-neutral-900 p-2.5 rounded-lg border border-neutral-200/60 dark:border-neutral-700/60">
                     <div className="text-neutral-500 dark:text-neutral-400 text-[11px] mb-0.5">Geofence Post Integrity (-3 pts/breach)</div>
                     <div className={`font-bold font-mono ${
-                      (selectedGuardForDossier.oculusBreakdown?.geofenceBreachesCount || 0) > 0 ? 'text-rose-600' : 'text-emerald-600'
+                      ((selectedGuardForDossier.asrBreakdown || selectedGuardForDossier.oculusBreakdown)?.geofenceBreachesCount || 0) > 0 ? 'text-rose-600' : 'text-emerald-600'
                     }`}>
-                      {selectedGuardForDossier.oculusBreakdown?.geofenceBreachesCount || 0} Breaches (-{selectedGuardForDossier.oculusBreakdown?.geofencePenaltyPts || 0} pts)
+                      {(selectedGuardForDossier.asrBreakdown || selectedGuardForDossier.oculusBreakdown)?.geofenceBreachesCount || 0} Breaches (-{(selectedGuardForDossier.asrBreakdown || selectedGuardForDossier.oculusBreakdown)?.geofencePenaltyPts || 0} pts)
                     </div>
                     <div className="text-[10px] text-neutral-400 mt-1">
                       Perimeter departures &gt;10m from designated post
@@ -1055,17 +1056,17 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
                     </h4>
                   </div>
                   <span className="font-bold font-mono text-xs text-amber-600 dark:text-amber-400">
-                    {selectedGuardForDossier.oculusBreakdown?.clientExperienceScore ?? 35} / 40.0 Max
+                    {(selectedGuardForDossier.asrBreakdown || selectedGuardForDossier.oculusBreakdown)?.clientExperienceScore ?? 35} / 40.0 Max
                   </span>
                 </div>
 
                 <div className="p-3 bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200/60 dark:border-neutral-700/60 text-xs">
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-bold text-neutral-900 dark:text-white">
-                      Weighted Star Rating: {selectedGuardForDossier.oculusBreakdown?.weightedStarRating.toFixed(2) ?? selectedGuardForDossier.ratingAverage.toFixed(2)} ★
+                      Weighted Star Rating: {(selectedGuardForDossier.asrBreakdown || selectedGuardForDossier.oculusBreakdown)?.weightedStarRating.toFixed(2) ?? selectedGuardForDossier.ratingAverage.toFixed(2)} ★
                     </span>
                     <span className="text-[11px] text-neutral-400 font-mono">
-                      {selectedGuardForDossier.oculusBreakdown?.isDefaultBaseline ? '4.0★ Prior Baseline (<3 reviews)' : 'Direct Weighted Reviews'}
+                      {(selectedGuardForDossier.asrBreakdown || selectedGuardForDossier.oculusBreakdown)?.isDefaultBaseline ? '4.0★ Prior Baseline (<3 reviews)' : 'Direct Weighted Reviews'}
                     </span>
                   </div>
 
@@ -1074,19 +1075,19 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
                     <div className="p-1.5 bg-neutral-50 dark:bg-neutral-800 rounded">
                       <div className="font-bold text-neutral-900 dark:text-white">Property Manager (3x)</div>
                       <div className="text-blue-600 dark:text-blue-400 font-mono">
-                        {selectedGuardForDossier.oculusBreakdown?.reviewWeightBreakdown.propertyManagerCount ?? 0} Reviews
+                        {(selectedGuardForDossier.asrBreakdown || selectedGuardForDossier.oculusBreakdown)?.reviewWeightBreakdown.propertyManagerCount ?? 0} Reviews
                       </div>
                     </div>
                     <div className="p-1.5 bg-neutral-50 dark:bg-neutral-800 rounded">
                       <div className="font-bold text-neutral-900 dark:text-white">Supervisor (2x)</div>
                       <div className="text-purple-600 dark:text-purple-400 font-mono">
-                        {selectedGuardForDossier.oculusBreakdown?.reviewWeightBreakdown.supervisorCount ?? 0} Reviews
+                        {(selectedGuardForDossier.asrBreakdown || selectedGuardForDossier.oculusBreakdown)?.reviewWeightBreakdown.supervisorCount ?? 0} Reviews
                       </div>
                     </div>
                     <div className="p-1.5 bg-neutral-50 dark:bg-neutral-800 rounded">
                       <div className="font-bold text-neutral-900 dark:text-white">Resident / Tenant (1x)</div>
                       <div className="text-slate-600 dark:text-slate-400 font-mono">
-                        {selectedGuardForDossier.oculusBreakdown?.reviewWeightBreakdown.residentCount ?? 0} Reviews
+                        {(selectedGuardForDossier.asrBreakdown || selectedGuardForDossier.oculusBreakdown)?.reviewWeightBreakdown.residentCount ?? 0} Reviews
                       </div>
                     </div>
                   </div>
@@ -1201,7 +1202,7 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
               <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 rounded-xl space-y-1">
                 <div className="font-bold text-rose-900 dark:text-rose-200 flex items-center justify-between">
                   <span>Geofence Post Breaches (&gt;10m Departure)</span>
-                  <span className="font-mono">{incidentLogGuard.oculusBreakdown?.geofenceBreachesCount || 0} Total</span>
+                  <span className="font-mono">{(incidentLogGuard.asrBreakdown || incidentLogGuard.oculusBreakdown)?.geofenceBreachesCount || 0} Total</span>
                 </div>
                 <p className="text-[11px] text-rose-700 dark:text-rose-400">
                   Each unexcused breach deducts -3 points from the Operational Reliability score.
@@ -1275,7 +1276,7 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
                   Log Verified Site Feedback
                 </h3>
                 <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                  Reviews are weighted in the Oculus Client Experience score (Max 40 pts).
+                  Reviews are weighted in the ASR Client Experience score (Max 40 pts).
                 </p>
               </div>
             </div>
@@ -1301,7 +1302,7 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
               {/* Reviewer Role Multiplier Selector */}
               <div>
                 <label className="block text-xs font-bold text-neutral-700 dark:text-neutral-300 mb-1">
-                  Reviewer Role & Oculus Weight Multiplier
+                  Reviewer Role & ASR Weight Multiplier
                 </label>
                 <select
                   value={feedbackReviewerRole}

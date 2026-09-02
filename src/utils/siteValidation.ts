@@ -162,13 +162,13 @@ export function validateSite(site: Partial<SiteProfile>): SiteValidationResult {
     });
   }
 
-  // 4. Roving Service Classification Validation
+  // 4. Mobile Patrol Service Classification Validation
   if (site.serviceType === 'roving') {
     if (!site.rovingGroup) {
       issues.push({
         field: 'rovingGroup',
-        label: 'Roving Property Group Assignment',
-        reason: 'Roving property must be assigned to an operational patrol group (Alpha, Bravo, Charlie, Delta, Echo, or Foxtrot).',
+        label: 'Mobile Patrol Sector Assignment',
+        reason: 'Mobile Patrol property must be assigned to an operational patrol sector (Metro, North West, North East, South West, or South East).',
         severity: 'error',
         section: 'general'
       });
@@ -177,7 +177,7 @@ export function validateSite(site: Partial<SiteProfile>): SiteValidationResult {
       issues.push({
         field: 'patrolFrequency',
         label: 'Patrol Sweep Frequency',
-        reason: 'Roving property should specify required patrol frequency (e.g. "Hourly Sweep", "3x Per Shift").',
+        reason: 'Mobile Patrol property should specify required patrol frequency (e.g. "Hourly Sweep", "3x Per Shift").',
         severity: 'warning',
         section: 'orders'
       });

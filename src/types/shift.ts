@@ -385,8 +385,9 @@ export interface SiteFeedbackEntry {
   isVerifiedClient: boolean;
 }
 
-export interface OculusScoreBreakdown {
-  oculusScore: number; // 0 - 100
+export interface ASRScoreBreakdown {
+  asrScore: number; // 0 - 100
+  oculusScore?: number; // alias for backwards compatibility
   tier: 'diamond' | 'gold' | 'silver' | 'bronze' | 'coaching';
   tierLabel: string;
   
@@ -411,6 +412,8 @@ export interface OculusScoreBreakdown {
     residentCount: number;
   };
 }
+
+export type OculusScoreBreakdown = ASRScoreBreakdown;
 
 export type CoachingSessionStatus = 
   | 'pending_guard_action' 
@@ -479,7 +482,8 @@ export interface GuardCoachingMetrics {
   cancelledCount: number;
   completionRate: number; // percentage e.g. 85.7
   avgPerformanceDelta: number; // e.g. +8.5
-  currentOculusScore: number;
+  currentAsrScore: number;
+  currentOculusScore?: number;
   currentOnTimeRate: number;
   latestSessionDate?: string;
   latestTopic?: string;
@@ -492,7 +496,8 @@ export interface CoachingTimelineDataPoint {
   assignedSessions: number;
   completedSessions: number;
   completionRatePct: number;
-  avgOculusScore: number;
+  avgAsrScore: number;
+  avgOculusScore?: number;
   avgOnTimeArrivalRate: number;
   geofenceComplianceRate: number;
 }
@@ -504,7 +509,8 @@ export interface GuardCoachingHistoricalTrend {
     month: string;
     completed: number;
     completionRate: number;
-    oculusScore: number;
+    asrScore: number;
+    oculusScore?: number;
     onTimeRate: number;
   }[];
 }
@@ -521,9 +527,11 @@ export interface GuardPerformanceStats {
   topCommendedSite: string;
   recentFeedbacks?: SiteFeedbackEntry[];
   
-  // Oculus 100-Pt Composite Scoring
-  oculusScore?: number; // 0 - 100
-  oculusBreakdown?: OculusScoreBreakdown;
+  // ASR (Aegis Score & Rank) 100-Pt Composite Scoring
+  asrScore?: number; // 0 - 100
+  asrBreakdown?: ASRScoreBreakdown;
+  oculusScore?: number; // 0 - 100 (alias)
+  oculusBreakdown?: ASRScoreBreakdown; // alias
   geofenceBreachesCount?: number;
   lateCallOffsCount?: number;
   unexcusedLateCount?: number;
@@ -559,20 +567,23 @@ export type SiteSecurityTier =
 export type SiteServiceType = 'dedicated' | 'roving';
 
 export type RovingGroup = 
-  | 'Alpha Group' 
-  | 'Bravo Group' 
-  | 'Charlie Group' 
-  | 'Delta Group' 
-  | 'Echo Group' 
-  | 'Foxtrot Group';
+  | 'Metro' 
+  | 'North West' 
+  | 'North East' 
+  | 'South West' 
+  | 'South East'
+  | 'Mobile Metro' 
+  | 'Mobile Northeast' 
+  | 'Mobile Northwest' 
+  | 'Mobile Southeast' 
+  | 'Mobile Southwest';
 
 export const ROVING_GROUPS: RovingGroup[] = [
-  'Alpha Group',
-  'Bravo Group',
-  'Charlie Group',
-  'Delta Group',
-  'Echo Group',
-  'Foxtrot Group'
+  'Metro',
+  'North West',
+  'North East',
+  'South West',
+  'South East'
 ];
 
 export interface RovingGroupConfig {
@@ -587,11 +598,11 @@ export interface RovingGroupConfig {
   description: string;
 }
 
-export const ROVING_GROUP_CONFIGS: Record<RovingGroup, RovingGroupConfig> = {
-  'Alpha Group': {
-    id: 'Alpha Group',
-    name: 'Alpha Group',
-    shortCode: 'GRP-A',
+export const ROVING_GROUP_CONFIGS: Record<string, RovingGroupConfig> = {
+  'Metro': {
+    id: 'Metro',
+    name: 'Metro Sector',
+    shortCode: 'MPU-METRO',
     color: 'blue',
     badgeBg: 'bg-blue-100 dark:bg-blue-950/70',
     badgeText: 'text-blue-700 dark:text-blue-300',
@@ -599,10 +610,10 @@ export const ROVING_GROUP_CONFIGS: Record<RovingGroup, RovingGroupConfig> = {
     zone: 'Downtown Core & Financial District',
     description: 'High-density commercial towers, financial hubs, and plaza access checkpoints.'
   },
-  'Bravo Group': {
-    id: 'Bravo Group',
-    name: 'Bravo Group',
-    shortCode: 'GRP-B',
+  'North West': {
+    id: 'North West',
+    name: 'North West Sector',
+    shortCode: 'MPU-NW',
     color: 'cyan',
     badgeBg: 'bg-cyan-100 dark:bg-cyan-950/70',
     badgeText: 'text-cyan-700 dark:text-cyan-300',
@@ -610,10 +621,10 @@ export const ROVING_GROUP_CONFIGS: Record<RovingGroup, RovingGroupConfig> = {
     zone: 'Waterfront & Maritime Commercial Strip',
     description: 'Marina boardwalks, waterfront piers, passenger terminals, and seaside retail properties.'
   },
-  'Charlie Group': {
-    id: 'Charlie Group',
-    name: 'Charlie Group',
-    shortCode: 'GRP-C',
+  'North East': {
+    id: 'North East',
+    name: 'North East Sector',
+    shortCode: 'MPU-NE',
     color: 'emerald',
     badgeBg: 'bg-emerald-100 dark:bg-emerald-950/70',
     badgeText: 'text-emerald-700 dark:text-emerald-300',
@@ -621,21 +632,21 @@ export const ROVING_GROUP_CONFIGS: Record<RovingGroup, RovingGroupConfig> = {
     zone: 'Eastside Tech Parks & Innovation Campuses',
     description: 'Tech development offices, research buildings, and corporate business parks.'
   },
-  'Delta Group': {
-    id: 'Delta Group',
-    name: 'Delta Group',
-    shortCode: 'GRP-D',
+  'South West': {
+    id: 'South West',
+    name: 'South West Sector',
+    shortCode: 'MPU-SW',
     color: 'amber',
     badgeBg: 'bg-amber-100 dark:bg-amber-950/70',
     badgeText: 'text-amber-800 dark:text-amber-300',
     borderColor: 'border-amber-300 dark:border-amber-700',
-    zone: 'North Urban Retail Centers & Commercial Plazas',
-    description: 'Shopping centers, outdoor retail strips, dining pavilions, and parking complexes.'
+    zone: 'Southwest Urban Retail & Civic Centers',
+    description: 'Shopping centers, outdoor retail strips, dining pavilions, transit hubs, and municipal venues.'
   },
-  'Echo Group': {
-    id: 'Echo Group',
-    name: 'Echo Group',
-    shortCode: 'GRP-E',
+  'South East': {
+    id: 'South East',
+    name: 'South East Sector',
+    shortCode: 'MPU-SE',
     color: 'rose',
     badgeBg: 'bg-rose-100 dark:bg-rose-950/70',
     badgeText: 'text-rose-700 dark:text-rose-300',
@@ -643,16 +654,61 @@ export const ROVING_GROUP_CONFIGS: Record<RovingGroup, RovingGroupConfig> = {
     zone: 'South Industrial Logistics & Freight Corridors',
     description: 'Distribution warehouses, shipping yards, logistics terminals, and multimodal storage.'
   },
-  'Foxtrot Group': {
-    id: 'Foxtrot Group',
-    name: 'Foxtrot Group',
-    shortCode: 'GRP-F',
-    color: 'purple',
-    badgeBg: 'bg-purple-100 dark:bg-purple-950/70',
-    badgeText: 'text-purple-700 dark:text-purple-300',
-    borderColor: 'border-purple-300 dark:border-purple-700',
-    zone: 'West Metro Transit Hubs & Civic Venues',
-    description: 'Light rail plazas, transit transit centers, event concourses, and municipal buildings.'
+  // Backward compatibility mappings
+  'Mobile Metro': {
+    id: 'Metro',
+    name: 'Metro Sector',
+    shortCode: 'MPU-METRO',
+    color: 'blue',
+    badgeBg: 'bg-blue-100 dark:bg-blue-950/70',
+    badgeText: 'text-blue-700 dark:text-blue-300',
+    borderColor: 'border-blue-300 dark:border-blue-700',
+    zone: 'Downtown Core & Financial District',
+    description: 'High-density commercial towers, financial hubs, and plaza access checkpoints.'
+  },
+  'Mobile Northwest': {
+    id: 'North West',
+    name: 'North West Sector',
+    shortCode: 'MPU-NW',
+    color: 'cyan',
+    badgeBg: 'bg-cyan-100 dark:bg-cyan-950/70',
+    badgeText: 'text-cyan-700 dark:text-cyan-300',
+    borderColor: 'border-cyan-300 dark:border-cyan-700',
+    zone: 'Waterfront & Maritime Commercial Strip',
+    description: 'Marina boardwalks, waterfront piers, passenger terminals, and seaside retail properties.'
+  },
+  'Mobile Northeast': {
+    id: 'North East',
+    name: 'North East Sector',
+    shortCode: 'MPU-NE',
+    color: 'emerald',
+    badgeBg: 'bg-emerald-100 dark:bg-emerald-950/70',
+    badgeText: 'text-emerald-700 dark:text-emerald-300',
+    borderColor: 'border-emerald-300 dark:border-emerald-700',
+    zone: 'Eastside Tech Parks & Innovation Campuses',
+    description: 'Tech development offices, research buildings, and corporate business parks.'
+  },
+  'Mobile Southwest': {
+    id: 'South West',
+    name: 'South West Sector',
+    shortCode: 'MPU-SW',
+    color: 'amber',
+    badgeBg: 'bg-amber-100 dark:bg-amber-950/70',
+    badgeText: 'text-amber-800 dark:text-amber-300',
+    borderColor: 'border-amber-300 dark:border-amber-700',
+    zone: 'Southwest Urban Retail & Civic Centers',
+    description: 'Shopping centers, outdoor retail strips, dining pavilions, transit hubs, and municipal venues.'
+  },
+  'Mobile Southeast': {
+    id: 'South East',
+    name: 'South East Sector',
+    shortCode: 'MPU-SE',
+    color: 'rose',
+    badgeBg: 'bg-rose-100 dark:bg-rose-950/70',
+    badgeText: 'text-rose-700 dark:text-rose-300',
+    borderColor: 'border-rose-300 dark:border-rose-700',
+    zone: 'South Industrial Logistics & Freight Corridors',
+    description: 'Distribution warehouses, shipping yards, logistics terminals, and multimodal storage.'
   }
 };
 
@@ -697,7 +753,7 @@ export interface SiteProfile {
 
   // Service Type & Roving Property Group
   serviceType?: SiteServiceType; // 'dedicated' (guard remains on-site) | 'roving' (serviced by roving patrol guard)
-  rovingGroup?: RovingGroup; // e.g. 'Alpha Group', 'Bravo Group', 'Charlie Group', 'Delta Group', 'Echo Group', 'Foxtrot Group'
+  rovingGroup?: RovingGroup; // e.g. 'Mobile Metro', 'Mobile Northeast', 'Mobile Northwest', 'Mobile Southeast', 'Mobile Southwest'
   rovingNotes?: string; // Specific patrol instructions, keybox code, checkpoint sequence, or lockup orders
   routeOrder?: number; // Sequence order within the roving group patrol route (1, 2, 3...)
   patrolFrequency?: string; // e.g. "3x Per Shift", "Hourly Sweep", "Opening/Closing Check", "2-Hour Loop"

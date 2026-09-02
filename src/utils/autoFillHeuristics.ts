@@ -285,7 +285,7 @@ export function evaluateGuardForShift(
 
       if (siteProfile?.serviceType === 'roving' && (guard.isRovingGuard || guard.availability?.preferredServiceTypes?.includes('roving'))) {
         score += 15;
-        reasons.push(`🚗 Certified Roving Patrol Officer (${siteProfile.rovingGroup || 'Mobile Unit'})`);
+        reasons.push(`🚗 Certified Mobile Patrol Officer (${siteProfile.rovingGroup || 'Mobile Unit'})`);
       }
     } catch {
       // Date parse fallback
@@ -526,7 +526,7 @@ export function generateSetScheduleAiSuggestions(
 
       if (setSchedule.serviceType === 'roving' && (guard.isRovingGuard || guard.availability?.preferredServiceTypes?.includes('roving'))) {
         score += 15;
-        reasons.push(`Rover specialist (${setSchedule.rovingGroup || 'Mobile Unit'})`);
+        reasons.push(`Mobile Patrol specialist (${setSchedule.rovingGroup || 'Mobile Unit'})`);
       }
 
       // 5. Total Weekly Hours Capacity

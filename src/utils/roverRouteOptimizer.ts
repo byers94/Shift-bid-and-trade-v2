@@ -149,7 +149,7 @@ export function buildGeoClusterSectors(sites: SiteProfile[]): GeoClusterSector[]
   const groupsMap = new Map<RovingGroup, SiteProfile[]>();
 
   rovingSites.forEach(site => {
-    const grp = site.rovingGroup || 'Alpha Group';
+    const grp = site.rovingGroup || 'Metro';
     if (!groupsMap.has(grp)) groupsMap.set(grp, []);
     groupsMap.get(grp)!.push(site);
   });

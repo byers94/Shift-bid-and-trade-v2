@@ -836,7 +836,7 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                   >
                     <option value="foot_patrol">Foot Patrol / Perimeter Sweep</option>
                     <option value="interior_inspection">Interior Building Inspection</option>
-                    <option value="vehicle_patrol">Vehicle / Rover Mobile Patrol</option>
+                    <option value="vehicle_patrol">Vehicle / Mobile Patrol</option>
                     <option value="access_checkpoint_check">Access Checkpoint & Gate Scan</option>
                     <option value="fixed_post_scan">Fixed Post Area Scan</option>
                     <option value="common_area_sweep">Courtyard / Common Area Sweep</option>

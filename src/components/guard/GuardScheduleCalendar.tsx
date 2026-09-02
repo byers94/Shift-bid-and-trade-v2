@@ -670,7 +670,7 @@ export const GuardScheduleCalendar: React.FC<GuardScheduleCalendarProps> = ({
                       {shift.isRovingShift && (
                         <span className="text-xs px-2 py-0.5 rounded-md bg-cyan-100 dark:bg-cyan-950 text-cyan-800 dark:text-cyan-300 font-semibold flex items-center gap-1">
                           <Car className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
-                          <span>Rover Circuit</span>
+                          <span>MPU Circuit</span>
                         </span>
                       )}
                     </div>
@@ -1094,15 +1094,15 @@ export const GuardScheduleCalendar: React.FC<GuardScheduleCalendarProps> = ({
                 </div>
               )}
 
-              {/* Roving circuit specifics */}
+              {/* Mobile Patrol circuit specifics */}
               {selectedShiftForDetail.isRovingShift && (
                 <div className="p-3 rounded-xl bg-cyan-50/60 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-800 text-cyan-900 dark:text-cyan-200 space-y-1">
                   <div className="text-[11px] font-bold uppercase flex items-center gap-1">
                     <Car className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
-                    <span>Roving Patrol Circuit</span>
+                    <span>Mobile Patrol Circuit</span>
                   </div>
                   <p className="text-xs">
-                    Assigned to Rover Unit ({selectedShiftForDetail.rovingGroup || 'Alpha Group'}). Follow mobile telemetry and complete digital checkpoints.
+                    Assigned to Mobile Patrol Unit ({selectedShiftForDetail.rovingGroup || 'Metro'}). Follow mobile telemetry and complete digital checkpoints.
                   </p>
                 </div>
               )}

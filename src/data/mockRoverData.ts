@@ -3,13 +3,13 @@ import { RoverVehicle, RoverTelemetryLog } from '../types/roverRoute';
 export const INITIAL_ROVERS: RoverVehicle[] = [
   {
     id: 'rover-1',
-    unitNumber: 'ROVER-01',
-    callSign: 'MOBILE-ALPHA-1',
+    unitNumber: 'MPU-1 (Metro)',
+    callSign: 'MPU-METRO-1',
     assignedGuardId: 'guard-1',
     assignedGuardName: 'Marcus Vance',
     assignedGuardBadge: 'G-1082',
     assignedGuardPhone: '+1 (555) 206-8812',
-    rovingGroup: 'Alpha Group',
+    rovingGroup: 'Metro',
     status: 'dwelling',
     currentCoords: {
       latitude: 47.6045,
@@ -31,13 +31,13 @@ export const INITIAL_ROVERS: RoverVehicle[] = [
   },
   {
     id: 'rover-2',
-    unitNumber: 'ROVER-02',
-    callSign: 'MOBILE-BRAVO-2',
+    unitNumber: 'MPU-2 (North West)',
+    callSign: 'MPU-NW-2',
     assignedGuardId: 'guard-2',
     assignedGuardName: 'Carlos Mendez',
     assignedGuardBadge: 'G-2041',
     assignedGuardPhone: '+1 (555) 206-9934',
-    rovingGroup: 'Bravo Group',
+    rovingGroup: 'North West',
     status: 'patrolling',
     currentCoords: {
       latitude: 47.6117,
@@ -59,13 +59,13 @@ export const INITIAL_ROVERS: RoverVehicle[] = [
   },
   {
     id: 'rover-3',
-    unitNumber: 'ROVER-03',
-    callSign: 'MOBILE-CHARLIE-3',
+    unitNumber: 'MPU-3 (North East)',
+    callSign: 'MPU-NE-3',
     assignedGuardId: 'guard-3',
     assignedGuardName: 'Sarah Jenkins',
     assignedGuardBadge: 'G-3099',
     assignedGuardPhone: '+1 (555) 425-7711',
-    rovingGroup: 'Charlie Group',
+    rovingGroup: 'North East',
     status: 'patrolling',
     currentCoords: {
       latitude: 47.6150,
@@ -87,13 +87,13 @@ export const INITIAL_ROVERS: RoverVehicle[] = [
   },
   {
     id: 'rover-4',
-    unitNumber: 'ROVER-04',
-    callSign: 'MOBILE-DELTA-4',
+    unitNumber: 'MPU-4 (South West)',
+    callSign: 'MPU-SW-4',
     assignedGuardId: 'guard-4',
     assignedGuardName: 'Michael Chang',
     assignedGuardBadge: 'G-4412',
     assignedGuardPhone: '+1 (555) 206-4488',
-    rovingGroup: 'Delta Group',
+    rovingGroup: 'South West',
     status: 'dwelling',
     currentCoords: {
       latitude: 47.6125,
@@ -115,13 +115,13 @@ export const INITIAL_ROVERS: RoverVehicle[] = [
   },
   {
     id: 'rover-5',
-    unitNumber: 'ROVER-05',
-    callSign: 'MOBILE-ECHO-5',
+    unitNumber: 'MPU-5 (South East)',
+    callSign: 'MPU-SE-5',
     assignedGuardId: 'guard-5',
     assignedGuardName: 'David Ross',
     assignedGuardBadge: 'G-5103',
     assignedGuardPhone: '+1 (555) 206-6644',
-    rovingGroup: 'Echo Group',
+    rovingGroup: 'South East',
     status: 'patrolling',
     currentCoords: {
       latitude: 47.5600,
@@ -140,34 +140,6 @@ export const INITIAL_ROVERS: RoverVehicle[] = [
     lastTelemetryTimestamp: new Date().toISOString(),
     currentDwellSeconds: 0,
     isInsideGeofence: false
-  },
-  {
-    id: 'rover-6',
-    unitNumber: 'ROVER-06',
-    callSign: 'MOBILE-FOXTROT-6',
-    assignedGuardId: 'guard-6',
-    assignedGuardName: 'Alex Rivera',
-    assignedGuardBadge: 'G-6019',
-    assignedGuardPhone: '+1 (555) 206-3390',
-    rovingGroup: 'Foxtrot Group',
-    status: 'idle',
-    currentCoords: {
-      latitude: 47.6075,
-      longitude: -122.3250,
-      accuracy: 6,
-      heading: 45,
-      speedKmh: 0
-    },
-    currentSiteId: 'site-3',
-    currentSiteName: 'West Medical Center - Emergency Dept',
-    currentStopIndex: 0,
-    batteryLevelPct: 95,
-    fuelLevelPct: 90,
-    vehicleModel: 'Ford F-150 Responder 4x4',
-    licensePlate: 'SEC-9920',
-    lastTelemetryTimestamp: new Date().toISOString(),
-    currentDwellSeconds: 0,
-    isInsideGeofence: false
   }
 ];
 
@@ -175,7 +147,7 @@ export const INITIAL_TELEMETRY_LOGS: RoverTelemetryLog[] = [
   {
     id: 'tel-1',
     roverId: 'rover-1',
-    roverUnit: 'ROVER-01',
+    roverUnit: 'MPU-1 (Metro)',
     guardName: 'Marcus Vance',
     timestamp: new Date(Date.now() - 8 * 60 * 1000).toISOString(),
     eventType: 'GEOFENCE_AUTO_ARRIVAL',
@@ -190,7 +162,7 @@ export const INITIAL_TELEMETRY_LOGS: RoverTelemetryLog[] = [
   {
     id: 'tel-2',
     roverId: 'rover-1',
-    roverUnit: 'ROVER-01',
+    roverUnit: 'MPU-1 (Metro)',
     guardName: 'Marcus Vance',
     timestamp: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
     eventType: 'DWELL_SLA_MET',
@@ -204,7 +176,7 @@ export const INITIAL_TELEMETRY_LOGS: RoverTelemetryLog[] = [
   {
     id: 'tel-3',
     roverId: 'rover-4',
-    roverUnit: 'ROVER-04',
+    roverUnit: 'MPU-4 (South West)',
     guardName: 'Michael Chang',
     timestamp: new Date(Date.now() - 11 * 60 * 1000).toISOString(),
     eventType: 'GEOFENCE_AUTO_ARRIVAL',
@@ -219,7 +191,7 @@ export const INITIAL_TELEMETRY_LOGS: RoverTelemetryLog[] = [
   {
     id: 'tel-4',
     roverId: 'rover-4',
-    roverUnit: 'ROVER-04',
+    roverUnit: 'MPU-4 (South West)',
     guardName: 'Michael Chang',
     timestamp: new Date(Date.now() - 1 * 60 * 1000).toISOString(),
     eventType: 'DWELL_SLA_MET',
@@ -233,7 +205,7 @@ export const INITIAL_TELEMETRY_LOGS: RoverTelemetryLog[] = [
   {
     id: 'tel-5',
     roverId: 'rover-2',
-    roverUnit: 'ROVER-02',
+    roverUnit: 'MPU-2 (North West)',
     guardName: 'Carlos Mendez',
     timestamp: new Date(Date.now() - 18 * 60 * 1000).toISOString(),
     eventType: 'STOCHASTIC_JITTER_APPLIED',

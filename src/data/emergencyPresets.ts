@@ -53,7 +53,7 @@ export const EMERGENCY_PRESETS: EmergencyPreset[] = [
     severity: 'warning',
     alertType: 'perimeter_breach',
     title: 'ALERT: PERIMETER SECURITY BREACH DETECTED',
-    message: 'Unauthorized intrusion detected along facility perimeter fence. Roving patrol mobile units dispatched. Static checkpoint guards verify credentials of all personnel and hold non-authorized vehicles at gates.',
+    message: 'Unauthorized intrusion detected along facility perimeter fence. Mobile Patrol units dispatched. Static checkpoint guards verify credentials of all personnel and hold non-authorized vehicles at gates.',
     suggestedAction: 'Inspect surrounding sector, challenge unknown individuals, verify gate locks.',
     requireAcknowledgment: true
   },
@@ -64,7 +64,7 @@ export const EMERGENCY_PRESETS: EmergencyPreset[] = [
     severity: 'warning',
     alertType: 'severe_weather',
     title: 'WEATHER ADVISORY & CRITICAL POWER OUTAGE',
-    message: 'Severe storm warning and localized power grid failure. Switch to battery-backed auxiliary flashlights. Roving units verify generator room status, water ingress points, and maintain manual sign-in logs.',
+    message: 'Severe storm warning and localized power grid failure. Switch to battery-backed auxiliary flashlights. Mobile Patrol units verify generator room status, water ingress points, and maintain manual sign-in logs.',
     suggestedAction: 'Verify backup generator operation and secure exterior storm doors.',
     requireAcknowledgment: true
   },

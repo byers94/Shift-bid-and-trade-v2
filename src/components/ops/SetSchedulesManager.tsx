@@ -87,7 +87,7 @@ export const SetSchedulesManager: React.FC<SetSchedulesManagerProps> = ({ onOpen
   const [formName, setFormName] = useState('');
   const [formScheduleType, setFormScheduleType] = useState<'static' | 'roving'>('static');
   const [formSiteName, setFormSiteName] = useState(sitesList[0]?.name || 'Port Authority - Pier 7');
-  const [formRovingGroup, setFormRovingGroup] = useState<RovingGroup>('Alpha Group');
+  const [formRovingGroup, setFormRovingGroup] = useState<RovingGroup>('Metro');
   const [formSelectedDays, setFormSelectedDays] = useState<DayOfWeek[]>([1, 2, 3, 4, 5]); // Mon-Fri
   const [formStartTime, setFormStartTime] = useState('08:00');
   const [formEndTime, setFormEndTime] = useState('16:00');
@@ -129,7 +129,7 @@ export const SetSchedulesManager: React.FC<SetSchedulesManagerProps> = ({ onOpen
     setFormName('');
     setFormScheduleType('static');
     setFormSiteName(sitesList[0]?.name || 'Port Authority - Pier 7');
-    setFormRovingGroup('Alpha Group');
+    setFormRovingGroup('Metro');
     setFormSelectedDays([1, 2, 3, 4, 5]);
     setFormStartTime('08:00');
     setFormEndTime('16:00');
@@ -146,7 +146,7 @@ export const SetSchedulesManager: React.FC<SetSchedulesManagerProps> = ({ onOpen
     setFormName(schedule.name || schedule.title || '');
     setFormScheduleType(schedule.isRoving ? 'roving' : 'static');
     setFormSiteName(schedule.siteName);
-    setFormRovingGroup(schedule.rovingGroup || 'Alpha Group');
+    setFormRovingGroup(schedule.rovingGroup || 'Metro');
     setFormSelectedDays(schedule.daysOfWeek);
     setFormStartTime(schedule.startTime);
     setFormEndTime(schedule.endTime);
@@ -173,7 +173,7 @@ export const SetSchedulesManager: React.FC<SetSchedulesManagerProps> = ({ onOpen
 
       const payload = {
         name: defaultName,
-        siteId: `ROVER-${formRovingGroup.replace(/\s+/g, '-').toUpperCase()}`,
+        siteId: `MPU-${formRovingGroup.replace(/\s+/g, '-').toUpperCase()}`,
         siteName: `${formRovingGroup} Mobile Patrol Circuit`,
         siteAddress: ROVING_GROUP_CONFIGS[formRovingGroup]?.zone || 'Mobile Patrol Territory',
         daysOfWeek: formSelectedDays,
@@ -182,11 +182,11 @@ export const SetSchedulesManager: React.FC<SetSchedulesManagerProps> = ({ onOpen
         hours: calculatedFormHours,
         isRoving: true,
         rovingGroup: formRovingGroup,
-        assignedRoverUnit: associatedRover?.unitNumber || 'Unit R-101',
+        assignedRoverUnit: associatedRover?.unitNumber || 'MPU-1 (Metro)',
         assignedGuardId: assignedGuard?.id,
         assignedGuardName: assignedGuard?.name,
         assignedGuardBadge: assignedGuard?.badgeNumber,
-        postRole: formPostRole || `🚗 Mobile Patrol Driver • ${associatedRover?.unitNumber || 'Rover'}`,
+        postRole: formPostRole || `🚗 Mobile Patrol Driver • ${associatedRover?.unitNumber || 'MPU'}`,
         postInstructions: formInstructions,
         requiredCertifications: formRequiredCerts,
         isActive: true,
@@ -314,7 +314,7 @@ export const SetSchedulesManager: React.FC<SetSchedulesManagerProps> = ({ onOpen
                 </span>
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Manage standing recurring shifts for sites and mobile roving circuits with AI guard auto-fit.
+                Manage standing recurring shifts for sites and mobile patrol circuits with AI guard auto-fit.
               </p>
             </div>
           </div>
@@ -382,9 +382,9 @@ export const SetSchedulesManager: React.FC<SetSchedulesManagerProps> = ({ onOpen
             onChange={(e) => setFilterType(e.target.value as any)}
             className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-slate-300 focus:outline-none"
           >
-            <option value="all">All Types (Fixed & Roving)</option>
+            <option value="all">All Types (Fixed & Mobile)</option>
             <option value="static">Fixed Site Posts</option>
-            <option value="roving">Mobile Roving Circuits</option>
+            <option value="roving">Mobile Patrol Circuits</option>
           </select>
 
           {/* Day of Week Filter */}
@@ -611,7 +611,7 @@ export const SetSchedulesManager: React.FC<SetSchedulesManagerProps> = ({ onOpen
           <Calendar className="w-8 h-8 text-slate-600 mx-auto" />
           <h3 className="text-sm font-bold text-slate-300">No Set Schedules Found</h3>
           <p className="text-xs text-slate-500 max-w-md mx-auto">
-            Try adjusting your search criteria or create a new set schedule template for recurring site posts or rover circuits.
+            Try adjusting your search criteria or create a new set schedule template for recurring site posts or MPU circuits.
           </p>
           <button
             type="button"
@@ -677,7 +677,7 @@ export const SetSchedulesManager: React.FC<SetSchedulesManagerProps> = ({ onOpen
                   }`}
                 >
                   <Car className="w-4 h-4" />
-                  <span>Mobile Roving Circuit</span>
+                  <span>Mobile Patrol Circuit</span>
                 </button>
               </div>
 
@@ -714,7 +714,7 @@ export const SetSchedulesManager: React.FC<SetSchedulesManagerProps> = ({ onOpen
                 ) : (
                   <div>
                     <label className="block text-slate-300 font-semibold mb-1">
-                      Roving Patrol Group
+                      Mobile Patrol Sector
                     </label>
                     <select
                       value={formRovingGroup}

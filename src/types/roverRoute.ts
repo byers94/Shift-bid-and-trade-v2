@@ -86,8 +86,8 @@ export interface RouteCheckpointStop {
 
 export interface RoverVehicle {
   id: string;
-  unitNumber: string; // e.g. "ROVER-01 (Echo Unit)"
-  callSign: string;   // "MOBILE-ECHO-1"
+  unitNumber: string; // e.g. "MPU-1 (Metro)"
+  callSign: string;   // "MPU-METRO-1"
   assignedGuardId: string;
   assignedGuardName: string;
   assignedGuardBadge: string;

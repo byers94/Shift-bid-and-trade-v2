@@ -369,8 +369,8 @@ export const ExportCallsModal: React.FC<ExportCallsModalProps> = ({
       headers.push('Caller Phone');
       headers.push('Caller Location / Title');
     }
-    if (exportColumns.assignedRover) headers.push('Assigned Rover Unit');
-    if (exportColumns.assignedGroup) headers.push('Assigned Roving Group');
+    if (exportColumns.assignedRover) headers.push('Assigned Mobile Unit');
+    if (exportColumns.assignedGroup) headers.push('Assigned Mobile Sector');
     if (exportColumns.assignedGuard) {
       headers.push('Assigned Guard Name');
       headers.push('Assigned Guard Badge');
@@ -920,7 +920,7 @@ export const ExportCallsModal: React.FC<ExportCallsModalProps> = ({
                         <th className="py-2.5 px-3">Date & Dispatched</th>
                         <th className="py-2.5 px-3">Site / Location</th>
                         <th className="py-2.5 px-3">Type & Priority</th>
-                        <th className="py-2.5 px-3">Assigned Rover / Guard</th>
+                        <th className="py-2.5 px-3">Assigned Mobile Unit / Guard</th>
                         <th className="py-2.5 px-3">Ack Latency</th>
                         <th className="py-2.5 px-3">Response Time</th>
                         <th className="py-2.5 px-3">Status</th>
@@ -1074,8 +1074,8 @@ export const ExportCallsModal: React.FC<ExportCallsModalProps> = ({
                       details: 'Full Narrative Details',
                       callerInfo: 'Caller Details & Phone',
                       officerInstructions: 'Officer Instructions',
-                      assignedRover: 'Assigned Rover Vehicle',
-                      assignedGroup: 'Assigned Roving Group',
+                      assignedRover: 'Assigned Mobile Patrol Vehicle',
+                      assignedGroup: 'Assigned Mobile Sector',
                       assignedGuard: 'Assigned Guard Profile',
                       acknowledgedAt: 'Acknowledged Timestamp',
                       ackLatencySec: 'Ack Latency (Seconds)',

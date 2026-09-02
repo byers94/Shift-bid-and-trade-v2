@@ -150,7 +150,8 @@ export const CoachingPerformanceDashboard: React.FC<CoachingPerformanceDashboard
         cancelledCount: cancelledSessions.length,
         completionRate: Number(completionRate.toFixed(1)),
         avgPerformanceDelta,
-        currentOculusScore: perf.oculusScore ?? 85,
+        currentAsrScore: perf.asrScore ?? perf.oculusScore ?? 85,
+        currentOculusScore: perf.asrScore ?? perf.oculusScore ?? 85,
         currentOnTimeRate: perf.onTimeArrivalRate ?? 95,
         latestSessionDate: latestSession?.scheduledDate,
         latestTopic: latestSession?.topic,
@@ -202,7 +203,8 @@ export const CoachingPerformanceDashboard: React.FC<CoachingPerformanceDashboard
         activeCount: g.totalSessionsAssigned - g.completedCount,
         totalAssigned: g.totalSessionsAssigned,
         avgDelta: g.avgPerformanceDelta,
-        oculusScore: g.currentOculusScore,
+        asrScore: g.currentAsrScore ?? g.currentOculusScore,
+        oculusScore: g.currentAsrScore ?? g.currentOculusScore,
         onTimeRate: g.currentOnTimeRate
       }))
       .sort((a, b) => {
@@ -221,14 +223,14 @@ export const CoachingPerformanceDashboard: React.FC<CoachingPerformanceDashboard
       completed: number;
       totalScoreDelta: number;
       deltaCount: number;
-      avgOculus: number;
+      avgAsr: number;
       onTimeRate: number;
     }> = {
-      '2026-05': { monthLabel: "May '26", order: 1, assigned: 2, completed: 2, totalScoreDelta: 24, deltaCount: 2, avgOculus: 76.5, onTimeRate: 88.0 },
-      '2026-06': { monthLabel: "Jun '26", order: 2, assigned: 4, completed: 3, totalScoreDelta: 40, deltaCount: 3, avgOculus: 80.2, onTimeRate: 91.5 },
-      '2026-07': { monthLabel: "Jul '26", order: 3, assigned: 5, completed: 4, totalScoreDelta: 43, deltaCount: 4, avgOculus: 84.8, onTimeRate: 94.0 },
-      '2026-08': { monthLabel: "Aug '26", order: 4, assigned: 8, completed: 6, totalScoreDelta: 74, deltaCount: 6, avgOculus: 89.2, onTimeRate: 96.5 },
-      '2026-09': { monthLabel: "Sep '26", order: 5, assigned: 4, completed: 1, totalScoreDelta: 12, deltaCount: 1, avgOculus: 92.5, onTimeRate: 97.8 },
+      '2026-05': { monthLabel: "May '26", order: 1, assigned: 2, completed: 2, totalScoreDelta: 24, deltaCount: 2, avgAsr: 76.5, onTimeRate: 88.0 },
+      '2026-06': { monthLabel: "Jun '26", order: 2, assigned: 4, completed: 3, totalScoreDelta: 40, deltaCount: 3, avgAsr: 80.2, onTimeRate: 91.5 },
+      '2026-07': { monthLabel: "Jul '26", order: 3, assigned: 5, completed: 4, totalScoreDelta: 43, deltaCount: 4, avgAsr: 84.8, onTimeRate: 94.0 },
+      '2026-08': { monthLabel: "Aug '26", order: 4, assigned: 8, completed: 6, totalScoreDelta: 74, deltaCount: 6, avgAsr: 89.2, onTimeRate: 96.5 },
+      '2026-09': { monthLabel: "Sep '26", order: 5, assigned: 4, completed: 1, totalScoreDelta: 12, deltaCount: 1, avgAsr: 92.5, onTimeRate: 97.8 },
     };
 
     // Integrate actual sessions dynamically
@@ -249,7 +251,8 @@ export const CoachingPerformanceDashboard: React.FC<CoachingPerformanceDashboard
           completedSessions: b.completed,
           assignedSessions: b.assigned,
           completionRatePct: completionRate,
-          avgOculusScore: b.avgOculus,
+          avgAsrScore: b.avgAsr,
+          avgOculusScore: b.avgAsr,
           onTimeRatePct: b.onTimeRate,
           avgScoreDelta: avgDelta
         };
@@ -524,7 +527,7 @@ export const CoachingPerformanceDashboard: React.FC<CoachingPerformanceDashboard
                 +{overallStats.avgScoreDelta}
               </span>
               <span className="text-xs font-semibold text-neutral-500">
-                Oculus Index Pts
+                ASR Index Pts
               </span>
             </div>
             <div className="text-[11px] text-purple-600 dark:text-purple-400 mt-2.5 flex items-center gap-1 font-medium">
@@ -691,8 +694,8 @@ export const CoachingPerformanceDashboard: React.FC<CoachingPerformanceDashboard
                                   <span className="font-black text-sm">+{data.avgDelta} pts</span>
                                 </div>
                                 <div className="flex justify-between text-neutral-300">
-                                  <span>Current Oculus:</span>
-                                  <span className="font-bold">{data.oculusScore}/100</span>
+                                  <span>Current ASR:</span>
+                                  <span className="font-bold">{data.asrScore ?? data.oculusScore}/100</span>
                                 </div>
                               </div>
                             </div>
@@ -814,7 +817,7 @@ export const CoachingPerformanceDashboard: React.FC<CoachingPerformanceDashboard
                   <span>Performance Improvement Over Time</span>
                 </h3>
                 <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-                  Correlation of completed coaching sessions with Oculus Index progression & SLA punctuality
+                  Correlation of completed coaching sessions with ASR Index progression & SLA punctuality
                 </p>
               </div>
             </div>
@@ -847,8 +850,8 @@ export const CoachingPerformanceDashboard: React.FC<CoachingPerformanceDashboard
                                 <span className="font-bold text-blue-400">{data.completionRatePct}%</span>
                               </div>
                               <div className="flex justify-between text-amber-300">
-                                <span>Fleet Oculus Index:</span>
-                                <span className="font-black">{data.avgOculusScore}/100</span>
+                                <span>Fleet ASR Index:</span>
+                                <span className="font-black">{data.avgAsrScore ?? data.avgOculusScore}/100</span>
                               </div>
                               <div className="flex justify-between text-purple-300">
                                 <span>On-Time Arrival Rate:</span>
@@ -863,7 +866,7 @@ export const CoachingPerformanceDashboard: React.FC<CoachingPerformanceDashboard
                   />
                   <Legend wrapperStyle={{ fontSize: 11, paddingTop: 10 }} />
                   <Bar yAxisId="left" dataKey="completedSessions" name="Completed Sessions" fill="#3b82f6" radius={[4, 4, 0, 0]} opacity={0.85} />
-                  <Line yAxisId="right" type="monotone" dataKey="avgOculusScore" name="Avg Oculus Index" stroke="#10b981" strokeWidth={3} dot={{ r: 4, fill: '#10b981' }} />
+                  <Line yAxisId="right" type="monotone" dataKey="avgAsrScore" name="Avg ASR Index" stroke="#10b981" strokeWidth={3} dot={{ r: 4, fill: '#10b981' }} />
                   <Line yAxisId="right" type="monotone" dataKey="onTimeRatePct" name="On-Time Arrival %" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 3, fill: '#8b5cf6' }} />
                 </ComposedChart>
               </ResponsiveContainer>
@@ -993,7 +996,7 @@ export const CoachingPerformanceDashboard: React.FC<CoachingPerformanceDashboard
                 <th className="py-3 px-3">Sessions (Comp / Total)</th>
                 <th className="py-3 px-3">Completion Rate (%)</th>
                 <th className="py-3 px-3">Performance Score Delta</th>
-                <th className="py-3 px-3">Current Oculus</th>
+                <th className="py-3 px-3">Current ASR</th>
                 <th className="py-3 px-3">Latest Topic & Date</th>
                 <th className="py-3 px-3 text-right">Actions</th>
               </tr>
@@ -1090,10 +1093,10 @@ export const CoachingPerformanceDashboard: React.FC<CoachingPerformanceDashboard
                     )}
                   </td>
 
-                  {/* Current Oculus */}
+                  {/* Current ASR */}
                   <td className="py-3 px-3">
                     <div className="font-black text-neutral-900 dark:text-white">
-                      {guard.currentOculusScore}
+                      {guard.currentAsrScore ?? guard.currentOculusScore}
                       <span className="text-[10px] font-normal text-neutral-400">/100</span>
                     </div>
                   </td>

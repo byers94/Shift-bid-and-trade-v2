@@ -79,8 +79,8 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
   const [formShiftType, setFormShiftType] = useState<'static' | 'roving'>('static');
   const formIsRoving = formShiftType === 'roving';
   const setFormIsRoving = (isRov: boolean) => setFormShiftType(isRov ? 'roving' : 'static');
-  const [formRovingGroup, setFormRovingGroup] = useState<RovingGroup>('Alpha Group');
-  const [formAssignedRoverUnit, setFormAssignedRoverUnit] = useState<string>('Rover 1 (Interceptor)');
+  const [formRovingGroup, setFormRovingGroup] = useState<RovingGroup>('Metro');
+  const [formAssignedRoverUnit, setFormAssignedRoverUnit] = useState<string>('MPU-1 (Metro)');
   const [formGuardId, setFormGuardId] = useState<string>(guardsList[0]?.id || '');
   const [formSiteName, setFormSiteName] = useState<string>(sitesList[0]?.name || '');
   const [formDate, setFormDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -626,10 +626,10 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
                                 <div className="space-y-0.5">
                                   <div className="font-extrabold flex items-center gap-1 text-indigo-700 dark:text-indigo-300">
                                     <span className="px-1.5 py-0.2 bg-indigo-200 dark:bg-indigo-900/80 rounded text-[9px] uppercase tracking-wider font-mono">
-                                      {shift.rovingGroup || 'Alpha Group'}
+                                      {shift.rovingGroup || 'Metro'}
                                     </span>
                                     <span className="truncate text-[10px] font-mono text-slate-500 dark:text-slate-400">
-                                      {shift.assignedRoverUnit || 'Rover'}
+                                      {shift.assignedRoverUnit || 'MPU Unit'}
                                     </span>
                                   </div>
                                   <div className="text-[10px] text-slate-600 dark:text-slate-400 truncate flex items-center gap-1">
@@ -919,15 +919,15 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-black uppercase tracking-wider text-indigo-200 flex items-center gap-1.5">
                       <Car className="w-3.5 h-3.5 text-indigo-300" />
-                      <span>Roving Mobile Patrol Shift</span>
+                      <span>Mobile Patrol Shift</span>
                     </span>
                     <span className="px-2 py-0.5 bg-indigo-500/40 rounded-full font-mono text-[10px] font-extrabold text-white border border-indigo-400/30">
-                      {selectedShiftForDetail.rovingGroup || 'Alpha Group'}
+                      {selectedShiftForDetail.rovingGroup || 'Metro'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-xs font-mono">
-                    <span className="text-indigo-200">Assigned Rover:</span>
-                    <span className="font-bold text-white">{selectedShiftForDetail.assignedRoverUnit || 'Rover 1 (Interceptor)'}</span>
+                    <span className="text-indigo-200">Assigned Unit:</span>
+                    <span className="font-bold text-white">{selectedShiftForDetail.assignedRoverUnit || 'MPU-1 (Metro)'}</span>
                   </div>
                 </div>
               )}

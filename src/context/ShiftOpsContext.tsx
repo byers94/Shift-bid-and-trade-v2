@@ -134,7 +134,7 @@ import {
 } from '../data/mockData';
 import { generateSetScheduleAiSuggestions } from '../utils/autoFillHeuristics';
 import { calculateHours, generateSmsLink, calculateShiftLateStatus, getShiftElapsedSeconds, formatElapsedTimer } from '../utils/time';
-import { calculateOculusScore } from '../utils/oculusScoring';
+import { calculateASRScore, calculateOculusScore } from '../utils/asrScoring';
 import { validateCoachingScheduleSlot, validateAlternateCoachingDate } from '../utils/coachingSchedule';
 import {
   evaluatePriorityShiftsForGuard,
@@ -311,7 +311,7 @@ interface ShiftOpsContextType {
   cancelCoachingSession: (sessionId: string, reason?: string) => void;
   getGuardCoachingSessions: (guardId: string) => GuardCoachingSession[];
   getGuardPerformance: (guardId: string) => GuardPerformanceStats;
-  getLeaderboard: (sortBy?: 'composite' | 'oculus' | 'reliability' | 'client_exp' | 'shifts' | 'rating' | 'emergency' | 'ontime', timeframe?: string) => (GuardProfile & GuardPerformanceStats)[];
+  getLeaderboard: (sortBy?: 'composite' | 'asr' | 'oculus' | 'reliability' | 'client_exp' | 'shifts' | 'rating' | 'emergency' | 'ontime', timeframe?: string) => (GuardProfile & GuardPerformanceStats)[];
   
   // Guard Shift Alert Preferences
   updateAlertPreferences: (prefs: Partial<ShiftAlertPreferences>) => void;
@@ -2783,8 +2783,8 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     // Filter call-off records for this guard
     const guardCallOffs = callOffRecords.filter(c => c.guardId === guardId);
 
-    // Calculate 100-Point Composite Oculus Score Breakdown
-    const oculusBreakdown = calculateOculusScore({
+    // Calculate 100-Point Composite ASR (Aegis Score & Rank) Breakdown
+    const asrBreakdown = calculateASRScore({
       guardId,
       onTimeArrivalRate: base.onTimeArrivalRate,
       emergencyShiftsFulfilled: totalEmergency,
@@ -2816,8 +2816,10 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       lateCallOffsCount: base.lateCallOffsCount || 0,
       slaCheckpointsCompletedRate: base.slaCheckpointsCompletedRate,
       darQualityRate: base.darQualityRate,
-      oculusScore: oculusBreakdown.oculusScore,
-      oculusBreakdown,
+      asrScore: asrBreakdown.asrScore,
+      asrBreakdown,
+      oculusScore: asrBreakdown.asrScore,
+      oculusBreakdown: asrBreakdown,
       coachingScheduled: activeCoaching
         ? {
             scheduledDate: activeCoaching.scheduledDate,
@@ -2831,7 +2833,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const getLeaderboard = (
-    sortBy: 'composite' | 'oculus' | 'reliability' | 'client_exp' | 'shifts' | 'rating' | 'emergency' | 'ontime' = 'composite',
+    sortBy: 'composite' | 'asr' | 'oculus' | 'reliability' | 'client_exp' | 'shifts' | 'rating' | 'emergency' | 'ontime' = 'composite',
     timeframe: string = 'all'
   ): (GuardProfile & GuardPerformanceStats)[] => {
     const enrichedGuards = guardsList.map((guard) => {
@@ -2859,19 +2861,19 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return b.onTimeArrivalRate - a.onTimeArrivalRate;
       }
       if (sortBy === 'reliability') {
-        const relA = a.oculusBreakdown?.operationalReliabilityScore || 0;
-        const relB = b.oculusBreakdown?.operationalReliabilityScore || 0;
+        const relA = a.asrBreakdown?.operationalReliabilityScore || a.oculusBreakdown?.operationalReliabilityScore || 0;
+        const relB = b.asrBreakdown?.operationalReliabilityScore || b.oculusBreakdown?.operationalReliabilityScore || 0;
         return relB - relA;
       }
       if (sortBy === 'client_exp') {
-        const expA = a.oculusBreakdown?.clientExperienceScore || 0;
-        const expB = b.oculusBreakdown?.clientExperienceScore || 0;
+        const expA = a.asrBreakdown?.clientExperienceScore || a.oculusBreakdown?.clientExperienceScore || 0;
+        const expB = b.asrBreakdown?.clientExperienceScore || b.oculusBreakdown?.clientExperienceScore || 0;
         return expB - expA;
       }
       
-      // Default: Composite Oculus Score (100 pts max)
-      const scoreA = a.oculusScore ?? (a.oculusBreakdown?.oculusScore || 0);
-      const scoreB = b.oculusScore ?? (b.oculusBreakdown?.oculusScore || 0);
+      // Default: Composite ASR (Aegis Score & Rank) (100 pts max)
+      const scoreA = a.asrScore ?? a.oculusScore ?? (a.asrBreakdown?.asrScore || a.oculusBreakdown?.oculusScore || 0);
+      const scoreB = b.asrScore ?? b.oculusScore ?? (b.asrBreakdown?.asrScore || b.oculusBreakdown?.oculusScore || 0);
       if (scoreB !== scoreA) {
         return scoreB - scoreA;
       }
@@ -4060,12 +4062,25 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const rawGroup = (item.rovingGroup || item.group || item.patrolGroup || '').toString();
         if (rawGroup) {
           const groupMap: Record<string, string> = {
-            alpha: 'Alpha Group',
-            bravo: 'Bravo Group',
-            charlie: 'Charlie Group',
-            delta: 'Delta Group',
-            echo: 'Echo Group',
-            foxtrot: 'Foxtrot Group'
+            'metro': 'Metro',
+            'alpha': 'Metro',
+            'north west': 'North West',
+            'northwest': 'North West',
+            'nw': 'North West',
+            'bravo': 'North West',
+            'north east': 'North East',
+            'northeast': 'North East',
+            'ne': 'North East',
+            'charlie': 'North East',
+            'south west': 'South West',
+            'southwest': 'South West',
+            'sw': 'South West',
+            'delta': 'South West',
+            'foxtrot': 'South West',
+            'south east': 'South East',
+            'southeast': 'South East',
+            'se': 'South East',
+            'echo': 'South East'
           };
           const lowerGroup = rawGroup.toLowerCase();
           for (const key of Object.keys(groupMap)) {
@@ -7429,12 +7444,12 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       roverUnit: 'FLEET-DISPATCH',
       guardName: 'Lt. Mark O\'Connor',
       eventType: 'ETA_RECALCULATED',
-      notes: `Full fleet circuit re-optimized. Projected ${totalDeadheadSaved} min deadhead reduction across ${rovers.length} rover units.`
+      notes: `Full fleet circuit re-optimized. Projected ${totalDeadheadSaved} min deadhead reduction across ${rovers.length} mobile patrol units.`
     });
 
     logAdminAction({
       type: 'routes_reoptimized',
-      title: 'Rover Routes Re-Optimized',
+      title: 'MPU Routes Re-Optimized',
       description: `Re-calculated patrol circuit for ${rovers.length} mobile units using ${mode}. Saved ~${totalDeadheadSaved}m drive time.`,
       adminName: 'Lt. Mark O\'Connor',
       adminBadge: 'OPS-CMD-01',
