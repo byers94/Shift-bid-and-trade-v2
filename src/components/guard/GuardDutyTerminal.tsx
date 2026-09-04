@@ -49,7 +49,7 @@ import {
   BellRing,
   AlertOctagon
 } from 'lucide-react';
-import { ScheduledShift, TimeSpecificTask, StandardReportType, DepartureReasonType } from '../../types/shift';
+import { ScheduledShift, TimeSpecificTask, StandardReportType, DepartureReasonType, SiteProfile } from '../../types/shift';
 import { VerificationCameraModal } from './VerificationCameraModal';
 import { TimeSpecificTaskAlertBanner } from './TimeSpecificTaskAlertBanner';
 import { GuardTimedTasksSection } from './GuardTimedTasksSection';
@@ -57,6 +57,7 @@ import { StandardReportingModal } from './StandardReportingModal';
 import { GuardThirtyMinIntervalTracker } from './GuardThirtyMinIntervalTracker';
 import { GuardReportsLogSection } from './GuardReportsLogSection';
 import { GuardDeparturePromptModal } from './GuardDeparturePromptModal';
+import { GuardSiteInfoModal } from './GuardSiteInfoModal';
 import { getCurrentLocation, calculateDistance, GeoCoordinates, formatDistance, verifySiteGeofence } from '../../utils/geo';
 
 interface GuardDutyTerminalProps {
@@ -165,6 +166,10 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
 
   // Live timer state
   const [elapsedSec, setElapsedSec] = useState<number>(0);
+
+  // Guard Site Info & POCs Modal state
+  const [isSiteInfoModalOpen, setIsSiteInfoModalOpen] = useState<boolean>(false);
+  const [siteInfoTargetSite, setSiteInfoTargetSite] = useState<SiteProfile | undefined>(undefined);
 
   // Update timer every second when clocked in
   useEffect(() => {
@@ -453,11 +458,26 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
                   )}
                 </div>
 
-                <div className="text-right">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Post Assignment</span>
-                  <span className="font-mono font-bold text-blue-300 bg-blue-950/80 px-2 py-0.5 rounded border border-blue-800/60 block mt-0.5">
-                    {activeClockedInShift.postRole}
-                  </span>
+                <div className="text-right flex flex-col items-end gap-1.5">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Post Assignment</span>
+                    <span className="font-mono font-bold text-blue-300 bg-blue-950/80 px-2 py-0.5 rounded border border-blue-800/60 block mt-0.5">
+                      {activeClockedInShift.postRole}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const site = sitesList.find((s) => s.name === activeClockedInShift.siteName || s.id === activeClockedInShift.siteId);
+                      setSiteInfoTargetSite(site);
+                      setIsSiteInfoModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-lg bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 border border-blue-500/40 transition-colors cursor-pointer"
+                    title="View Property Info, Persons of Contact (POCs), and Emergency Lines"
+                  >
+                    <PhoneCall className="w-3 h-3 text-blue-300" />
+                    <span>Site POCs</span>
+                  </button>
                 </div>
               </div>
 
@@ -1127,17 +1147,31 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   Select Facility / Post Location
                 </label>
-                {(() => {
-                  const currentSite = sitesList.find(s => s.name === selectedSiteName);
-                  if (currentSite?.requireGeofence ?? true) {
-                    return (
-                      <span className="text-[9px] font-mono font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                        <Compass className="w-2.5 h-2.5" /> Geofence {currentSite?.geofenceRadiusMeters || 150}m
-                      </span>
-                    );
-                  }
-                  return null;
-                })()}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const currentSite = sitesList.find(s => s.name === selectedSiteName);
+                      setSiteInfoTargetSite(currentSite);
+                      setIsSiteInfoModalOpen(true);
+                    }}
+                    className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <PhoneCall className="w-2.5 h-2.5" />
+                    <span>View POCs</span>
+                  </button>
+                  {(() => {
+                    const currentSite = sitesList.find(s => s.name === selectedSiteName);
+                    if (currentSite?.requireGeofence ?? true) {
+                      return (
+                        <span className="text-[9px] font-mono font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                          <Compass className="w-2.5 h-2.5" /> Geofence {currentSite?.geofenceRadiusMeters || 150}m
+                        </span>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
               </div>
               <select
                 id="guard-clockin-site-select"
@@ -1520,6 +1554,13 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
           onDismissAlert={() => setIsDeparturePromptOpen(false)}
         />
       )}
+
+      {/* GUARD PROPERTY DIRECTORY & CONTACTS MODAL */}
+      <GuardSiteInfoModal
+        isOpen={isSiteInfoModalOpen}
+        onClose={() => setIsSiteInfoModalOpen(false)}
+        site={siteInfoTargetSite}
+      />
     </div>
   );
 };

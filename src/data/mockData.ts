@@ -41,6 +41,46 @@ export const INITIAL_SITES: SiteProfile[] = [
     category: 'maritime',
     securityTier: 'Tier 4 - Critical Infrastructure',
     serviceType: 'dedicated',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "ONGOING",
+    contractStatus: "ACTIVE",
+    startDate: "2025-01-10",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-1-poc-1",
+            "name": "Cmdr. David Vance",
+            "title": "Port Security Director",
+            "phone": "+1 (555) 206-7788",
+            "secondaryPhone": "+1 (555) 206-7789",
+            "email": "d.vance@portseattle.org",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "Direct escalation for maritime security alerts; receives daily DAR summaries."
+      },
+      {
+            "id": "site-1-poc-2",
+            "name": "Lt. Brian Kovacs",
+            "title": "Assistant PM / Operations",
+            "phone": "+1 (555) 206-7790",
+            "secondaryPhone": "+1 (555) 206-7791",
+            "email": "bkovacs@portseattle.org",
+            "receivesReports": true,
+            "isEmergencyContact": false,
+            "notes": "Contact for operational scheduling and docking manifests (07:00-18:00)."
+      },
+      {
+            "id": "site-1-poc-3",
+            "name": "Carl Ortiz",
+            "title": "Dockmaster & On-Call Maintenance",
+            "phone": "+1 (555) 206-7795",
+            "secondaryPhone": "+1 (555) 206-7796",
+            "email": "c.ortiz@portseattle.org",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Call for Berth 4/7 gate lockouts, hydraulic ramp failures, and after-hours maintenance."
+      }
+],
     primaryContactName: 'Cmdr. David Vance',
     primaryContactPhone: '+1 (555) 206-7788',
     primaryContactEmail: 'd.vance@portseattle.org',
@@ -153,6 +193,46 @@ export const INITIAL_SITES: SiteProfile[] = [
     category: 'corporate',
     securityTier: 'Tier 2 - Elevated',
     serviceType: 'dedicated',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "ONGOING",
+    contractStatus: "ACTIVE",
+    startDate: "2025-01-15",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-2-poc-1",
+            "name": "Elena Rossi",
+            "title": "Property Manager",
+            "phone": "+1 (555) 425-1100",
+            "secondaryPhone": "+1 (555) 425-1101",
+            "email": "security.ops@executivecorp.com",
+            "receivesReports": true,
+            "isEmergencyContact": false,
+            "notes": "Contact between 08:00–17:00 only; receives DAR summaries."
+      },
+      {
+            "id": "site-2-poc-2",
+            "name": "Marcus Brody",
+            "title": "24/7 Security Escalation Desk",
+            "phone": "+1 (555) 425-9999",
+            "secondaryPhone": "+1 (555) 425-9998",
+            "email": "dispatch@executivecorp.com",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "24/7 hotline for active break-ins, alarm triggers, and medical calls."
+      },
+      {
+            "id": "site-2-poc-3",
+            "name": "Dave Chen",
+            "title": "Building Engineer / On-Call Maintenance",
+            "phone": "+1 (555) 425-1122",
+            "secondaryPhone": "+1 (555) 425-1123",
+            "email": "d.chen@executivecorp.com",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Contact for HVAC lockouts, elevator alarms, and tenant suite access issues."
+      }
+],
     primaryContactName: 'Elena Rossi',
     primaryContactPhone: '+1 (555) 425-1100',
     primaryContactEmail: 'security.ops@executivecorp.com',
@@ -249,6 +329,46 @@ export const INITIAL_SITES: SiteProfile[] = [
     category: 'healthcare',
     securityTier: 'Tier 3 - High Security',
     serviceType: 'dedicated',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "ONGOING",
+    contractStatus: "ACTIVE",
+    startDate: "2025-02-01",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-3-poc-1",
+            "name": "Chief Robert Sterling",
+            "title": "Hospital Security Director",
+            "phone": "+1 (555) 206-4400",
+            "secondaryPhone": "+1 (555) 206-4401",
+            "email": "rsterling@westmed.health",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "Contact 24/7 for Code Silver, psych transfers, or ER lockdown requests."
+      },
+      {
+            "id": "site-3-poc-2",
+            "name": "Nurse Supervisor Brenda Walsh",
+            "title": "Assistant PM / Clinical Liaison",
+            "phone": "+1 (555) 206-4412",
+            "secondaryPhone": "+1 (555) 206-4413",
+            "email": "bwalsh@westmed.health",
+            "receivesReports": true,
+            "isEmergencyContact": false,
+            "notes": "On-duty charge nurse liaison for patient escort coordination."
+      },
+      {
+            "id": "site-3-poc-3",
+            "name": "Hospital Facilities Engineering",
+            "title": "On-Call Maintenance",
+            "phone": "+1 (555) 206-4433",
+            "secondaryPhone": "+1 (555) 206-4434",
+            "email": "facilities@westmed.health",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Call for door maglock failures, biohazard cleanups, and oxygen room alarms."
+      }
+],
     primaryContactName: 'Chief Robert Sterling',
     primaryContactPhone: '+1 (555) 206-4400',
     primaryContactEmail: 'rsterling@westmed.health',
@@ -319,6 +439,46 @@ export const INITIAL_SITES: SiteProfile[] = [
     category: 'aviation',
     securityTier: 'Tier 4 - Critical Infrastructure',
     serviceType: 'dedicated',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "ONGOING",
+    contractStatus: "ACTIVE",
+    startDate: "2025-03-01",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-4-poc-1",
+            "name": "Airport Police Operations",
+            "title": "Aviation Security Lead",
+            "phone": "+1 (555) 206-8800",
+            "secondaryPhone": "+1 (555) 206-8801",
+            "email": "airport.security@sea-airport.org",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "Mandatory escalation for perimeter fence incursions and unbadged tarmac entries."
+      },
+      {
+            "id": "site-4-poc-2",
+            "name": "Sarah Miller",
+            "title": "Assistant PM / Gate Operations",
+            "phone": "+1 (555) 206-8810",
+            "secondaryPhone": "+1 (555) 206-8811",
+            "email": "smiller@sea-airport.org",
+            "receivesReports": true,
+            "isEmergencyContact": false,
+            "notes": "Vendor badge clearance and daily flight crew manifests."
+      },
+      {
+            "id": "site-4-poc-3",
+            "name": "Airfield Maintenance Dispatch",
+            "title": "On-Call Maintenance",
+            "phone": "+1 (555) 206-8822",
+            "secondaryPhone": "+1 (555) 206-8823",
+            "email": "maint@sea-airport.org",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Contact for Gate 4 automated sliding arm barrier malfunctions."
+      }
+],
     primaryContactName: 'Capt. Nathan Drake',
     primaryContactPhone: '+1 (555) 206-8800',
     primaryContactEmail: 'ndrake@sea-airport.gov',
@@ -375,6 +535,46 @@ export const INITIAL_SITES: SiteProfile[] = [
     routeOrder: 1,
     patrolFrequency: 'Hourly Patrol Sweep',
     rovingNotes: 'Sweep retail concourse, check rear delivery corridors, verify lockup at store closing at 21:00.',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "ONGOING",
+    contractStatus: "ACTIVE",
+    startDate: "2025-04-01",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-5-poc-1",
+            "name": "Greg Thornton",
+            "title": "Retail General Manager",
+            "phone": "+1 (555) 206-6600",
+            "secondaryPhone": "+1 (555) 206-6601",
+            "email": "gthornton@retailplazapnw.com",
+            "receivesReports": true,
+            "isEmergencyContact": false,
+            "notes": "Contact 08:00-18:00 for tenant issues and parking policies; receives DAR summaries."
+      },
+      {
+            "id": "site-5-poc-2",
+            "name": "24/7 Dispatch Control",
+            "title": "Security Operations Center",
+            "phone": "+1 (555) 206-9922",
+            "secondaryPhone": "+1 (800) 555-0192",
+            "email": "soc@retailplazapnw.com",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "Call for active shoplifters, fights, or after-hours alarm trips."
+      },
+      {
+            "id": "site-5-poc-3",
+            "name": "Pacific Towing Services",
+            "title": "Tow Operator",
+            "phone": "+1 (555) 206-6688",
+            "secondaryPhone": "+1 (555) 206-6689",
+            "email": "dispatch@pacifictowing.com",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Contracted tow operator for overnight parking violators and blocked loading docks."
+      }
+],
     primaryContactName: 'Melissa Wu',
     primaryContactPhone: '+1 (555) 206-3320',
     primaryContactEmail: 'melissa.wu@pineplazamgmt.com',
@@ -445,6 +645,46 @@ export const INITIAL_SITES: SiteProfile[] = [
     category: 'tech',
     securityTier: 'Tier 4 - Critical Infrastructure',
     serviceType: 'dedicated',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "ONGOING",
+    contractStatus: "ACTIVE",
+    startDate: "2025-01-01",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-6-poc-1",
+            "name": "Nathan Drake",
+            "title": "Site Facilities Mgr",
+            "phone": "+1 (425) 555-0188",
+            "secondaryPhone": "+1 (425) 555-0189",
+            "email": "facilities@azurecampus.com",
+            "receivesReports": true,
+            "isEmergencyContact": false,
+            "notes": "Primary client contact for badge provisioning and server bay access."
+      },
+      {
+            "id": "site-6-poc-2",
+            "name": "Data Center Critical Ops Desk",
+            "title": "Critical Infrastructure Escalation",
+            "phone": "+1 (425) 555-9911",
+            "secondaryPhone": "+1 (425) 555-9912",
+            "email": "critops@azurecampus.com",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "24/7 escalation for server vault alarms, tailgating, and cooling system breaches."
+      },
+      {
+            "id": "site-6-poc-3",
+            "name": "HVAC & Generator Techs",
+            "title": "On-Call Maintenance",
+            "phone": "+1 (425) 555-0195",
+            "secondaryPhone": "+1 (425) 555-0196",
+            "email": "maint@azurecampus.com",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Call for UPS alarms, backup generator start failures, or CRAC unit errors."
+      }
+],
     primaryContactName: 'Jonathan Vance',
     primaryContactPhone: '+1 (555) 206-5501',
     primaryContactEmail: 'jvance@northtechsystems.io',
@@ -527,6 +767,46 @@ export const INITIAL_SITES: SiteProfile[] = [
     routeOrder: 1,
     patrolFrequency: '3x Per Shift Inspection',
     rovingNotes: 'Inspect exterior bank vestibules, ATM lobbies, alley loading dock gates, and verify after-hours tenant badge logs.',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "ONGOING",
+    contractStatus: "ACTIVE",
+    startDate: "2025-02-15",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-7-poc-1",
+            "name": "Victoria Sterling",
+            "title": "Property Manager",
+            "phone": "+1 (555) 206-7700",
+            "secondaryPhone": "+1 (555) 206-7701",
+            "email": "vsterling@financialtowerpnw.com",
+            "receivesReports": true,
+            "isEmergencyContact": false,
+            "notes": "Contact between 08:30-17:00; receives daily shift activity logs."
+      },
+      {
+            "id": "site-7-poc-2",
+            "name": "24/7 Security Command Console",
+            "title": "Security Director / 24/7 Escalation",
+            "phone": "+1 (555) 206-9933",
+            "secondaryPhone": "+1 (555) 206-9934",
+            "email": "command@financialtowerpnw.com",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "24/7 emergency dispatch for executive suite alarms and turnstile tailgating."
+      },
+      {
+            "id": "site-7-poc-3",
+            "name": "Lead Building Engineer",
+            "title": "On-Call Maintenance",
+            "phone": "+1 (555) 206-7722",
+            "secondaryPhone": "+1 (555) 206-7723",
+            "email": "engineer@financialtowerpnw.com",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Contact for elevator entrapments, freight dock doors, and power outages."
+      }
+],
     primaryContactName: 'Arthur Sterling',
     primaryContactPhone: '+1 (555) 206-7200',
     primaryContactEmail: 'asterling@wallstfinancial.com',
@@ -563,6 +843,58 @@ export const INITIAL_SITES: SiteProfile[] = [
     routeOrder: 1,
     patrolFrequency: '2-Hour Perimeter Loop',
     rovingNotes: 'Mobile vehicle patrol around outer freight fence, trailer seal audit at Bays 1-14, and south yard padlocks check.',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "FIREWATCH",
+    contractStatus: "PENDING_TERMINATION",
+    startDate: "2026-08-28",
+    endDate: "2026-09-18",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-8-poc-1",
+            "name": "Arthur Pendelton",
+            "title": "Warehouse Operations Director",
+            "phone": "+1 (555) 253-1100",
+            "secondaryPhone": "+1 (555) 253-1101",
+            "email": "apendelton@industrialnw.com",
+            "receivesReports": true,
+            "isEmergencyContact": false,
+            "notes": "Mandatory recipient for firewatch log sheets every 4 hours."
+      },
+      {
+            "id": "site-8-poc-2",
+            "name": "Seattle Fire Marshall Liaison Desk",
+            "title": "Firewatch Emergency Escalation",
+            "phone": "+1 (555) 253-9911",
+            "secondaryPhone": "+1 (555) 253-9912",
+            "email": "firewatch@industrialnw.com",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "Active fire suppression riser replacement; officer must maintain continuous patrol."
+      },
+      {
+            "id": "site-8-poc-3",
+            "name": "Cascade Fire Protection Technicians",
+            "title": "On-Call Maintenance",
+            "phone": "+1 (555) 253-1188",
+            "secondaryPhone": "+1 (555) 253-1189",
+            "email": "techs@cascadefirewa.com",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "On-call sprinkler technicians for dry-pipe pressure restoration."
+      },
+      {
+            "id": "site-8-poc-4",
+            "name": "Industrial Tow & Impound",
+            "title": "Tow Operator",
+            "phone": "+1 (555) 253-9988",
+            "secondaryPhone": "+1 (555) 253-9989",
+            "email": "dispatch@industrialtowwa.com",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Immediate towing for any vehicles blocking exterior fire hydrant zones."
+      }
+],
     primaryContactName: 'Frank Kowalski',
     primaryContactPhone: '+1 (555) 206-9040',
     primaryContactEmail: 'f.kowalski@pnwlogistics.com',
@@ -595,6 +927,47 @@ export const INITIAL_SITES: SiteProfile[] = [
     category: 'public_venue',
     securityTier: 'Tier 1 - Standard',
     serviceType: 'dedicated',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "SPECIAL_EVENT",
+    contractStatus: "SCHEDULED",
+    startDate: "2026-09-12",
+    endDate: "2026-09-16",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-9-poc-1",
+            "name": "Dominic Thorne",
+            "title": "Hotel General Manager",
+            "phone": "+1 (555) 206-8844",
+            "secondaryPhone": "+1 (555) 206-8845",
+            "email": "dthorne@hotelgrandseattle.com",
+            "receivesReports": true,
+            "isEmergencyContact": false,
+            "notes": "Contact for VIP delegate arrivals and banquet security requirements."
+      },
+      {
+            "id": "site-9-poc-2",
+            "name": "Hotel Security Chief",
+            "title": "Director of Security",
+            "phone": "+1 (555) 206-9944",
+            "secondaryPhone": "+1 (555) 206-9945",
+            "email": "security@hotelgrandseattle.com",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "24/7 escalation for room lockouts, intoxicated guests, and ballroom security."
+      },
+      {
+            "id": "site-9-poc-3",
+            "name": "Hotel Engineering & Locksmith",
+            "title": "On-Call Maintenance",
+            "phone": "+1 (555) 206-8855",
+            "secondaryPhone": "+1 (555) 206-8856",
+            "email": "engineering@hotelgrandseattle.com",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Contact for RFID keycard encoder glitches and elevator service mode keys."
+      }
+],
     primaryContactName: 'Victoria Sinclair',
     primaryContactPhone: '+1 (555) 206-6100',
     primaryContactEmail: 'v.sinclair@grandbroadwayhotel.com',
@@ -687,6 +1060,46 @@ export const INITIAL_SITES: SiteProfile[] = [
     routeOrder: 1,
     patrolFrequency: 'Continuous Route Interval',
     rovingNotes: 'Check elevator concourses, fare gate line, and coordinate with municipal transit police on platform clears.',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "ONGOING",
+    contractStatus: "ACTIVE",
+    startDate: "2025-05-01",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-10-poc-1",
+            "name": "Transit Operations Command",
+            "title": "Transit Safety Director",
+            "phone": "+1 (555) 206-9955",
+            "secondaryPhone": "+1 (555) 206-9956",
+            "email": "safety@metrorailpnw.org",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "Escalate track intrusions, platform medical emergencies, and fare compliance."
+      },
+      {
+            "id": "site-10-poc-2",
+            "name": "Station Superintendent",
+            "title": "Assistant PM / Station Operations",
+            "phone": "+1 (555) 206-9960",
+            "secondaryPhone": "+1 (555) 206-9961",
+            "email": "station.ops@metrorailpnw.org",
+            "receivesReports": true,
+            "isEmergencyContact": false,
+            "notes": "Contact for turnstile maintenance, janitorial needs, and lost & found."
+      },
+      {
+            "id": "site-10-poc-3",
+            "name": "Transit Facilities & Escalators",
+            "title": "On-Call Maintenance",
+            "phone": "+1 (555) 206-9977",
+            "secondaryPhone": "+1 (555) 206-9978",
+            "email": "facilities@metrorailpnw.org",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Contact for broken platform escalators and emergency gate unlocks."
+      }
+],
     primaryContactName: 'Lt. Gregory Miller',
     primaryContactPhone: '+1 (555) 206-3100',
     primaryContactEmail: 'gmiller@soundtransitops.org',
@@ -719,6 +1132,47 @@ export const INITIAL_SITES: SiteProfile[] = [
     category: 'industrial',
     securityTier: 'Tier 4 - Critical Infrastructure',
     serviceType: 'dedicated',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "FIREWATCH",
+    contractStatus: "PENDING_TERMINATION",
+    startDate: "2026-08-20",
+    endDate: "2026-09-22",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-11-poc-1",
+            "name": "Warren Hastings",
+            "title": "Plant Environmental & Safety Director",
+            "phone": "+1 (555) 206-1188",
+            "secondaryPhone": "+1 (555) 206-1189",
+            "email": "whastings@waterfrontchem.com",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "Mandatory recipient for hourly gas vapor sensor sweeps; 24/7 hotline."
+      },
+      {
+            "id": "site-11-poc-2",
+            "name": "Hazmat & Spill Response Operations",
+            "title": "On-Call Maintenance / Chemical Safety",
+            "phone": "+1 (555) 206-1190",
+            "secondaryPhone": "+1 (555) 206-1191",
+            "email": "hazmat@waterfrontchem.com",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "Immediate dispatch for chemical tank foam suppression system errors."
+      },
+      {
+            "id": "site-11-poc-3",
+            "name": "Plant Facilities & Gate Operations",
+            "title": "Assistant PM",
+            "phone": "+1 (555) 206-1195",
+            "secondaryPhone": "+1 (555) 206-1196",
+            "email": "ops@waterfrontchem.com",
+            "receivesReports": true,
+            "isEmergencyContact": false,
+            "notes": "Tanker truck manifest checks and rail spur gate access."
+      }
+],
     primaryContactName: 'Carl Henderson',
     primaryContactPhone: '+1 (555) 206-8900',
     primaryContactEmail: 'carl.h@chemwaterfront.com',
@@ -793,6 +1247,60 @@ export const INITIAL_SITES: SiteProfile[] = [
     routeOrder: 2,
     patrolFrequency: '3x Per Shift Inspection',
     rovingNotes: 'Check alleyway keylock box #2024, verify roof terrace access doors are locked, and sweep subterranean parking.',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "ONGOING",
+    contractStatus: "PENDING_TERMINATION",
+    startDate: "2024-06-01",
+    endDate: "2026-09-30",
+    terminationNoticeDate: "2026-08-30",
+    cancellationReason: "Notice of non-renewal received from HOA Board; property undergoing complete renovation.",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-12-poc-1",
+            "name": "Claire Underwood",
+            "title": "HOA Board President",
+            "phone": "+1 (555) 206-2244",
+            "secondaryPhone": "+1 (555) 206-2245",
+            "email": "board@midtowncommerciallofts.org",
+            "receivesReports": true,
+            "isEmergencyContact": false,
+            "notes": "Contract ending Sep 30, 2026; receives DAR activity reports until handover."
+      },
+      {
+            "id": "site-12-poc-2",
+            "name": "24/7 Building Escalation Console",
+            "title": "Property Security Escalation",
+            "phone": "+1 (555) 206-9988",
+            "secondaryPhone": "+1 (800) 555-0188",
+            "email": "escalations@midtowncommerciallofts.org",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "24/7 line for active alarms, tenant altercations, and garage security."
+      },
+      {
+            "id": "site-12-poc-3",
+            "name": "Tony Russo",
+            "title": "On-Call Maintenance",
+            "phone": "+1 (555) 206-2266",
+            "secondaryPhone": "+1 (555) 206-2267",
+            "email": "trusso@midtownmaintenance.com",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Call for resident lockouts, leaking domestic risers, and garage gate jammed."
+      },
+      {
+            "id": "site-12-poc-4",
+            "name": "Metro Towing Co.",
+            "title": "Tow Operator",
+            "phone": "+1 (555) 206-8877",
+            "secondaryPhone": "+1 (555) 206-8878",
+            "email": "dispatch@metrotowingpnw.com",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Authorized for garage stall impounds with signed security dispatch slip."
+      }
+],
     primaryContactName: 'Sarah Jenkins',
     primaryContactPhone: '+1 (555) 206-4488',
     primaryContactEmail: 'sjenkins@midtownlofts.com',
@@ -885,6 +1393,47 @@ export const INITIAL_SITES: SiteProfile[] = [
     routeOrder: 1,
     patrolFrequency: 'Hourly Waterfront Sweep',
     rovingNotes: 'Inspect marina security gates, dock slip electrical panels, guest promenade restrooms, and waterside dining areas.',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "SEASONAL",
+    contractStatus: "PENDING_TERMINATION",
+    startDate: "2026-05-01",
+    endDate: "2026-09-30",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-13-poc-1",
+            "name": "Capt. Thomas Sterling",
+            "title": "Harbor Master & Property Manager",
+            "phone": "+1 (555) 206-6644",
+            "secondaryPhone": "+1 (555) 206-6645",
+            "email": "tsterling@pier66marina.com",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "Contact for slip disputes, vessel emergencies, and seasonal promenade compliance."
+      },
+      {
+            "id": "site-13-poc-2",
+            "name": "Marina Maintenance & Dock Lockouts",
+            "title": "On-Call Maintenance",
+            "phone": "+1 (555) 206-6650",
+            "secondaryPhone": "+1 (555) 206-6651",
+            "email": "dockmaint@pier66marina.com",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Call for electrical pedestal trip, gate latch repair, or pumpout leak."
+      },
+      {
+            "id": "site-13-poc-3",
+            "name": "Marina Security Dispatch",
+            "title": "Dispatch / Front Desk",
+            "phone": "+1 (555) 206-6677",
+            "secondaryPhone": "+1 (555) 206-6678",
+            "email": "dispatch@pier66marina.com",
+            "receivesReports": true,
+            "isEmergencyContact": false,
+            "notes": "Daily visitor moorage check-ins and key fob issuance."
+      }
+],
     primaryContactName: 'Capt. Thomas Sterling',
     primaryContactPhone: '+1 (555) 206-6644',
     primaryContactEmail: 'tsterling@pier66marina.com',
@@ -921,6 +1470,46 @@ export const INITIAL_SITES: SiteProfile[] = [
     routeOrder: 2,
     patrolFrequency: 'Hourly Waterfront Sweep',
     rovingNotes: 'Check park lighting, ocean view pavilion, and underground tenant garage roll-up gates.',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "ONGOING",
+    contractStatus: "ACTIVE",
+    startDate: "2025-06-01",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-14-poc-1",
+            "name": "Rachel Green",
+            "title": "Property Manager",
+            "phone": "+1 (555) 206-5544",
+            "secondaryPhone": "+1 (555) 206-5545",
+            "email": "rgreen@belltownplaza.com",
+            "receivesReports": true,
+            "isEmergencyContact": false,
+            "notes": "Contact 08:00-17:00 for leasing and delivery bay scheduling."
+      },
+      {
+            "id": "site-14-poc-2",
+            "name": "Belltown Security Operations",
+            "title": "Security Operations Center",
+            "phone": "+1 (555) 206-9970",
+            "secondaryPhone": "+1 (555) 206-9971",
+            "email": "soc@belltownplaza.com",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "24/7 escalation for retail perimeter breaches and after-hours loitering."
+      },
+      {
+            "id": "site-14-poc-3",
+            "name": "Commercial Building Maintenance",
+            "title": "On-Call Maintenance",
+            "phone": "+1 (555) 206-5566",
+            "secondaryPhone": "+1 (555) 206-5567",
+            "email": "maint@belltownplaza.com",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Call for rollup door repairs and lobby temperature issues."
+      }
+],
     primaryContactName: 'Marcus Vance',
     primaryContactPhone: '+1 (555) 206-7711',
     primaryContactEmail: 'mvance@belltownplaza.org',
@@ -957,6 +1546,36 @@ export const INITIAL_SITES: SiteProfile[] = [
     routeOrder: 1,
     patrolFrequency: '2-Hour Campus Sweep',
     rovingNotes: 'Vehicle and foot check of Buildings A, B & C, exterior lab entrances, and electric vehicle charging bays.',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "SPECIAL_EVENT",
+    contractStatus: "SCHEDULED",
+    startDate: "2026-09-08",
+    endDate: "2026-09-11",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-15-poc-1",
+            "name": "Jordan Hayes",
+            "title": "Event Operations Director",
+            "phone": "+1 (555) 425-7711",
+            "secondaryPhone": "+1 (555) 425-7712",
+            "email": "jhayes@bellevueinnovationpark.com",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "Lead contact for tech summit badge scanning, keynote security, and VIP escorts."
+      },
+      {
+            "id": "site-15-poc-2",
+            "name": "Park Facilities & AV Tech",
+            "title": "On-Call Maintenance",
+            "phone": "+1 (555) 425-7722",
+            "secondaryPhone": "+1 (555) 425-7723",
+            "email": "techops@bellevueinnovationpark.com",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Contact for auditorium locks, generator hookups, and exterior staging lights."
+      }
+],
     primaryContactName: 'Derek Zhao',
     primaryContactPhone: '+1 (555) 425-7800',
     primaryContactEmail: 'dzhao@bellevueinnovation.io',
@@ -993,6 +1612,46 @@ export const INITIAL_SITES: SiteProfile[] = [
     routeOrder: 2,
     patrolFrequency: '2-Hour Campus Sweep',
     rovingNotes: 'Check pharmacy delivery dock, exterior medical clinic doors, and after-hours parking structure.',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "ONGOING",
+    contractStatus: "ACTIVE",
+    startDate: "2025-07-01",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-16-poc-1",
+            "name": "Dr. Evelyn Reed",
+            "title": "Medical Center Administrator",
+            "phone": "+1 (555) 425-3344",
+            "secondaryPhone": "+1 (555) 425-3345",
+            "email": "ereed@overlakemed.org",
+            "receivesReports": true,
+            "isEmergencyContact": false,
+            "notes": "Contact for medical suite access authorizations and tenant queries."
+      },
+      {
+            "id": "site-16-poc-2",
+            "name": "Overlake Security Dispatch",
+            "title": "24/7 Security Escalation Desk",
+            "phone": "+1 (555) 425-9988",
+            "secondaryPhone": "+1 (555) 425-9989",
+            "email": "security@overlakemed.org",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "Emergency contact for pharmacy alarms and psychiatric hold assistance."
+      },
+      {
+            "id": "site-16-poc-3",
+            "name": "Medical Clinic Facilities",
+            "title": "On-Call Maintenance",
+            "phone": "+1 (555) 425-3366",
+            "secondaryPhone": "+1 (555) 425-3367",
+            "email": "maint@overlakemed.org",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Contact for hazardous waste door locks and medical gas pressure alarms."
+      }
+],
     primaryContactName: 'Rachel Green',
     primaryContactPhone: '+1 (555) 425-3344',
     primaryContactEmail: 'rgreen@overlakemedoffices.com',
@@ -1029,6 +1688,46 @@ export const INITIAL_SITES: SiteProfile[] = [
     routeOrder: 2,
     patrolFrequency: '2-Hour Perimeter Loop',
     rovingNotes: 'Check shipping container yard padlocks, rail spur siding, and fuel pump emergency shutoffs.',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "ONGOING",
+    contractStatus: "ACTIVE",
+    startDate: "2025-08-01",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-17-poc-1",
+            "name": "Frank Kowalski",
+            "title": "Logistics Terminal Manager",
+            "phone": "+1 (555) 206-1144",
+            "secondaryPhone": "+1 (555) 206-1145",
+            "email": "fkowalski@southmarginallogistics.com",
+            "receivesReports": true,
+            "isEmergencyContact": false,
+            "notes": "Contact for driver dispute escalations and cargo manifest discrepancies."
+      },
+      {
+            "id": "site-17-poc-2",
+            "name": "Terminal Dispatch & Emergency",
+            "title": "Operations Escalation Lead",
+            "phone": "+1 (555) 206-9975",
+            "secondaryPhone": "+1 (555) 206-9976",
+            "email": "dispatch@southmarginallogistics.com",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "24/7 contact for yard breaches, trailer seal tampering, or equipment theft."
+      },
+      {
+            "id": "site-17-poc-3",
+            "name": "Yard Maintenance & Heavy Towing",
+            "title": "On-Call Maintenance",
+            "phone": "+1 (555) 206-1166",
+            "secondaryPhone": "+1 (555) 206-1167",
+            "email": "yardmaint@southmarginallogistics.com",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Call for broken swing arm gate barriers and semi-truck jump starts."
+      }
+],
     primaryContactName: 'Raymond Holt',
     primaryContactPhone: '+1 (555) 206-8833',
     primaryContactEmail: 'rholt@marginaldepot.com',
@@ -1065,6 +1764,46 @@ export const INITIAL_SITES: SiteProfile[] = [
     routeOrder: 2,
     patrolFrequency: 'Continuous Route Interval',
     rovingNotes: 'Inspect bus shelters, subterranean tunnel entrance, and historic pergola plaza areas.',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "ONGOING",
+    contractStatus: "ACTIVE",
+    startDate: "2025-03-15",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-18-poc-1",
+            "name": "Marcus Vance",
+            "title": "Transit District Director",
+            "phone": "+1 (555) 206-9915",
+            "secondaryPhone": "+1 (555) 206-9916",
+            "email": "mvance@pioneertransit.org",
+            "receivesReports": true,
+            "isEmergencyContact": false,
+            "notes": "Daily contact for plaza ordinances and police coordination."
+      },
+      {
+            "id": "site-18-poc-2",
+            "name": "Transit Police Command Console",
+            "title": "24/7 Emergency Escalation",
+            "phone": "+1 (555) 206-9980",
+            "secondaryPhone": "+1 (555) 206-9981",
+            "email": "police@pioneertransit.org",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "Call for immediate police/EMS assistance and tunnel egress checks."
+      },
+      {
+            "id": "site-18-poc-3",
+            "name": "Station Maintenance & Public Restrooms",
+            "title": "On-Call Maintenance",
+            "phone": "+1 (555) 206-9925",
+            "secondaryPhone": "+1 (555) 206-9926",
+            "email": "maint@pioneertransit.org",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Emergency contact for restroom security locks and elevator repairs."
+      }
+],
     primaryContactName: 'Sgt. Alan Bishop',
     primaryContactPhone: '+1 (555) 206-5577',
     primaryContactEmail: 'abishop@soundtransit.gov',
@@ -1097,6 +1836,47 @@ export const INITIAL_SITES: SiteProfile[] = [
     category: 'public_venue',
     securityTier: 'Tier 2 - Elevated',
     serviceType: 'dedicated',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "SPECIAL_EVENT",
+    contractStatus: "PENDING_TERMINATION",
+    startDate: "2026-09-01",
+    endDate: "2026-09-20",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-19-poc-1",
+            "name": "Julian Vance",
+            "title": "Museum Exhibitions Director",
+            "phone": "+1 (555) 206-3390",
+            "secondaryPhone": "+1 (555) 206-3391",
+            "email": "jvance@downtownartmuseum.org",
+            "receivesReports": true,
+            "isEmergencyContact": false,
+            "notes": "Temporary Art Biennial exhibition coverage; receives daily crowd count logs."
+      },
+      {
+            "id": "site-19-poc-2",
+            "name": "Curator & Vault Security Lead",
+            "title": "Museum Security Director",
+            "phone": "+1 (555) 206-9966",
+            "secondaryPhone": "+1 (555) 206-9967",
+            "email": "vault@downtownartmuseum.org",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "Immediate 24/7 escalation for motion sensor triggers or artwork boundary alarms."
+      },
+      {
+            "id": "site-19-poc-3",
+            "name": "Climate & Humidity Systems Lead",
+            "title": "On-Call Maintenance",
+            "phone": "+1 (555) 206-3395",
+            "secondaryPhone": "+1 (555) 206-3396",
+            "email": "facilities@downtownartmuseum.org",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Contact if gallery climate controls exceed strict preservation thresholds."
+      }
+],
     primaryContactName: 'Diane Vance',
     primaryContactPhone: '+1 (555) 206-5200',
     primaryContactEmail: 'd.vance@seattleartmuseum.org',
@@ -1129,6 +1909,25 @@ export const INITIAL_SITES: SiteProfile[] = [
     category: 'industrial',
     securityTier: 'Tier 2 - Elevated',
     serviceType: 'dedicated',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "ONGOING",
+    contractStatus: "EXPIRED",
+    startDate: "2024-01-01",
+    endDate: "2026-07-31",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-20-poc-1",
+            "name": "Former Logistics Operations Lead",
+            "title": "Former Property Manager",
+            "phone": "+1 (555) 206-0100",
+            "secondaryPhone": "+1 (555) 206-0101",
+            "email": "archived@waterfrontannex.com",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Contract expired July 31, 2026. Facility decommissioned and archived."
+      }
+],
     primaryContactName: 'TBD - Site Contact',
     primaryContactPhone: '',
     primaryContactEmail: '',
@@ -1161,6 +1960,46 @@ export const INITIAL_SITES: SiteProfile[] = [
     category: 'industrial',
     securityTier: 'Tier 4 - Critical Infrastructure',
     serviceType: 'dedicated',
+      // Contract Lifecycles & Service Date Ranges
+    contractType: "ONGOING",
+    contractStatus: "ACTIVE",
+    startDate: "2025-01-01",
+    // Multi-Contact Architecture
+    contacts: [
+      {
+            "id": "site-21-poc-1",
+            "name": "Chief Grid Security Engineer",
+            "title": "High-Voltage Infrastructure Lead",
+            "phone": "+1 (555) 206-0091",
+            "secondaryPhone": "+1 (555) 206-0092",
+            "email": "gridops@cascadiapower.com",
+            "receivesReports": true,
+            "isEmergencyContact": true,
+            "notes": "24/7 contact for electrified fence alarms and arc flash emergency protocols."
+      },
+      {
+            "id": "site-21-poc-2",
+            "name": "Substation Dispatch Control",
+            "title": "Assistant PM / Power Dispatch",
+            "phone": "+1 (555) 206-0095",
+            "secondaryPhone": "+1 (555) 206-0096",
+            "email": "dispatch@cascadiapower.com",
+            "receivesReports": true,
+            "isEmergencyContact": false,
+            "notes": "Lineman gate access manifests and transformer maintenance crew check-ins."
+      },
+      {
+            "id": "site-21-poc-3",
+            "name": "Perimeter Barrier Technicians",
+            "title": "On-Call Maintenance",
+            "phone": "+1 (555) 206-0099",
+            "secondaryPhone": "+1 (555) 206-0100",
+            "email": "fences@cascadiapower.com",
+            "receivesReports": false,
+            "isEmergencyContact": false,
+            "notes": "Contact for Gate 9 hydraulic bollards and razor wire fence maintenance."
+      }
+],
     primaryContactName: 'Supervisor Ray Callahan',
     primaryContactPhone: '+1 (555) 206-9811',
     primaryContactEmail: 'rcallahan@cascadiagrid.org',

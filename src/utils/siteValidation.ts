@@ -46,43 +46,95 @@ export function validateSite(site: Partial<SiteProfile>): SiteValidationResult {
   const siteName = site.name || 'Unnamed Facility';
   const siteCode = site.code || 'NO-CODE';
 
-  // 1. Client Contact Validation
+  // 1. Client Contact & Multi-POC Validation
   let hasMissingContact = false;
 
-  const contactName = (site.primaryContactName || '').trim();
-  const genericNames = ['tbd', 'none', 'unknown', 'n/a', 'site contact', 'contact'];
-  if (!contactName || genericNames.includes(contactName.toLowerCase())) {
-    hasMissingContact = true;
-    issues.push({
-      field: 'primaryContactName',
-      label: 'Primary Client Contact Name',
-      reason: 'Contact name is missing or set to placeholder.',
-      severity: 'error',
-      section: 'contact'
-    });
+  if (site.contacts && Array.isArray(site.contacts) && site.contacts.length > 0) {
+    // Multi-contact architecture validation
+    const validNamedContacts = site.contacts.filter(c => c.name && c.name.trim().length > 1);
+    if (validNamedContacts.length === 0) {
+      hasMissingContact = true;
+      issues.push({
+        field: 'contacts',
+        label: 'Property Persons of Contact (POC)',
+        reason: 'At least one named contact is required for property liaison.',
+        severity: 'error',
+        section: 'contact'
+      });
+    }
+
+    const contactsWithPhone = site.contacts.filter(c => (c.phone || '').replace(/\D/g, '').length >= 7);
+    if (contactsWithPhone.length === 0) {
+      hasMissingContact = true;
+      issues.push({
+        field: 'primaryContactPhone',
+        label: 'Client Contact Phone',
+        reason: 'At least one valid phone number is required to contact property managers.',
+        severity: 'error',
+        section: 'contact'
+      });
+    }
+
+    const hasEmergencyPoc = site.contacts.some(c => c.isEmergencyContact && (c.phone || '').replace(/\D/g, '').length >= 7) ||
+      Boolean((site.emergencyPhone || '').replace(/\D/g, '').length >= 7);
+    if (!hasEmergencyPoc) {
+      hasMissingContact = true;
+      issues.push({
+        field: 'emergencyPhone',
+        label: '24/7 Emergency Escalation Contact',
+        reason: 'Mandatory 24/7 emergency escalation contact or hotline is missing.',
+        severity: 'error',
+        section: 'contact'
+      });
+    }
+  } else {
+    // Single-contact fallback validation
+    const contactName = (site.primaryContactName || '').trim();
+    const genericNames = ['tbd', 'none', 'unknown', 'n/a', 'site contact', 'contact'];
+    if (!contactName || genericNames.includes(contactName.toLowerCase())) {
+      hasMissingContact = true;
+      issues.push({
+        field: 'primaryContactName',
+        label: 'Primary Client Contact Name',
+        reason: 'Contact name is missing or set to placeholder.',
+        severity: 'error',
+        section: 'contact'
+      });
+    }
+
+    const contactPhone = (site.primaryContactPhone || '').replace(/\D/g, '');
+    if (!contactPhone || contactPhone.length < 7) {
+      hasMissingContact = true;
+      issues.push({
+        field: 'primaryContactPhone',
+        label: 'Client Contact Phone',
+        reason: 'Valid liaison phone number is required for dispatchers to reach client.',
+        severity: 'error',
+        section: 'contact'
+      });
+    }
+
+    const emergencyPhone = (site.emergencyPhone || '').replace(/\D/g, '');
+    if (!emergencyPhone || emergencyPhone.length < 7) {
+      hasMissingContact = true;
+      issues.push({
+        field: 'emergencyPhone',
+        label: '24/7 Emergency Dispatch Hotline',
+        reason: 'Mandatory 24/7 emergency hotline is missing or invalid.',
+        severity: 'error',
+        section: 'contact'
+      });
+    }
   }
 
-  const contactPhone = (site.primaryContactPhone || '').replace(/\D/g, '');
-  if (!contactPhone || contactPhone.length < 7) {
-    hasMissingContact = true;
+  // Contract Service Dates Validation
+  if (site.startDate && site.endDate && site.endDate < site.startDate) {
     issues.push({
-      field: 'primaryContactPhone',
-      label: 'Client Contact Phone',
-      reason: 'Valid liaison phone number is required for dispatchers to reach client.',
+      field: 'endDate',
+      label: 'Contract End Date',
+      reason: 'Contract end date cannot precede start date.',
       severity: 'error',
-      section: 'contact'
-    });
-  }
-
-  const emergencyPhone = (site.emergencyPhone || '').replace(/\D/g, '');
-  if (!emergencyPhone || emergencyPhone.length < 7) {
-    hasMissingContact = true;
-    issues.push({
-      field: 'emergencyPhone',
-      label: '24/7 Emergency Dispatch Hotline',
-      reason: 'Mandatory 24/7 emergency hotline is missing or invalid.',
-      severity: 'error',
-      section: 'contact'
+      section: 'general'
     });
   }
 

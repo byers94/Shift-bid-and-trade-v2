@@ -162,6 +162,7 @@ import {
   playGeofenceDepartureWarningSound,
   playGeofenceBreachSound
 } from '../utils/audioAlert';
+import { computeSiteLifecycleStatus, ensureSiteContacts } from '../utils/contractLifecycle';
 
 
 interface NotificationToast {
@@ -902,13 +903,34 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const saved = localStorage.getItem(STORAGE_KEY_SITES);
       if (saved) {
         const parsed: SiteProfile[] = JSON.parse(saved);
-        // Ensure default tasks are retained if the saved version had no tasks
         return parsed.map((site) => {
           const initial = INITIAL_SITES.find((s) => s.id === site.id);
-          if ((!site.timeSpecificTasks || site.timeSpecificTasks.length === 0) && initial?.timeSpecificTasks && initial.timeSpecificTasks.length > 0) {
-            return { ...site, timeSpecificTasks: initial.timeSpecificTasks };
-          }
-          return site;
+          const tasks = ((!site.timeSpecificTasks || site.timeSpecificTasks.length === 0) && initial?.timeSpecificTasks && initial.timeSpecificTasks.length > 0)
+            ? initial.timeSpecificTasks
+            : site.timeSpecificTasks;
+          const contacts = (site.contacts && site.contacts.length > 0)
+            ? site.contacts
+            : (initial?.contacts && initial.contacts.length > 0)
+            ? initial.contacts
+            : ensureSiteContacts(site);
+          const contractType = site.contractType || initial?.contractType || 'ONGOING';
+          const startDate = site.startDate || initial?.startDate;
+          const endDate = site.endDate || initial?.endDate;
+          const computedStatus = computeSiteLifecycleStatus({
+            ...site,
+            startDate,
+            endDate,
+            contractStatus: site.contractStatus
+          });
+          return { 
+            ...site, 
+            timeSpecificTasks: tasks,
+            contacts,
+            contractType,
+            startDate,
+            endDate,
+            contractStatus: computedStatus
+          };
         });
       }
       return INITIAL_SITES;
@@ -3836,8 +3858,30 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Site Directory Management Functions
   const addSite = (data: Omit<SiteProfile, 'id' | 'createdAt'>): SiteProfile => {
+    const contacts = (data.contacts && data.contacts.length > 0)
+      ? data.contacts
+      : ensureSiteContacts(data);
+    const primaryContact = contacts[0];
+    const emergencyContact = contacts.find((c) => c.isEmergencyContact) || primaryContact;
+
+    const contractType = data.contractType || 'ONGOING';
+    const computedStatus = computeSiteLifecycleStatus({
+      contractStatus: data.contractStatus,
+      startDate: data.startDate,
+      endDate: data.endDate,
+      status: data.status,
+      terminationNoticeDate: data.terminationNoticeDate
+    });
+
     const newSite: SiteProfile = {
       ...data,
+      contacts,
+      contractType,
+      contractStatus: computedStatus,
+      primaryContactName: data.primaryContactName || primaryContact?.name || 'Facility Dispatcher',
+      primaryContactPhone: data.primaryContactPhone || primaryContact?.phone || '+1 (555) 206-9000',
+      primaryContactEmail: data.primaryContactEmail || primaryContact?.email,
+      emergencyPhone: data.emergencyPhone || emergencyContact?.phone || '+1 (555) 206-9911',
       id: 'site-' + Date.now().toString().slice(-4),
       createdAt: new Date().toISOString()
     };
@@ -3868,7 +3912,24 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const updateSite = (id: string, data: Partial<SiteProfile>) => {
     setSitesList((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, ...data } : s))
+      prev.map((s) => {
+        if (s.id !== id) return s;
+        const merged = { ...s, ...data };
+        if (data.contacts && data.contacts.length > 0) {
+          const primary = data.contacts[0];
+          const emergency = data.contacts.find((c) => c.isEmergencyContact) || primary;
+          if (primary) {
+            merged.primaryContactName = primary.name;
+            merged.primaryContactPhone = primary.phone;
+            merged.primaryContactEmail = primary.email;
+          }
+          if (emergency) {
+            merged.emergencyPhone = emergency.phone;
+          }
+        }
+        merged.contractStatus = computeSiteLifecycleStatus(merged);
+        return merged;
+      })
     );
 
     const site = sitesList.find((s) => s.id === id);
@@ -4096,6 +4157,36 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const routeOrder = item.routeOrder ? Number(item.routeOrder) : undefined;
         const patrolFrequency = (item.patrolFrequency || item.frequency || (serviceType === 'roving' ? 'Hourly Sweep' : undefined))?.trim();
 
+        // Parse Contract Lifecycles & Contacts
+        let contractType: 'ONGOING' | 'FIREWATCH' | 'SEASONAL' | 'SPECIAL_EVENT' = 'ONGOING';
+        const rawContract = (item.contractType || item.contract || '').toString().toUpperCase();
+        if (rawContract.includes('FIRE')) contractType = 'FIREWATCH';
+        else if (rawContract.includes('SEASON')) contractType = 'SEASONAL';
+        else if (rawContract.includes('EVENT')) contractType = 'SPECIAL_EVENT';
+
+        const startDate = item.startDate ? item.startDate.toString().trim() : undefined;
+        const endDate = item.endDate ? item.endDate.toString().trim() : undefined;
+        const terminationNoticeDate = item.terminationNoticeDate ? item.terminationNoticeDate.toString().trim() : undefined;
+        const cancellationReason = item.cancellationReason ? item.cancellationReason.toString().trim() : undefined;
+
+        let parsedContacts = Array.isArray(item.contacts) && item.contacts.length > 0 
+          ? item.contacts 
+          : ensureSiteContacts({
+              name,
+              primaryContactName,
+              primaryContactPhone,
+              primaryContactEmail,
+              emergencyPhone
+            });
+
+        const contractStatus = computeSiteLifecycleStatus({
+          contractStatus: item.contractStatus,
+          startDate,
+          endDate,
+          status,
+          terminationNoticeDate
+        });
+
         const siteData: Omit<SiteProfile, 'id' | 'createdAt'> = {
           name,
           code,
@@ -4111,6 +4202,13 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           rovingNotes,
           routeOrder,
           patrolFrequency,
+          contractType,
+          contractStatus,
+          startDate,
+          endDate,
+          terminationNoticeDate,
+          cancellationReason,
+          contacts: parsedContacts,
           primaryContactName,
           primaryContactPhone,
           primaryContactEmail,

@@ -739,6 +739,31 @@ export type DepartureReasonType =
   | 'Other';
 
 
+export interface SiteContact {
+  id: string;
+  name: string;
+  title: string; // e.g., Property Manager, Assistant PM, On-Call Maintenance, HOA Board President, Tow Operator
+  phone: string; // Primary Phone (tap-to-call)
+  secondaryPhone?: string; // Secondary/After-Hours Phone (tap-to-call)
+  email: string;
+  receivesReports: boolean; // boolean toggle indicating whether this contact automatically receives DARs/incident summaries
+  isEmergencyContact: boolean; // boolean for top-level guard/dispatch escalation
+  notes?: string; // Operational notes (e.g., "Contact between 08:00–17:00 only; call Maintenance for after-hours lockouts")
+}
+
+export type ContractServiceType = 
+  | 'ONGOING'       // Standard contracted post/patrol
+  | 'FIREWATCH'     // Temporary emergency coverage from 1 day to several weeks
+  | 'SEASONAL'      // e.g., Summer Pool Watch
+  | 'SPECIAL_EVENT'; // Short-term / single-day event coverage
+
+export type ContractLifecycleStatus = 
+  | 'ACTIVE' 
+  | 'PENDING_TERMINATION' // active but has a set future end date
+  | 'SCHEDULED'           // future start date
+  | 'EXPIRED'             // past end date
+  | 'INACTIVE';           // paused or archived
+
 export interface SiteProfile {
   id: string;
   name: string;
@@ -758,6 +783,18 @@ export interface SiteProfile {
   routeOrder?: number; // Sequence order within the roving group patrol route (1, 2, 3...)
   patrolFrequency?: string; // e.g. "3x Per Shift", "Hourly Sweep", "Opening/Closing Check", "2-Hour Loop"
 
+  // Contract Lifecycles & Service Date Ranges
+  contractType?: ContractServiceType; // 'ONGOING' | 'FIREWATCH' | 'SEASONAL' | 'SPECIAL_EVENT'
+  contractStatus?: ContractLifecycleStatus; // 'ACTIVE' | 'PENDING_TERMINATION' | 'SCHEDULED' | 'EXPIRED' | 'INACTIVE'
+  startDate?: string; // YYYY-MM-DD
+  endDate?: string; // Optional YYYY-MM-DD (or future termination date)
+  terminationNoticeDate?: string; // Date cancellation notice was received
+  cancellationReason?: string; // Reason for termination if notice received
+
+  // Multi-Contact Architecture (Guard, Dispatch & Reporting)
+  contacts?: SiteContact[];
+
+  // Primary / Backward Compatibility Contacts
   primaryContactName: string;
   primaryContactPhone: string;
   primaryContactEmail?: string;
