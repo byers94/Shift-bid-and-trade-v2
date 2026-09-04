@@ -15,7 +15,9 @@ import {
   Check,
   X,
   ArrowRightLeft,
-  Ban
+  Ban,
+  Minimize2,
+  Maximize2
 } from 'lucide-react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
 import { GuardCoachingSession } from '../../types/shift';
@@ -46,6 +48,45 @@ export const GuardCoachingAlertBanner: React.FC<GuardCoachingAlertBannerProps> =
 
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
   const [proposingSessionId, setProposingSessionId] = useState<string | null>(null);
+
+  // Minimized sessions tracking with local storage persistence
+  const [minimizedSessionIds, setMinimizedSessionIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('guard_minimized_coaching_sessions');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const toggleMinimize = (sessionId: string) => {
+    setMinimizedSessionIds((prev) => {
+      const next = prev.includes(sessionId)
+        ? prev.filter((id) => id !== sessionId)
+        : [...prev, sessionId];
+      try {
+        localStorage.setItem('guard_minimized_coaching_sessions', JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
+  const minimizeAll = () => {
+    const allIds = guardSessions.map((s) => s.id);
+    setMinimizedSessionIds(allIds);
+    try {
+      localStorage.setItem('guard_minimized_coaching_sessions', JSON.stringify(allIds));
+    } catch {}
+  };
+
+  const expandAll = () => {
+    setMinimizedSessionIds([]);
+    try {
+      localStorage.setItem('guard_minimized_coaching_sessions', JSON.stringify([]));
+    } catch {}
+  };
 
   // Proposal form state
   const [alternateDate, setAlternateDate] = useState<string>('');
@@ -106,8 +147,34 @@ export const GuardCoachingAlertBanner: React.FC<GuardCoachingAlertBannerProps> =
     }
   };
 
+  const allMinimized = guardSessions.length > 0 && guardSessions.every((s) => minimizedSessionIds.includes(s.id));
+
   return (
-    <div className="space-y-3 mb-4" id="guard-coaching-notifications-wrapper">
+    <div className="space-y-2.5 mb-3" id="guard-coaching-notifications-wrapper">
+      {guardSessions.length > 1 && (
+        <div className="flex items-center justify-between px-1 text-xs text-neutral-500 font-semibold">
+          <span>Coaching Sessions ({guardSessions.length})</span>
+          <button
+            type="button"
+            id="toggle-all-coaching-cards"
+            onClick={allMinimized ? expandAll : minimizeAll}
+            className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
+          >
+            {allMinimized ? (
+              <>
+                <Maximize2 className="w-3 h-3" />
+                <span>Expand All ({guardSessions.length})</span>
+              </>
+            ) : (
+              <>
+                <Minimize2 className="w-3 h-3" />
+                <span>Minimize All</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
       {guardSessions.map((session) => {
         const isPendingAction = session.status === 'pending_guard_action';
         const isAlternateProposed = session.status === 'alternate_proposed_by_guard';
@@ -116,6 +183,113 @@ export const GuardCoachingAlertBanner: React.FC<GuardCoachingAlertBannerProps> =
         const isConfirmed = session.status === 'confirmed_by_guard';
         const isProposing = proposingSessionId === session.id;
         const isExpanded = expandedSessionId === session.id;
+        const isMinimized = minimizedSessionIds.includes(session.id);
+
+        // Minimized Compact Card
+        if (isMinimized) {
+          return (
+            <div
+              key={session.id}
+              id={`coaching-card-minimized-${session.id}`}
+              className={`p-2.5 sm:px-3.5 sm:py-2.5 rounded-xl border transition-all shadow-xs flex items-center justify-between gap-2.5 ${
+                isPendingAction
+                  ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-700/60 text-amber-950 dark:text-amber-100 ring-1 ring-amber-500/20'
+                  : isCounterProposed
+                  ? 'bg-purple-50 dark:bg-purple-950/30 border-purple-300 dark:border-purple-700/60 text-purple-950 dark:text-purple-100 ring-1 ring-purple-500/20'
+                  : isAlternateDenied
+                  ? 'bg-rose-50 dark:bg-rose-950/30 border-rose-300 dark:border-rose-700/60 text-rose-950 dark:text-rose-100'
+                  : isAlternateProposed
+                  ? 'bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-700/60 text-blue-950 dark:text-blue-100'
+                  : 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-700/60 text-emerald-950 dark:text-emerald-100'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <div className={`p-1.5 rounded-lg shrink-0 ${
+                  isPendingAction
+                    ? 'bg-amber-500 text-white'
+                    : isCounterProposed
+                    ? 'bg-purple-600 text-white'
+                    : isAlternateDenied
+                    ? 'bg-rose-600 text-white'
+                    : isAlternateProposed
+                    ? 'bg-blue-500 text-white'
+                    : 'bg-emerald-500 text-white'
+                }`}>
+                  {isCounterProposed ? (
+                    <ArrowRightLeft className="w-3.5 h-3.5" />
+                  ) : isAlternateDenied ? (
+                    <Ban className="w-3.5 h-3.5" />
+                  ) : (
+                    <CalendarCheck className="w-3.5 h-3.5" />
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 min-w-0 truncate">
+                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 ${
+                    isPendingAction
+                      ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 border border-amber-300/80 dark:border-amber-700'
+                      : isCounterProposed
+                      ? 'bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200 border border-purple-300/80 dark:border-purple-700'
+                      : isAlternateDenied
+                      ? 'bg-rose-100 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 border border-rose-300/80 dark:border-rose-700'
+                      : isAlternateProposed
+                      ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 border border-blue-300/80 dark:border-blue-700'
+                      : 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 border border-emerald-300/80 dark:border-emerald-700'
+                  }`}>
+                    {isPendingAction ? 'Action Required' : isCounterProposed ? 'Counter Slot' : isAlternateDenied ? 'Declined' : isAlternateProposed ? 'Awaiting Command' : 'Confirmed'}
+                  </span>
+
+                  <span className="text-xs font-bold text-neutral-900 dark:text-white truncate">
+                    1-on-1 Coaching: {session.topic}
+                  </span>
+
+                  <span className="text-[11px] text-neutral-600 dark:text-neutral-400 font-medium hidden sm:inline shrink-0">
+                    • {new Date(session.scheduledDate + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} @ {session.scheduledTime} ({session.durationMinutes || 45}m)
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                {isPendingAction && (
+                  <button
+                    type="button"
+                    id={`quick-confirm-coaching-${session.id}`}
+                    onClick={() => handleConfirm(session)}
+                    className="px-2.5 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-98 rounded-lg flex items-center gap-1 shadow-2xs cursor-pointer transition-all"
+                    title="Quick Confirm and Accept"
+                  >
+                    <Check className="w-3 h-3" />
+                    <span className="hidden xs:inline">Confirm</span>
+                  </button>
+                )}
+
+                {isCounterProposed && (
+                  <button
+                    type="button"
+                    id={`quick-accept-counter-${session.id}`}
+                    onClick={() => handleConfirm(session)}
+                    className="px-2.5 py-1 text-[11px] font-bold text-white bg-purple-600 hover:bg-purple-700 active:scale-98 rounded-lg flex items-center gap-1 shadow-2xs cursor-pointer transition-all"
+                    title="Accept Counter Slot"
+                  >
+                    <Check className="w-3 h-3" />
+                    <span className="hidden xs:inline">Accept</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  id={`expand-coaching-${session.id}`}
+                  onClick={() => toggleMinimize(session.id)}
+                  className="px-2.5 py-1 text-xs font-bold text-neutral-700 dark:text-neutral-200 bg-white dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-lg border border-neutral-300 dark:border-neutral-700 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                  title="Expand coaching session card"
+                >
+                  <Maximize2 className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-400" />
+                  <span>Expand</span>
+                </button>
+              </div>
+            </div>
+          );
+        }
 
         // Calculate max date (1 week out)
         const origDateObj = new Date(session.scheduledDate + 'T12:00:00');
@@ -324,6 +498,18 @@ export const GuardCoachingAlertBanner: React.FC<GuardCoachingAlertBannerProps> =
                       <span>Confirmed by You</span>
                     </div>
                   )}
+
+                  {/* Minimize Card Button */}
+                  <button
+                    type="button"
+                    id={`minimize-coaching-${session.id}`}
+                    onClick={() => toggleMinimize(session.id)}
+                    className="px-2.5 py-1.5 text-xs font-bold text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white bg-white/90 dark:bg-neutral-800/90 hover:bg-neutral-100 dark:hover:bg-neutral-700 rounded-xl border border-neutral-300/80 dark:border-neutral-700 transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                    title="Minimize coaching card"
+                  >
+                    <Minimize2 className="w-3.5 h-3.5 text-neutral-500 dark:text-neutral-400" />
+                    <span className="hidden sm:inline">Minimize</span>
+                  </button>
 
                   <button
                     type="button"

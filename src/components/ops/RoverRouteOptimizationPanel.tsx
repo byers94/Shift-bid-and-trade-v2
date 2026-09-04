@@ -52,9 +52,13 @@ import {
 
 interface RoverRouteOptimizationPanelProps {
   onSelectSite?: (siteId: string) => void;
+  onNavigateToMpuPerformance?: () => void;
 }
 
-export const RoverRouteOptimizationPanel: React.FC<RoverRouteOptimizationPanelProps> = ({ onSelectSite }) => {
+export const RoverRouteOptimizationPanel: React.FC<RoverRouteOptimizationPanelProps> = ({ 
+  onSelectSite,
+  onNavigateToMpuPerformance
+}) => {
   const {
     rovers,
     roverPlans,
@@ -230,6 +234,19 @@ export const RoverRouteOptimizationPanel: React.FC<RoverRouteOptimizationPanelPr
 
           {/* Quick Global Action Triggers */}
           <div className="flex flex-wrap items-center gap-2">
+            {onNavigateToMpuPerformance && (
+              <button
+                id="view-mpu-performance-btn"
+                type="button"
+                onClick={onNavigateToMpuPerformance}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white text-xs font-bold rounded-lg border border-indigo-700/50 shadow-md flex items-center gap-1.5 transition-all cursor-pointer"
+                title="View shift coverage and sector fill rates across all 5 sectors"
+              >
+                <Gauge className="w-3.5 h-3.5 text-indigo-400" />
+                <span>MPU Performance</span>
+              </button>
+            )}
+
             <button
               id="reoptimize-fleet-btn"
               type="button"

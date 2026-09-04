@@ -480,21 +480,38 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
       </nav>
 
       {/* Board Content */}
-      <div className="flex-1 flex flex-col overflow-y-auto min-h-0 bg-slate-50 dark:bg-slate-900 p-2 sm:p-3">
-        {/* Guard 1-on-1 Performance Coaching Notification Banner (Strictly filtered by active guard) */}
-        <GuardCoachingAlertBanner guardId={activeGuard.id} />
+      <div 
+        id="guard-board-content"
+        className={`flex-1 flex flex-col min-h-0 bg-slate-50 dark:bg-slate-900 p-2 sm:p-3 ${
+          activeTab === 'open_board' || activeTab === 'trade_board'
+            ? 'overflow-hidden'
+            : 'overflow-y-auto'
+        }`}
+      >
+        {/* Top Notification Banners (Coaching, reminders, alerts) */}
+        <div 
+          id="guard-top-notification-banners"
+          className={`shrink-0 space-y-2 mb-2 overflow-y-auto pr-0.5 ${
+            activeTab === 'open_board' || activeTab === 'trade_board'
+              ? 'max-h-[28vh] sm:max-h-[35vh]'
+              : 'max-h-[45vh]'
+          }`}
+        >
+          {/* Guard 1-on-1 Performance Coaching Notification Banner (Strictly filtered by active guard) */}
+          <GuardCoachingAlertBanner guardId={activeGuard.id} />
 
-        {/* 24-Hour Pre-Shift Duty Reminder Banner */}
-        <UpcomingShiftReminderBanner 
-          onNavigateToDuty={() => setActiveTab('duty_post')}
-          onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)}
-        />
+          {/* 24-Hour Pre-Shift Duty Reminder Banner */}
+          <UpcomingShiftReminderBanner 
+            onNavigateToDuty={() => setActiveTab('duty_post')}
+            onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)}
+          />
 
-        {/* Time-Specific Task Notification Banner */}
-        <TimeSpecificTaskAlertBanner />
+          {/* Time-Specific Task Notification Banner */}
+          <TimeSpecificTaskAlertBanner />
 
-        {/* Priority 24h Push Alert Banner */}
-        <PriorityShiftPushBanner onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />
+          {/* Priority 24h Push Alert Banner */}
+          <PriorityShiftPushBanner onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />
+        </div>
 
         {activeTab === 'duty_post' && (
           <GuardDutyTerminal 
@@ -514,9 +531,17 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
             onNavigateToDuty={() => setActiveTab('duty_post')} 
           />
         )}
-        {activeTab === 'open_board' && <OpenShiftBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
+        {activeTab === 'open_board' && (
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <OpenShiftBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />
+          </div>
+        )}
         {activeTab === 'ranking' && <GuardLeaderboardView onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
-        {activeTab === 'trade_board' && <TradeBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />}
+        {activeTab === 'trade_board' && (
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <TradeBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />
+          </div>
+        )}
         {activeTab === 'active_calls' && <ActiveCallsPanel />}
       </div>
     </aside>

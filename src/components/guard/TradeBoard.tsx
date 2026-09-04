@@ -66,7 +66,7 @@ export const TradeBoard: React.FC<TradeBoardProps> = ({ onOpenAlertPrefs }) => {
   });
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-slate-900 transition-colors">
+    <div className="flex-1 min-h-0 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-slate-900 transition-colors">
       {/* Top Filter and Actions */}
       <div className="p-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2.5 shrink-0 shadow-2xs">
         {/* Search & Post Action */}
@@ -168,7 +168,7 @@ export const TradeBoard: React.FC<TradeBoardProps> = ({ onOpenAlertPrefs }) => {
       </div>
 
       {/* Trades Feed */}
-      <div className="flex-1 p-3.5 overflow-y-auto flex flex-col gap-3">
+      <div id="trades-scroll-feed" className="flex-1 min-h-0 p-3.5 overflow-y-auto flex flex-col gap-3">
         {visibleTrades.length === 0 ? (
           <div className="text-center py-10 px-4 bg-white dark:bg-slate-900 rounded-xl border border-dashed border-slate-300 dark:border-slate-800">
             <ArrowRightLeft className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />

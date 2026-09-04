@@ -22,6 +22,7 @@ import { SetSchedulesManager } from './SetSchedulesManager';
 import { GuardAvailabilityTracker } from './GuardAvailabilityTracker';
 import { CallOffQueuePanel } from './CallOffQueuePanel';
 import { CoachingPerformanceDashboard } from './CoachingPerformanceDashboard';
+import { MpuPerformance } from './MpuPerformance';
 import { 
   ShieldCheck, 
   Activity, 
@@ -54,7 +55,8 @@ import {
   CheckSquare,
   PhoneOff,
   CalendarRange,
-  BarChart3
+  BarChart3,
+  Gauge
 } from 'lucide-react';
 
 interface OpsAdminViewProps {
@@ -94,7 +96,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   } = useShiftOps();
 
   const [activeMainTab, setActiveMainTabState] = useState<
-    'operations' | 'live_tracking' | 'rover_routing' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'audit_terminal'
+    'operations' | 'live_tracking' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'audit_terminal'
   >(() => {
     try {
       const saved = localStorage.getItem(STORAGE_OPS_MAIN_TAB_KEY);
@@ -102,6 +104,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         saved === 'operations' || 
         saved === 'live_tracking' || 
         saved === 'rover_routing' || 
+        saved === 'mpu_performance' || 
         saved === 'calendar_schedule' || 
         saved === 'set_schedules' ||
         saved === 'guard_availability' ||
@@ -121,7 +124,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
     return 'operations';
   });
 
-  const setActiveMainTab = (tab: 'operations' | 'live_tracking' | 'rover_routing' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'audit_terminal') => {
+  const setActiveMainTab = (tab: 'operations' | 'live_tracking' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'audit_terminal') => {
     setActiveMainTabState(tab);
     try {
       localStorage.setItem(STORAGE_OPS_MAIN_TAB_KEY, tab);
@@ -466,6 +469,28 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
                 : 'bg-cyan-950 text-cyan-300 border border-cyan-400/40'
             }`}>
               {rovers.length} Units {activeInterceptions.length > 0 ? `(${activeInterceptions.length} Intercept)` : ''}
+            </span>
+          </button>
+
+          {/* MPU Performance & Sector Shift Fill Analytics Sub-Nav Tab */}
+          <button
+            id="tab-mpu-performance-btn"
+            type="button"
+            onClick={() => setActiveMainTab('mpu_performance')}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              activeMainTab === 'mpu_performance'
+                ? 'bg-indigo-600 dark:bg-indigo-600 text-white font-black shadow-xs'
+                : 'text-indigo-300 hover:text-white hover:bg-indigo-950/60 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Gauge className="w-3.5 h-3.5" />
+            <span>MPU Performance</span>
+            <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full font-mono ${
+              activeMainTab === 'mpu_performance'
+                ? 'bg-white text-indigo-950'
+                : 'bg-indigo-950 text-indigo-300 border border-indigo-700/60'
+            }`}>
+              5 Sectors
             </span>
           </button>
 
@@ -875,6 +900,25 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
           <RoverRouteOptimizationPanel 
             onSelectSite={(siteId) => {
+              setActiveMainTab('site_directory');
+            }}
+            onNavigateToMpuPerformance={() => {
+              setActiveMainTab('mpu_performance');
+            }}
+          />
+        </div>
+      )}
+
+      {activeMainTab === 'mpu_performance' && (
+        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
+          <MpuPerformance 
+            onNavigateToSchedule={(sector) => {
+              setActiveMainTab('calendar_schedule');
+            }}
+            onNavigateToRouting={(roverId) => {
+              setActiveMainTab('rover_routing');
+            }}
+            onNavigateToSiteDirectory={(sector) => {
               setActiveMainTab('site_directory');
             }}
           />
