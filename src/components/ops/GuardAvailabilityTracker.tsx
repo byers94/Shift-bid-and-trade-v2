@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
+import { AvailabilityChangeRequestQueue } from './AvailabilityChangeRequestQueue';
 import { 
   GuardProfile, 
   DailyAvailabilityRule, 
@@ -54,6 +55,7 @@ export const GuardAvailabilityTracker: React.FC<GuardAvailabilityTrackerProps> =
   const { 
     guardsList, 
     timeOffRequests, 
+    availabilityChangeRequests,
     maxDailyApprovedTimeOff,
     dateSpecificMaxTimeOffOverrides,
     setMaxDailyApprovedTimeOff,
@@ -65,16 +67,28 @@ export const GuardAvailabilityTracker: React.FC<GuardAvailabilityTrackerProps> =
     submitTimeOffRequest,
     reviewTimeOffRequest,
     cancelTimeOffRequest,
+    reviewAvailabilityChangeRequest,
+    cancelAvailabilityChangeRequest,
     scheduledShifts,
     showToast
   } = useShiftOps();
 
-  // Active sub tab: 'availability' | 'time_off'
-  const [activeTab, setActiveTab] = useState<'availability' | 'time_off'>('time_off');
+  // Active sub tab: 'time_off' | 'change_requests' | 'availability'
+  const [activeTab, setActiveTab] = useState<'time_off' | 'change_requests' | 'availability'>('time_off');
 
   // Selected Guard for availability matrix
   const [selectedGuardId, setSelectedGuardId] = useState<string>(initialGuardId || guardsList[0]?.id || '');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Pending Availability Requests count
+  const pendingAvailabilityRequestsCount = useMemo(() => {
+    return (availabilityChangeRequests || []).filter((r) => r.status === 'pending').length;
+  }, [availabilityChangeRequests]);
+
+  // Selected guard pending availability change request
+  const selectedGuardPendingChange = useMemo(() => {
+    return (availabilityChangeRequests || []).find((r) => r.guardId === selectedGuardId && r.status === 'pending');
+  }, [availabilityChangeRequests, selectedGuardId]);
 
   // Time off status filter
   const [timeOffStatusFilter, setTimeOffStatusFilter] = useState<'all' | 'pending' | 'approved' | 'denied'>('all');
@@ -285,6 +299,7 @@ export const GuardAvailabilityTracker: React.FC<GuardAvailabilityTrackerProps> =
           {/* Tab Switcher */}
           <div className="flex items-center p-1 bg-slate-950 rounded-xl border border-slate-800 text-xs w-full md:w-auto">
             <button
+              id="admin-tab-time-off-quota"
               type="button"
               onClick={() => setActiveTab('time_off')}
               className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 flex-1 md:flex-initial ${
@@ -296,10 +311,35 @@ export const GuardAvailabilityTracker: React.FC<GuardAvailabilityTrackerProps> =
               <Calendar className="w-3.5 h-3.5" />
               <span>Time-Off & Approval Quota</span>
               {pendingRequestsCount > 0 && (
-                <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
               )}
             </button>
+
             <button
+              id="admin-tab-availability-requests"
+              type="button"
+              onClick={() => setActiveTab('change_requests')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 flex-1 md:flex-initial ${
+                activeTab === 'change_requests'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span>Availability Requests</span>
+              {pendingAvailabilityRequestsCount > 0 ? (
+                <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 font-black text-[10px] animate-pulse">
+                  {pendingAvailabilityRequestsCount}
+                </span>
+              ) : (
+                <span className="px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-400 font-mono text-[10px]">
+                  {(availabilityChangeRequests || []).length}
+                </span>
+              )}
+            </button>
+
+            <button
+              id="admin-tab-weekly-matrix"
               type="button"
               onClick={() => setActiveTab('availability')}
               className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex-1 md:flex-initial ${
@@ -326,7 +366,7 @@ export const GuardAvailabilityTracker: React.FC<GuardAvailabilityTrackerProps> =
         </div>
       </div>
 
-      {activeTab === 'time_off' ? (
+      {activeTab === 'time_off' && (
         <div className="space-y-4">
           {/* DAILY APPROVAL LIMIT & ACTIVE CAPACITY COUNTER PANEL */}
           <div className="bg-slate-900/95 border border-purple-500/30 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4 ring-1 ring-purple-500/20">
@@ -1009,8 +1049,20 @@ export const GuardAvailabilityTracker: React.FC<GuardAvailabilityTrackerProps> =
             )}
           </div>
         </div>
-      ) : (
-        /* Weekly Availability Matrix Tab */
+      )}
+
+      {/* AVAILABILITY CHANGE REQUESTS QUEUE */}
+      {activeTab === 'change_requests' && (
+        <AvailabilityChangeRequestQueue
+          onSelectGuardForMatrix={(guardId) => {
+            setSelectedGuardId(guardId);
+            setActiveTab('availability');
+          }}
+        />
+      )}
+
+      {/* Weekly Availability Matrix Tab */}
+      {activeTab === 'availability' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           {/* Left Column: Guard Selector List */}
           <div className="lg:col-span-4 bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 space-y-3">
@@ -1037,6 +1089,9 @@ export const GuardAvailabilityTracker: React.FC<GuardAvailabilityTrackerProps> =
                 const avail = g.availability;
                 const rulesList = avail?.weeklyRules || avail?.rules || [];
                 const activeDaysCount = rulesList.filter(r => (r.status ? r.status !== 'unavailable' : r.isAvailable !== false)).length || 5;
+                const guardHasPending = (availabilityChangeRequests || []).some(
+                  (r) => r.guardId === g.id && r.status === 'pending'
+                );
 
                 return (
                   <button
@@ -1050,13 +1105,18 @@ export const GuardAvailabilityTracker: React.FC<GuardAvailabilityTrackerProps> =
                     }`}
                   >
                     <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center font-black text-xs text-purple-300">
+                      <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center font-black text-xs text-purple-300 shrink-0">
                         {g.name.charAt(0)}
                       </div>
                       <div>
-                        <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <div className="text-xs font-bold text-white flex items-center gap-1.5 flex-wrap">
                           <span>{g.name}</span>
                           <span className="text-[10px] font-mono text-slate-400">({g.badgeNumber})</span>
+                          {guardHasPending && (
+                            <span className="text-[9px] px-1.5 py-0.2 bg-amber-500 text-slate-950 font-black rounded-full animate-pulse">
+                              Pending Review
+                            </span>
+                          )}
                         </div>
                         <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
                           <span>{activeDaysCount} Days Avail</span>
@@ -1077,6 +1137,32 @@ export const GuardAvailabilityTracker: React.FC<GuardAvailabilityTrackerProps> =
           <div className="lg:col-span-8 bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4">
             {selectedGuard ? (
               <>
+                {/* Pending Change Proposal Notice Banner */}
+                {selectedGuardPendingChange && (
+                  <div className="p-3.5 bg-amber-500/10 border border-amber-500/40 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-200 ring-1 ring-amber-500/20">
+                    <div className="flex items-start sm:items-center gap-2.5">
+                      <div className="p-1.5 rounded-lg bg-amber-500 text-slate-950 shrink-0">
+                        <Clock className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="font-extrabold text-amber-100">
+                          Pending Availability Change Request Awaiting Supervisor Approval
+                        </span>
+                        <p className="text-amber-300/90 text-[11px] mt-0.5">
+                          {selectedGuard.name} requested recurring schedule modifications ("{selectedGuardPendingChange.reasonForChange}").
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('change_requests')}
+                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-lg text-xs whitespace-nowrap self-start sm:self-auto cursor-pointer transition-colors shadow-xs"
+                    >
+                      Review in Approvals Queue →
+                    </button>
+                  </div>
+                )}
+
                 {/* Guard Profile Summary Header */}
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3.5 border-b border-slate-800">
                   <div className="flex items-center gap-3">

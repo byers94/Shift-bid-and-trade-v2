@@ -43,9 +43,11 @@ import {
   Database,
   UploadCloud,
   Wifi,
-  WifiOff
+  WifiOff,
+  Navigation
 } from 'lucide-react';
 import { StandardReportingModal } from '../guard/StandardReportingModal';
+import { ShiftBreadcrumbsModal } from './ShiftBreadcrumbsModal';
 
 export const StandardReportsHub: React.FC = () => {
   const { 
@@ -60,13 +62,15 @@ export const StandardReportsHub: React.FC = () => {
     submitStandardReport,
     activeGuard,
     sitesList,
-    showToast 
+    showToast,
+    getBreadcrumbsForReport
   } = useShiftOps();
 
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<StandardReportType | 'all' | 'escalated'>('all');
   const [selectedSiteFilter, setSelectedSiteFilter] = useState<string>('all');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<'all' | 'submitted' | 'reviewed'>('all');
+  const [selectedReportForBreadcrumbs, setSelectedReportForBreadcrumbs] = useState<StandardShiftReport | null>(null);
 
   // Lightbox Media State
   const [activeLightboxMedia, setActiveLightboxMedia] = useState<{
@@ -567,6 +571,17 @@ export const StandardReportsHub: React.FC = () => {
                           GPS Verified ({report.gpsCoordinates.latitude.toFixed(4)}, {report.gpsCoordinates.longitude.toFixed(4)})
                         </span>
                       )}
+                      {(report.shiftBreadcrumbs?.length || report.breadcrumbsCount || report.shiftId) && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedReportForBreadcrumbs(report)}
+                          className="px-2 py-0.5 rounded-lg bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/50 text-cyan-300 font-mono text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer shadow-sm ml-auto sm:ml-0"
+                          title="Review guard continuous 30s GPS breadcrumbs trail logged during this shift"
+                        >
+                          <Navigation className="w-3 h-3 text-cyan-400" />
+                          <span>Review Shift GPS Trail ({report.shiftBreadcrumbs?.length || report.breadcrumbsCount || (report.shiftId ? 30 : 0)} fixes)</span>
+                        </button>
+                      )}
                     </div>
 
                     {/* Detailed Content Narrative */}
@@ -1013,6 +1028,27 @@ export const StandardReportsHub: React.FC = () => {
           onSubmitReport={(reportData) => {
             submitStandardReport(reportData);
           }}
+        />
+      )}
+
+      {/* POST-SHIFT REPORT GPS BREADCRUMBS REVIEW MODAL */}
+      {selectedReportForBreadcrumbs && (
+        <ShiftBreadcrumbsModal
+          isOpen={Boolean(selectedReportForBreadcrumbs)}
+          onClose={() => setSelectedReportForBreadcrumbs(null)}
+          breadcrumbs={
+            selectedReportForBreadcrumbs.shiftBreadcrumbs && selectedReportForBreadcrumbs.shiftBreadcrumbs.length > 0
+              ? selectedReportForBreadcrumbs.shiftBreadcrumbs
+              : getBreadcrumbsForReport(selectedReportForBreadcrumbs.id)
+          }
+          report={selectedReportForBreadcrumbs}
+          site={sitesList.find(
+            (s) =>
+              s.id === selectedReportForBreadcrumbs.siteId ||
+              s.name === selectedReportForBreadcrumbs.siteName
+          )}
+          guardName={selectedReportForBreadcrumbs.guardName}
+          guardBadge={selectedReportForBreadcrumbs.guardBadge}
         />
       )}
     </div>

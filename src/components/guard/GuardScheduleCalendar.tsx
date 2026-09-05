@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { PostShiftModal } from './PostShiftModal';
 import { GuardTimeOffModal } from './GuardTimeOffModal';
+import { GuardAvailabilityModal } from './GuardAvailabilityModal';
 
 interface GuardScheduleCalendarProps {
   onNavigateToDuty?: () => void;
@@ -49,6 +50,7 @@ export const GuardScheduleCalendar: React.FC<GuardScheduleCalendarProps> = ({
     scheduledShifts, 
     activeClockedInShift, 
     timeOffRequests, 
+    availabilityChangeRequests,
     trades, 
     coachingSessions,
     showToast 
@@ -71,6 +73,10 @@ export const GuardScheduleCalendar: React.FC<GuardScheduleCalendarProps> = ({
   const [timeOffInitialStart, setTimeOffInitialStart] = useState<string | undefined>(undefined);
   const [timeOffInitialEnd, setTimeOffInitialEnd] = useState<string | undefined>(undefined);
 
+  // Availability Management Modal
+  const [isAvailabilityModalOpen, setIsAvailabilityModalOpen] = useState<boolean>(false);
+  const [availabilityModalTab, setAvailabilityModalTab] = useState<'manage_proposal' | 'request_history' | 'current_schedule'>('manage_proposal');
+
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   // Filter shifts belonging to the active guard
@@ -86,6 +92,15 @@ export const GuardScheduleCalendar: React.FC<GuardScheduleCalendarProps> = ({
   const pendingTimeOffCount = useMemo(() => {
     return guardTimeOff.filter((r) => r.status === 'pending').length;
   }, [guardTimeOff]);
+
+  // Guard Availability Change Requests
+  const guardAvailabilityRequests = useMemo(() => {
+    return (availabilityChangeRequests || []).filter((r) => r.guardId === activeGuard.id);
+  }, [availabilityChangeRequests, activeGuard.id]);
+
+  const pendingAvailabilityCount = useMemo(() => {
+    return guardAvailabilityRequests.filter((r) => r.status === 'pending').length;
+  }, [guardAvailabilityRequests]);
 
   // Check approved time off for date
   const getApprovedTimeOffForDate = (dateStr: string): TimeOffRequest | undefined => {
@@ -372,6 +387,30 @@ export const GuardScheduleCalendar: React.FC<GuardScheduleCalendarProps> = ({
               ) : null}
             </button>
 
+            {/* Manage Availability Button (Requires Supervisor Approval) */}
+            <button
+              id="guard-manage-availability-btn"
+              type="button"
+              onClick={() => {
+                setAvailabilityModalTab(pendingAvailabilityCount > 0 ? 'request_history' : 'manage_proposal');
+                setIsAvailabilityModalOpen(true);
+              }}
+              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-600 hover:to-indigo-600 text-white font-extrabold text-xs shadow-sm shadow-blue-950/20 flex items-center gap-1.5 transition-all cursor-pointer border border-blue-400/40"
+              title="Manage weekly availability schedule and submit proposals for supervisor approval"
+            >
+              <Clock className="w-3.5 h-3.5 text-blue-200" />
+              <span>Availability</span>
+              {pendingAvailabilityCount > 0 ? (
+                <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 font-black text-[10px] animate-pulse">
+                  {pendingAvailabilityCount} Pending
+                </span>
+              ) : (
+                <span className="px-1.5 py-0.2 rounded-full bg-blue-900/80 text-blue-200 font-mono text-[10px]">
+                  {activeGuard.availability?.maxWeeklyHours || 40}h
+                </span>
+              )}
+            </button>
+
             <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
               <button
                 id="guard-cal-view-week"
@@ -461,6 +500,38 @@ export const GuardScheduleCalendar: React.FC<GuardScheduleCalendarProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Pending Availability Change Request Notice */}
+      {pendingAvailabilityCount > 0 && (
+        <div 
+          id="guard-pending-availability-notice"
+          className="bg-amber-500/10 dark:bg-amber-950/30 border border-amber-500/30 rounded-2xl p-3 sm:p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900 dark:text-amber-200 shadow-xs animate-in fade-in"
+        >
+          <div className="flex items-start sm:items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-amber-500 text-slate-950 shrink-0">
+              <Clock className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="font-extrabold text-amber-950 dark:text-amber-100">
+                Weekly Availability Update Pending Supervisor Review
+              </span>
+              <p className="text-amber-800 dark:text-amber-300 text-[11px] mt-0.5">
+                Your proposed schedule changes are in dispatch review. Existing roster shifts remain active until a supervisor approves.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setAvailabilityModalTab('request_history');
+              setIsAvailabilityModalOpen(true);
+            }}
+            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs whitespace-nowrap self-start sm:self-auto cursor-pointer transition-colors shadow-xs"
+          >
+            Check Status & Details
+          </button>
+        </div>
+      )}
 
       {/* Week View / Strip */}
       {viewMode === 'week' && (
@@ -1174,6 +1245,15 @@ export const GuardScheduleCalendar: React.FC<GuardScheduleCalendarProps> = ({
           initialStartDate={timeOffInitialStart}
           initialEndDate={timeOffInitialEnd}
           initialTab={timeOffModalTab}
+        />
+      )}
+
+      {/* Guard Availability Management & Change Proposal Modal */}
+      {isAvailabilityModalOpen && (
+        <GuardAvailabilityModal
+          isOpen={isAvailabilityModalOpen}
+          onClose={() => setIsAvailabilityModalOpen(false)}
+          initialTab={availabilityModalTab}
         />
       )}
 

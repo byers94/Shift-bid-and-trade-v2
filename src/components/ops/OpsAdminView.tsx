@@ -23,6 +23,7 @@ import { GuardAvailabilityTracker } from './GuardAvailabilityTracker';
 import { CallOffQueuePanel } from './CallOffQueuePanel';
 import { CoachingPerformanceDashboard } from './CoachingPerformanceDashboard';
 import { MpuPerformance } from './MpuPerformance';
+import { GuardMapDashboard } from './GuardMapDashboard';
 import { 
   ShieldCheck, 
   Activity, 
@@ -56,7 +57,8 @@ import {
   PhoneOff,
   CalendarRange,
   BarChart3,
-  Gauge
+  Gauge,
+  Compass
 } from 'lucide-react';
 
 interface OpsAdminViewProps {
@@ -92,17 +94,19 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
     standardReports,
     setSchedules,
     timeOffRequests,
+    availabilityChangeRequests,
     callOffRecords
   } = useShiftOps();
 
   const [activeMainTab, setActiveMainTabState] = useState<
-    'operations' | 'live_tracking' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'audit_terminal'
+    'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'audit_terminal'
   >(() => {
     try {
       const saved = localStorage.getItem(STORAGE_OPS_MAIN_TAB_KEY);
       if (
         saved === 'operations' || 
         saved === 'live_tracking' || 
+        saved === 'live_map' || 
         saved === 'rover_routing' || 
         saved === 'mpu_performance' || 
         saved === 'calendar_schedule' || 
@@ -124,7 +128,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
     return 'operations';
   });
 
-  const setActiveMainTab = (tab: 'operations' | 'live_tracking' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'audit_terminal') => {
+  const setActiveMainTab = (tab: 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'audit_terminal') => {
     setActiveMainTabState(tab);
     try {
       localStorage.setItem(STORAGE_OPS_MAIN_TAB_KEY, tab);
@@ -153,12 +157,14 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   const liveGuards = getGuardsLiveTracking();
   const onDutyGuardsCount = liveGuards.filter((g) => g.currentStatus === 'on_duty' || g.currentStatus === 'on_break').length;
   const lateGuardsCount = liveGuards.filter((g) => g.currentStatus === 'late' || g.activeShift?.isLate).length;
+  const breachGuardsCount = liveGuards.filter((g) => g.offSiteBreachStatus === 'breached_unacknowledged' || g.offSiteBreachStatus === 'debounce_pending').length;
 
   const allSiteTasksCount = sitesList.reduce((acc, s) => acc + (s.timeSpecificTasks?.length || 0), 0);
   const todayTaskLogsCount = (taskCompletionLogs || []).filter(l => l.completedAt?.startsWith(new Date().toISOString().slice(0, 10))).length;
   const pendingStandardReportsCount = (standardReports || []).filter(r => r.status === 'submitted').length;
   const emergencyEscalatedReportsCount = (standardReports || []).filter(r => r.reportType === 'incident' && r.incidentDetails?.escalatedToEmergencyServices).length;
   const pendingTimeOffCount = (timeOffRequests || []).filter(r => r.status === 'pending').length;
+  const pendingAvailabilityRequestsCount = (availabilityChangeRequests || []).filter(r => r.status === 'pending').length;
   const uncoveredCallOffsCount = (callOffRecords || []).filter(r => !r.replacementGuardName).length;
   const setSchedulesCount = (setSchedules || []).length;
 
@@ -450,6 +456,30 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
             </span>
           </button>
 
+          {/* Live Guard GPS Radar & Geofence Map Sub-Nav Tab */}
+          <button
+            id="tab-live-map-btn"
+            type="button"
+            onClick={() => setActiveMainTab('live_map')}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              activeMainTab === 'live_map'
+                ? 'bg-blue-600 text-white shadow-xs font-black ring-1 ring-blue-400'
+                : 'text-blue-300 hover:text-white hover:bg-blue-950/60 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Compass className="w-3.5 h-3.5 text-blue-300" />
+            <span>Live Guard GPS Map</span>
+            {breachGuardsCount > 0 ? (
+              <span className="bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full animate-pulse">
+                {breachGuardsCount} Breach
+              </span>
+            ) : (
+              <span className="bg-blue-950 text-blue-300 border border-blue-400/40 text-[10px] font-black px-1.5 py-0.2 rounded-full font-mono">
+                GPS
+              </span>
+            )}
+          </button>
+
           {/* Mobile Fleet Route Optimization & Dispatch Sub-Nav Tab */}
           <button
             id="tab-rover-routing-btn"
@@ -544,11 +574,13 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
             <Clock className="w-3.5 h-3.5 text-purple-300" />
             <span>Availability & Time-Off</span>
             <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full font-mono ${
-              pendingTimeOffCount > 0
+              (pendingTimeOffCount + pendingAvailabilityRequestsCount) > 0
                 ? 'bg-amber-400 text-slate-950 animate-pulse'
                 : 'bg-purple-950 text-purple-300 border border-purple-800'
             }`}>
-              {pendingTimeOffCount > 0 ? `🚨 ${pendingTimeOffCount} New` : `${guardsList.length} Guards`}
+              {(pendingTimeOffCount + pendingAvailabilityRequestsCount) > 0 
+                ? `🚨 ${pendingTimeOffCount + pendingAvailabilityRequestsCount} Action` 
+                : `${guardsList.length} Guards`}
             </span>
           </button>
 
@@ -891,6 +923,19 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
             onOpenCalendar={(guardId) => {
               setCalendarTargetGuardId(guardId || null);
               setActiveMainTab('calendar_schedule');
+            }}
+          />
+        </div>
+      )}
+
+      {activeMainTab === 'live_map' && (
+        <div className="flex-1 min-h-0 flex flex-col w-full h-full overflow-hidden">
+          <GuardMapDashboard 
+            onScheduleShift={(guardId) => {
+              setActiveMainTab('operations');
+            }}
+            onSelectSite={(siteName) => {
+              setActiveMainTab('site_directory');
             }}
           />
         </div>

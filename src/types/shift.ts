@@ -1154,7 +1154,43 @@ export interface ScheduledShift {
   departureExcusedReason?: string;
   departureExcusedAt?: string;
 
+  // Continuous 30-Second GPS Telemetry Breadcrumbs
+  breadcrumbs?: GpsBreadcrumb[];
+
   createdAt?: string;
+}
+
+export interface GpsBreadcrumb {
+  id: string;
+  latitude: number;
+  longitude: number;
+  accuracy?: number; // meters e.g. 3-8m
+  timestamp: string; // ISO timestamp
+  speed?: number | null; // meters per second
+  heading?: number | null; // degrees (0-360)
+  inGeofence: boolean;
+  distanceMeters?: number; // distance from site perimeter/center
+  status: ShiftDutyStatus | 'debounce_pending' | 'breached';
+  batteryLevel?: number; // 0 - 100 percentage
+  isBackground?: boolean; // true if logged while screen off or app minimized
+  recordedIntervalSec?: number; // default 30s
+  source?: 'watch_position' | 'interval_timer' | 'patrol_checkpoint' | 'manual_sync';
+  parcelOrCheckpointName?: string;
+}
+
+export interface GuardBackgroundTelemetryPermissions {
+  highAccuracyGps: 'granted' | 'prompt' | 'denied';
+  screenWakeLockAcquired: boolean;
+  screenWakeLockSupported: boolean;
+  backgroundExecutionAllowed: boolean;
+  powerSaveModeExemptionConfirmed: boolean;
+  batteryStatus?: {
+    level: number; // 0 - 100
+    charging: boolean;
+    lowPowerMode: boolean;
+  };
+  lastPingTimestamp?: string;
+  totalBreadcrumbsLoggedToday?: number;
 }
 
 export interface LateShiftAlert {
@@ -1409,6 +1445,10 @@ export interface StandardShiftReport {
   offlineQueuedAt?: string; // ISO timestamp when stored in local offline queue
   syncError?: string;
 
+  // Post-Shift GPS Breadcrumb Review & Compliance
+  shiftBreadcrumbs?: GpsBreadcrumb[];
+  breadcrumbsCount?: number;
+
   createdAt: string;
   updatedAt?: string;
 }
@@ -1453,6 +1493,8 @@ export interface GuardLiveTrackingItem {
   matchedParcelName?: string;
   lastDepartureReason?: string;
   departureExcusedByOps?: boolean;
+  gpsCoordinates?: { latitude: number; longitude: number; accuracy?: number };
+  breadcrumbs?: GpsBreadcrumb[];
 }
 
 // ----------------------------------------------------
@@ -1598,6 +1640,34 @@ export interface GuardWeeklyAvailability {
 }
 
 export type GuardAvailability = GuardWeeklyAvailability;
+
+export type AvailabilityRequestStatus = 'pending' | 'approved' | 'denied' | 'cancelled';
+
+export interface AvailabilityChangeRequest {
+  id: string;
+  guardId: string;
+  guardName: string;
+  guardBadge: string;
+  guardPhone?: string;
+  requestedAt: string; // ISO string
+  status: AvailabilityRequestStatus;
+  
+  // Proposed weekly availability
+  proposedAvailability: GuardWeeklyAvailability;
+  
+  // Snapshot of previous availability for supervisor diff comparison
+  previousAvailability?: GuardWeeklyAvailability;
+  
+  reasonForChange: string; // e.g., "College semester night classes", "Childcare / family care"
+  effectiveDate?: string; // YYYY-MM-DD
+  notes?: string;
+
+  // Supervisor review details
+  reviewedAt?: string;
+  reviewedByAdminName?: string;
+  reviewedByAdminBadge?: string;
+  resolutionNote?: string;
+}
 
 // ----------------------------------------------------
 // Set, Long-Term Recurring Schedules for Sites & Roving

@@ -26,9 +26,11 @@ import {
   AlertOctagon,
   Timer,
   Check,
-  X
+  X,
+  Compass
 } from 'lucide-react';
 import { ShiftDutyStatus } from '../../types/shift';
+import { GuardMapDashboard } from './GuardMapDashboard';
 
 interface LiveGuardRosterBoardProps {
   onScheduleShift?: (guardId?: string) => void;
@@ -57,6 +59,8 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterSite, setFilterSite] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'table' | 'map'>('table');
+  const [selectedGuardForMap, setSelectedGuardForMap] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
   // Modal state for excusing departure as supervisor
@@ -117,7 +121,7 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
     <div id="live-guard-roster-board" className="space-y-4">
       {/* Top Header & Metrics Strip */}
       <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <div className="p-2 bg-blue-100 dark:bg-blue-950/80 rounded-xl text-[#1e3a8a] dark:text-blue-400">
               <Users className="w-5 h-5" />
@@ -130,6 +134,41 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
                 Real-time active duty monitoring, site locations, break statuses, and attendance tracking
               </p>
             </div>
+          </div>
+
+          {/* View Mode Switcher: Table Grid vs Live GPS Map */}
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 self-start sm:self-auto shrink-0">
+            <button
+              type="button"
+              id="roster-view-grid-btn"
+              onClick={() => setViewMode('table')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                viewMode === 'table'
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>Table Roster</span>
+            </button>
+            <button
+              type="button"
+              id="roster-view-map-btn"
+              onClick={() => setViewMode('map')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                viewMode === 'map'
+                  ? 'bg-blue-600 text-white shadow-xs font-black'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Compass className="w-3.5 h-3.5" />
+              <span>Live GPS Map</span>
+              {breachCount > 0 && (
+                <span className="bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full animate-pulse">
+                  {breachCount}
+                </span>
+              )}
+            </button>
           </div>
         </div>
 
@@ -208,8 +247,18 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
         </div>
       </div>
 
-      {/* Filter & Search Bar */}
-      <div className="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
+      {viewMode === 'map' ? (
+        <div className="h-[760px] rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-md">
+          <GuardMapDashboard
+            onScheduleShift={onScheduleShift}
+            onSelectSite={onSelectSite}
+            initialSelectedGuardId={selectedGuardForMap}
+          />
+        </div>
+      ) : (
+        <>
+          {/* Filter & Search Bar */}
+          <div className="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="relative flex-1 w-full">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
@@ -558,6 +607,19 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
                   </button>
                 )}
 
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedGuardForMap(item.guardId);
+                    setViewMode('map');
+                  }}
+                  className="px-2.5 py-1 bg-blue-50 dark:bg-slate-800 hover:bg-blue-100 dark:hover:bg-slate-700 text-blue-700 dark:text-blue-300 rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1"
+                  title="Track guard on Live GPS Map"
+                >
+                  <Compass className="w-3 h-3 text-blue-500" />
+                  <span>GPS Map</span>
+                </button>
+
                 {onScheduleShift && (
                   <button
                     onClick={() => onScheduleShift(item.guardId)}
@@ -578,6 +640,8 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">No Guards Match Filter</h3>
           <p className="text-xs text-slate-500">Try adjusting your search keywords or status filter</p>
         </div>
+      )}
+        </>
       )}
 
       {/* SUPERVISOR CAD EXCUSAL MODAL */}

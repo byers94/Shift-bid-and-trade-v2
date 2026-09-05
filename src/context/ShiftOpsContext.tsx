@@ -64,14 +64,17 @@ import {
   GuardWeeklyAvailability,
   DailyAvailabilityRule,
   DayOfWeek,
+  AvailabilityChangeRequest,
   GenerateSetSchedulesOptions,
   GeneratedScheduleEntry,
   GenerateSetSchedulesResult,
   SetScheduleAiSuggestion,
   OffSiteBreachStatus,
   DepartureReasonType,
-  GeofenceParcel
+  GeofenceParcel,
+  GpsBreadcrumb
 } from '../types/shift';
+import { generateSyntheticShiftBreadcrumbs } from '../utils/breadcrumbHelper';
 import {
   verifySiteGeofence,
   calculateDistance,
@@ -130,7 +133,8 @@ import {
   INITIAL_SET_SCHEDULES,
   INITIAL_TIME_OFF_REQUESTS,
   INITIAL_CALL_OFF_RECORDS,
-  INITIAL_COACHING_SESSIONS
+  INITIAL_COACHING_SESSIONS,
+  INITIAL_AVAILABILITY_CHANGE_REQUESTS
 } from '../data/mockData';
 import { generateSetScheduleAiSuggestions } from '../utils/autoFillHeuristics';
 import { calculateHours, generateSmsLink, calculateShiftLateStatus, getShiftElapsedSeconds, formatElapsedTimer } from '../utils/time';
@@ -573,7 +577,7 @@ interface ShiftOpsContextType {
       inGeofence: boolean;
       distanceMeters?: number;
       matchedParcelName?: string;
-      currentGps?: { latitude: number; longitude: number };
+      currentGps?: { latitude: number; longitude: number; accuracy?: number };
     }
   ) => void;
   submitDepartureReason: (
@@ -584,6 +588,9 @@ interface ShiftOpsContextType {
   escalateGeofenceBreach: (shiftId: string) => void;
   clearGeofenceBreach: (shiftId: string, supervisorNote?: string) => void;
   excuseGeofenceDepartureByOps: (shiftId: string, reason: string, adminBadge?: string) => void;
+  addGpsBreadcrumb: (shiftId: string, crumbData: Omit<GpsBreadcrumb, 'id'>) => void;
+  getShiftBreadcrumbs: (shiftId: string) => GpsBreadcrumb[];
+  getBreadcrumbsForReport: (reportId: string) => GpsBreadcrumb[];
 
 
   // Dynamic Rover Route Optimization & Telemetry
@@ -622,6 +629,19 @@ interface ShiftOpsContextType {
   // Guard Availability Tracker
   updateGuardAvailability: (guardId: string, availability: Partial<GuardWeeklyAvailability>) => void;
   updateGuardDailyRule: (guardId: string, dayOfWeek: DayOfWeek, rule: Partial<DailyAvailabilityRule>) => void;
+
+  // Guard Availability Change Requests (Requiring Supervisor Approval)
+  availabilityChangeRequests: AvailabilityChangeRequest[];
+  pendingAvailabilityRequestsCount: number;
+  submitAvailabilityChangeRequest: (data: Omit<AvailabilityChangeRequest, 'id' | 'requestedAt' | 'status'>) => AvailabilityChangeRequest;
+  reviewAvailabilityChangeRequest: (
+    requestId: string,
+    status: 'approved' | 'denied',
+    adminName?: string,
+    adminBadge?: string,
+    note?: string
+  ) => void;
+  cancelAvailabilityChangeRequest: (requestId: string) => void;
 
   // Time-Off Requests Management & Daily Approval Quota
   maxDailyApprovedTimeOff: number;
@@ -707,12 +727,39 @@ const STORAGE_KEY_MAX_DAILY_APPROVED_TIME_OFF = 'secureshift_max_daily_approved_
 const STORAGE_KEY_DATE_SPECIFIC_MAX_TIME_OFF = 'secureshift_date_specific_max_time_off_v1';
 const STORAGE_KEY_CALL_OFF_RECORDS = 'secureshift_call_off_records_v1';
 const STORAGE_KEY_COACHING_SESSIONS = 'secureshift_coaching_sessions_v1';
+const STORAGE_KEY_AVAILABILITY_CHANGE_REQUESTS = 'secureshift_availability_change_requests_v1';
 
 export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [scheduledShifts, setScheduledShifts] = useState<ScheduledShift[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_SCHEDULED_SHIFTS);
-      return saved ? JSON.parse(saved) : INITIAL_SCHEDULED_SHIFTS;
+      const loaded: ScheduledShift[] = saved ? JSON.parse(saved) : INITIAL_SCHEDULED_SHIFTS;
+      return loaded.map((shift) => {
+        if (!shift.breadcrumbs || shift.breadcrumbs.length === 0) {
+          if (shift.status === 'on_duty' || shift.status === 'on_break' || shift.status === 'completed') {
+            const site = INITIAL_SITES.find((s) => s.id === shift.siteId || s.name === shift.siteName);
+            const centerLat = shift.gpsCoordinates?.latitude || site?.latitude || 47.6062;
+            const centerLng = shift.gpsCoordinates?.longitude || site?.longitude || -122.3321;
+            const siteRadius = site?.geofenceRadiusMeters || 120;
+            const isBreach = shift.offSiteBreachStatus === 'breached_unacknowledged' || shift.currentInsideGeofence === false;
+            const ptsCount = shift.status === 'completed' ? 48 : 28;
+            const crumbs = generateSyntheticShiftBreadcrumbs({
+              centerLat,
+              centerLng,
+              startTime: shift.clockInTime || new Date(Date.now() - 25 * 60 * 1000).toISOString(),
+              totalPoints: ptsCount,
+              hasPerimeterBreach: isBreach,
+              siteRadiusMeters: siteRadius,
+              guardName: shift.guardName
+            });
+            return {
+              ...shift,
+              breadcrumbs: crumbs
+            };
+          }
+        }
+        return shift;
+      });
     } catch {
       return INITIAL_SCHEDULED_SHIFTS;
     }
@@ -964,7 +1011,27 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [standardReports, setStandardReports] = useState<StandardShiftReport[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_STANDARD_REPORTS);
-      return saved ? JSON.parse(saved) : INITIAL_STANDARD_REPORTS;
+      const loaded: StandardShiftReport[] = saved ? JSON.parse(saved) : INITIAL_STANDARD_REPORTS;
+      return loaded.map((report) => {
+        if (!report.shiftBreadcrumbs || report.shiftBreadcrumbs.length === 0) {
+          const centerLat = report.gpsCoordinates?.latitude || 47.6062;
+          const centerLng = report.gpsCoordinates?.longitude || -122.3321;
+          const crumbs = generateSyntheticShiftBreadcrumbs({
+            centerLat,
+            centerLng,
+            startTime: report.timestamp || new Date(Date.now() - 40 * 60 * 1000).toISOString(),
+            totalPoints: 32,
+            siteRadiusMeters: 100,
+            guardName: report.guardName
+          });
+          return {
+            ...report,
+            shiftBreadcrumbs: crumbs,
+            breadcrumbsCount: crumbs.length
+          };
+        }
+        return report;
+      });
     } catch {
       return INITIAL_STANDARD_REPORTS;
     }
@@ -1030,6 +1097,16 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   });
 
+  // Guard Availability Change Requests (Requiring Supervisor Approval)
+  const [availabilityChangeRequests, setAvailabilityChangeRequests] = useState<AvailabilityChangeRequest[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_AVAILABILITY_CHANGE_REQUESTS);
+      return saved ? JSON.parse(saved) : INITIAL_AVAILABILITY_CHANGE_REQUESTS;
+    } catch {
+      return INITIAL_AVAILABILITY_CHANGE_REQUESTS;
+    }
+  });
+
   // LocalStorage synchronization for Set Schedules, Time-Off, and Call-Off records
   useEffect(() => {
     try {
@@ -1078,6 +1155,14 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       console.warn('Failed to save coaching sessions', e);
     }
   }, [coachingSessions]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_AVAILABILITY_CHANGE_REQUESTS, JSON.stringify(availabilityChangeRequests));
+    } catch (e) {
+      console.warn('Failed to save availability change requests', e);
+    }
+  }, [availabilityChangeRequests]);
 
   // Offline Report Queue & Cloud Sync Status State
   const [offlineReportQueue, setOfflineReportQueue] = useState<OfflineQueuedReport[]>(() => getOfflineReportQueue());
@@ -5832,6 +5917,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const elapsedSeconds = getShiftElapsedSeconds(activeShift.clockInTime, nowIso, updatedBreaks);
     const actualHoursWorked = Math.round((elapsedSeconds / 3600) * 10) / 10;
+    const finalBreadcrumbs = activeShift.breadcrumbs || [];
 
     const updatedShift: ScheduledShift = {
       ...activeShift,
@@ -5840,10 +5926,63 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       clockOutNotes: options?.notes || 'Shift completed and clocked out via Guard Terminal.',
       handoverSummary: options?.handoverSummary || 'Handover completed to relief officer. All posts secure.',
       actualHoursWorked: Math.max(0.1, actualHoursWorked),
-      breaks: updatedBreaks
+      breaks: updatedBreaks,
+      breadcrumbs: finalBreadcrumbs
     };
 
     setScheduledShifts((prev) => prev.map((s) => s.id === activeShift.id ? updatedShift : s));
+
+    // Save GPS Breadcrumb Trail with the reporting history for this shift
+    setStandardReports((prev) => {
+      const existingReport = prev.find((r) => r.shiftId === activeShift.id);
+      if (existingReport) {
+        return prev.map((r) => r.shiftId === activeShift.id ? {
+          ...r,
+          shiftBreadcrumbs: finalBreadcrumbs,
+          breadcrumbsCount: finalBreadcrumbs.length
+        } : r);
+      } else {
+        const completionReport: StandardShiftReport = {
+          id: `RPT-${Date.now()}`,
+          reportNumber: `RPT-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`,
+          reportType: 'activity',
+          shiftId: activeShift.id,
+          siteId: activeShift.siteId,
+          siteName: activeShift.siteName,
+          siteAddress: activeShift.siteAddress,
+          guardId: guard.id,
+          guardName: guard.name,
+          guardBadge: guard.badgeNumber,
+          guardPhone: guard.phone,
+          timestamp: nowIso,
+          createdAt: nowIso,
+          gpsCoordinates: activeShift.gpsCoordinates,
+          status: 'submitted',
+          shiftBreadcrumbs: finalBreadcrumbs,
+          breadcrumbsCount: finalBreadcrumbs.length,
+          media: [
+            {
+              id: `med-${Date.now()}`,
+              type: 'photo',
+              url: activeShift.selfiePhotoUrl || 'https://images.unsplash.com/photo-1541872703-74c5e44368f9?auto=format&fit=crop&w=600&q=80',
+              caption: `Shift completion handover photo by Officer ${guard.name} (${guard.badgeNumber})`,
+              capturedAt: nowIso,
+              gpsCoordinates: activeShift.gpsCoordinates
+            }
+          ],
+          activityDetails: {
+            patrolType: 'foot_patrol',
+            zoneChecked: activeShift.postRole || 'Facility Perimeter & Access Post',
+            status: 'all_clear',
+            observationNotes: `Shift completed. ${options?.notes || ''} Handover: ${options?.handoverSummary || 'All posts inspected and clear.'} 30s GPS breadcrumb trail saved with ${finalBreadcrumbs.length} continuous telemetry fixes.`,
+            isThirtyMinCheckin: false,
+            doorsCheckedCount: 4,
+            lightsCheckedCount: 12
+          }
+        };
+        return [completionReport, ...prev];
+      }
+    });
 
     playClockOutAlertSound();
 
@@ -6242,6 +6381,33 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         elapsedSeconds = getShiftElapsedSeconds(activeShift.clockInTime, undefined, activeShift.breaks);
       }
 
+      // Compute live GPS coordinates based on active shift, site geofence position, and out-of-bounds offset
+      const matchedSite = sitesList.find(
+        (s) => s.name === currentShift?.siteName || s.id === currentShift?.siteId
+      );
+      let calculatedGps = currentShift?.gpsCoordinates;
+      if (!calculatedGps && matchedSite) {
+        const baseLat = matchedSite.latitude || 47.6062;
+        const baseLng = matchedSite.longitude || -122.3321;
+        if (currentShift?.currentInsideGeofence === false) {
+          const dist = currentShift?.currentGeofenceDistanceMeters || 350;
+          calculatedGps = {
+            latitude: Number((baseLat + dist / 111111).toFixed(6)),
+            longitude: Number((baseLng - dist / (111111 * Math.cos((baseLat * Math.PI) / 180))).toFixed(6)),
+            accuracy: 6
+          };
+        } else {
+          // Slight natural post offset based on guard ID to prevent overlapping markers on the same facility
+          const hash = (guard.id.charCodeAt(guard.id.length - 1) % 5) - 2;
+          const distOffset = hash * 15;
+          calculatedGps = {
+            latitude: Number((baseLat + distOffset / 111111).toFixed(6)),
+            longitude: Number((baseLng + distOffset / (111111 * Math.cos((baseLat * Math.PI) / 180))).toFixed(6)),
+            accuracy: 5
+          };
+        }
+      }
+
       return {
         guardId: guard.id,
         guardName: guard.name,
@@ -6261,6 +6427,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         gpsVerified: currentShift?.gpsVerified,
         geofencePassed: currentShift?.geofencePassed,
         geofenceDistanceMeters: currentShift?.geofenceDistanceMeters,
+        currentGeofenceDistanceMeters: currentShift?.currentGeofenceDistanceMeters,
         selfiePhotoUrl: currentShift?.selfiePhotoUrl,
         equipmentPhotoUrl: currentShift?.equipmentPhotoUrl,
         verifiedByMethod: currentShift?.verifiedByMethod,
@@ -6271,7 +6438,9 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         currentInsideGeofence: currentShift?.currentInsideGeofence,
         matchedParcelName: currentShift?.currentMatchedParcelName,
         lastDepartureReason: currentShift?.lastDepartureReason,
-        departureExcusedByOps: currentShift?.departureExcusedByOps
+        departureExcusedByOps: currentShift?.departureExcusedByOps,
+        gpsCoordinates: calculatedGps,
+        breadcrumbs: currentShift?.breadcrumbs || []
       };
     });
   };
@@ -6606,6 +6775,75 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     return () => clearInterval(interval);
   }, []);
+
+  // ==========================================
+  // GPS 30-Second Breadcrumb Tracking & Post-Shift Reporting Review
+  // ==========================================
+  const addGpsBreadcrumb = (shiftId: string, crumbData: Omit<GpsBreadcrumb, 'id'>) => {
+    const newCrumb: GpsBreadcrumb = {
+      ...crumbData,
+      id: `crumb-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
+    };
+
+    setScheduledShifts((prev) =>
+      prev.map((s) => {
+        if (s.id === shiftId) {
+          const existing = s.breadcrumbs || [];
+          const updatedTrail = [...existing, newCrumb].slice(-2000);
+          return {
+            ...s,
+            breadcrumbs: updatedTrail,
+            gpsCoordinates: {
+              latitude: newCrumb.latitude,
+              longitude: newCrumb.longitude,
+              accuracy: newCrumb.accuracy
+            },
+            currentInsideGeofence: newCrumb.inGeofence,
+            currentGeofenceDistanceMeters: newCrumb.distanceMeters
+          };
+        }
+        return s;
+      })
+    );
+
+    // Also update any standard report matching this shiftId so post-shift reporting history retains location data
+    setStandardReports((prev) =>
+      prev.map((r) => {
+        if (r.shiftId === shiftId) {
+          const updatedTrail = [...(r.shiftBreadcrumbs || []), newCrumb].slice(-2000);
+          return {
+            ...r,
+            shiftBreadcrumbs: updatedTrail,
+            breadcrumbsCount: updatedTrail.length
+          };
+        }
+        return r;
+      })
+    );
+  };
+
+  const getShiftBreadcrumbs = (shiftId: string): GpsBreadcrumb[] => {
+    const shift = scheduledShifts.find((s) => s.id === shiftId);
+    if (shift?.breadcrumbs && shift.breadcrumbs.length > 0) {
+      return shift.breadcrumbs;
+    }
+    const report = standardReports.find((r) => r.shiftId === shiftId && r.shiftBreadcrumbs);
+    if (report?.shiftBreadcrumbs && report.shiftBreadcrumbs.length > 0) {
+      return report.shiftBreadcrumbs;
+    }
+    return [];
+  };
+
+  const getBreadcrumbsForReport = (reportId: string): GpsBreadcrumb[] => {
+    const report = standardReports.find((r) => r.id === reportId);
+    if (report?.shiftBreadcrumbs && report.shiftBreadcrumbs.length > 0) {
+      return report.shiftBreadcrumbs;
+    }
+    if (report?.shiftId) {
+      return getShiftBreadcrumbs(report.shiftId);
+    }
+    return [];
+  };
 
   // ==========================================
   const addSetSchedule = (data: Omit<SetSchedule, 'id' | 'createdAt' | 'updatedAt'>): SetSchedule => {
@@ -7189,6 +7427,129 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const cancelTimeOffRequest = (requestId: string) => {
     setTimeOffRequests((prev) => prev.map((r) => (r.id === requestId ? { ...r, status: 'cancelled' } : r)));
     showToast('Time-Off Cancelled', 'Request marked as cancelled.', 'info');
+  };
+
+  // ==========================================
+  // Guard Availability Change Requests (Requiring Supervisor Approval)
+  // ==========================================
+  const pendingAvailabilityRequestsCount = useMemo(() => {
+    return availabilityChangeRequests.filter((r) => r.status === 'pending').length;
+  }, [availabilityChangeRequests]);
+
+  const submitAvailabilityChangeRequest = (
+    data: Omit<AvailabilityChangeRequest, 'id' | 'requestedAt' | 'status'>
+  ): AvailabilityChangeRequest => {
+    const newRequest: AvailabilityChangeRequest = {
+      ...data,
+      id: `AR-${Date.now()}`,
+      status: 'pending',
+      requestedAt: new Date().toISOString()
+    };
+
+    setAvailabilityChangeRequests((prev) => [newRequest, ...prev]);
+
+    addAuditLog(
+      'AVAILABILITY_CHANGE_REQUESTED',
+      'shift',
+      `Officer ${data.guardName} (${data.guardBadge}) submitted an availability change request. Reason: "${data.reasonForChange}". Requires supervisor approval.`,
+      data.guardName,
+      'info'
+    );
+
+    showToast(
+      'Availability Request Submitted',
+      `Your availability changes have been submitted to Operations. A supervisor must approve before changes take effect.`,
+      'info'
+    );
+
+    return newRequest;
+  };
+
+  const reviewAvailabilityChangeRequest = (
+    requestId: string,
+    status: 'approved' | 'denied',
+    adminName = "Lt. Mark O'Connor",
+    adminBadge = 'OPS-CMD-01',
+    note?: string
+  ) => {
+    const nowIso = new Date().toISOString();
+    const target = availabilityChangeRequests.find((r) => r.id === requestId);
+    if (!target) return;
+
+    const finalNote = note || (status === 'approved' ? 'Approved by Operations' : 'Denied per site coverage requirements');
+
+    setAvailabilityChangeRequests((prev) =>
+      prev.map((r) =>
+        r.id === requestId
+          ? {
+              ...r,
+              status,
+              reviewedAt: nowIso,
+              reviewedByAdminName: adminName,
+              reviewedByAdminBadge: adminBadge,
+              resolutionNote: finalNote
+            }
+          : r
+      )
+    );
+
+    if (status === 'approved') {
+      // Takes effect: Apply the proposed availability directly to the guard profile in dispatch!
+      updateGuardAvailability(target.guardId, target.proposedAvailability);
+
+      addAuditLog(
+        'AVAILABILITY_CHANGE_APPROVED',
+        'system',
+        `Availability change request for ${target.guardName} (${target.guardBadge}) was APPROVED by ${adminName}. Schedule rules updated. Note: "${finalNote}".`,
+        adminName,
+        'success'
+      );
+
+      logAdminAction({
+        type: 'guard_updated',
+        adminName,
+        adminBadge,
+        badgeVariant: 'emerald',
+        title: `Availability Approved: ${target.guardName}`,
+        description: `Approved availability change request for ${target.guardName} (${target.guardBadge}). Updated weekly availability schedule. Note: ${finalNote}`
+      });
+
+      showToast(
+        'Availability Approved',
+        `Changes approved and applied to Officer ${target.guardName}'s profile.`,
+        'success'
+      );
+    } else {
+      addAuditLog(
+        'AVAILABILITY_CHANGE_DENIED',
+        'system',
+        `Availability change request for ${target.guardName} (${target.guardBadge}) was DENIED by ${adminName}. Note: "${finalNote}".`,
+        adminName,
+        'warning'
+      );
+
+      logAdminAction({
+        type: 'guard_updated',
+        adminName,
+        adminBadge,
+        badgeVariant: 'rose',
+        title: `Availability Denied: ${target.guardName}`,
+        description: `Denied availability change request for ${target.guardName} (${target.guardBadge}). Note: ${finalNote}`
+      });
+
+      showToast(
+        'Availability Request Denied',
+        `Request for Officer ${target.guardName} was denied. Schedule was not modified.`,
+        'warning'
+      );
+    }
+  };
+
+  const cancelAvailabilityChangeRequest = (requestId: string) => {
+    setAvailabilityChangeRequests((prev) =>
+      prev.map((r) => (r.id === requestId ? { ...r, status: 'cancelled' } : r))
+    );
+    showToast('Request Cancelled', 'Your pending availability change request has been cancelled.', 'info');
   };
 
   // ==========================================
@@ -8059,10 +8420,12 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setTimeOffRequests(INITIAL_TIME_OFF_REQUESTS);
     setCallOffRecords(INITIAL_CALL_OFF_RECORDS);
     setCoachingSessions(INITIAL_COACHING_SESSIONS);
+    setAvailabilityChangeRequests(INITIAL_AVAILABILITY_CHANGE_REQUESTS);
     localStorage.removeItem(STORAGE_KEY_SET_SCHEDULES);
     localStorage.removeItem(STORAGE_KEY_TIME_OFF_REQUESTS);
     localStorage.removeItem(STORAGE_KEY_CALL_OFF_RECORDS);
     localStorage.removeItem(STORAGE_KEY_COACHING_SESSIONS);
+    localStorage.removeItem(STORAGE_KEY_AVAILABILITY_CHANGE_REQUESTS);
     showToast('System Reset', 'Demo shift, trade, schedule, time tracking, CFS calls, rover routes, set schedules, and telemetry restored to initial state.', 'info');
   };
 
@@ -8117,6 +8480,15 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         getGuardUpcomingShifts,
         confirmShiftAttendance,
         getGuardsLiveTracking,
+        verifyGuardGeofenceLocation,
+        updateGuardGeofenceState,
+        submitDepartureReason,
+        escalateGeofenceBreach,
+        clearGeofenceBreach,
+        excuseGeofenceDepartureByOps,
+        addGpsBreadcrumb,
+        getShiftBreadcrumbs,
+        getBreadcrumbsForReport,
         setSchedules,
         timeOffRequests,
         maxDailyApprovedTimeOff,
@@ -8135,6 +8507,11 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         getSetScheduleAiSuggestions,
         updateGuardAvailability,
         updateGuardDailyRule,
+        availabilityChangeRequests,
+        pendingAvailabilityRequestsCount,
+        submitAvailabilityChangeRequest,
+        reviewAvailabilityChangeRequest,
+        cancelAvailabilityChangeRequest,
         submitTimeOffRequest,
         reviewTimeOffRequest,
         cancelTimeOffRequest,

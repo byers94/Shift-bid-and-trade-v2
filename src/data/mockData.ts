@@ -23,7 +23,8 @@ import {
   GuardCoachingSession,
   GuardWeeklyAvailability,
   DailyAvailabilityRule,
-  DayOfWeek
+  DayOfWeek,
+  AvailabilityChangeRequest
 } from '../types/shift';
 
 export const OPS_DISPATCH_PHONE = '+1 (800) 555-0199';
@@ -4998,4 +4999,83 @@ export const INITIAL_COACHING_SESSIONS: GuardCoachingSession[] = [
     updatedAt: '2026-08-10T13:45:00Z'
   }
 ];
+
+export const INITIAL_AVAILABILITY_CHANGE_REQUESTS: AvailabilityChangeRequest[] = [
+  {
+    id: 'AR-2026-001',
+    guardId: 'guard-103',
+    guardName: 'Marcus Vance',
+    guardBadge: 'SEC-4199',
+    guardPhone: '+1 (555) 678-9012',
+    requestedAt: '2026-09-04T16:20:00Z',
+    status: 'pending',
+    reasonForChange: 'Enrolled in Maritime Safety & Port Operations evening coursework on Tuesdays and Thursdays. Requesting Tuesday morning-only and unavailable on Thursdays.',
+    effectiveDate: '2026-09-15',
+    proposedAvailability: {
+      guardId: 'guard-103',
+      weeklyRules: [
+        { dayOfWeek: 0, dayLabel: 'Sunday', isAvailable: false, status: 'unavailable' },
+        { dayOfWeek: 1, dayLabel: 'Monday', isAvailable: true, status: 'available', preferredShift: 'any' },
+        { dayOfWeek: 2, dayLabel: 'Tuesday', isAvailable: true, status: 'preferred', preferredShift: 'morning', startTime: '06:00', endTime: '14:00' },
+        { dayOfWeek: 3, dayLabel: 'Wednesday', isAvailable: true, status: 'available', preferredShift: 'any' },
+        { dayOfWeek: 4, dayLabel: 'Thursday', isAvailable: false, status: 'unavailable' },
+        { dayOfWeek: 5, dayLabel: 'Friday', isAvailable: true, status: 'available', preferredShift: 'any' },
+        { dayOfWeek: 6, dayLabel: 'Saturday', isAvailable: false, status: 'unavailable' }
+      ],
+      maxWeeklyHours: 32,
+      overtimeWilling: false,
+      preferredSites: ['Port Authority - Pier 7', 'Logistics Terminal'],
+      preferredServiceTypes: ['dedicated'],
+      notes: 'Available Mon, Tue Morning, Wed, Fri. Attending maritime class on Tue/Thu evenings.'
+    },
+    previousAvailability: {
+      guardId: 'guard-103',
+      weeklyRules: [
+        { dayOfWeek: 0, dayLabel: 'Sunday', isAvailable: false, status: 'unavailable' },
+        { dayOfWeek: 1, dayLabel: 'Monday', isAvailable: true, status: 'available', preferredShift: 'any' },
+        { dayOfWeek: 2, dayLabel: 'Tuesday', isAvailable: true, status: 'available', preferredShift: 'any' },
+        { dayOfWeek: 3, dayLabel: 'Wednesday', isAvailable: true, status: 'available', preferredShift: 'any' },
+        { dayOfWeek: 4, dayLabel: 'Thursday', isAvailable: true, status: 'available', preferredShift: 'any' },
+        { dayOfWeek: 5, dayLabel: 'Friday', isAvailable: true, status: 'available', preferredShift: 'any' },
+        { dayOfWeek: 6, dayLabel: 'Saturday', isAvailable: false, status: 'unavailable' }
+      ],
+      maxWeeklyHours: 40,
+      overtimeWilling: true,
+      preferredSites: ['Port Authority - Pier 7'],
+      preferredServiceTypes: ['dedicated']
+    }
+  },
+  {
+    id: 'AR-2026-002',
+    guardId: 'guard-101',
+    guardName: 'Sarah Jenkins',
+    guardBadge: 'SEC-7721',
+    guardPhone: '+1 (555) 345-6789',
+    requestedAt: '2026-08-20T11:00:00Z',
+    status: 'approved',
+    reasonForChange: 'Transitioning to swing shift concierge and access control coverage.',
+    effectiveDate: '2026-08-25',
+    reviewedAt: '2026-08-21T09:30:00Z',
+    reviewedByAdminName: "Lt. Mark O'Connor",
+    reviewedByAdminBadge: 'OPS-CMD-01',
+    resolutionNote: 'Approved. Front desk concierge swing roster updated accordingly.',
+    proposedAvailability: {
+      guardId: 'guard-101',
+      weeklyRules: [
+        { dayOfWeek: 0, dayLabel: 'Sunday', isAvailable: false, status: 'unavailable' },
+        { dayOfWeek: 1, dayLabel: 'Monday', isAvailable: true, status: 'preferred', preferredShift: 'swing', startTime: '14:00', endTime: '22:00' },
+        { dayOfWeek: 2, dayLabel: 'Tuesday', isAvailable: true, status: 'preferred', preferredShift: 'swing', startTime: '14:00', endTime: '22:00' },
+        { dayOfWeek: 3, dayLabel: 'Wednesday', isAvailable: true, status: 'preferred', preferredShift: 'swing', startTime: '14:00', endTime: '22:00' },
+        { dayOfWeek: 4, dayLabel: 'Thursday', isAvailable: true, status: 'preferred', preferredShift: 'swing', startTime: '14:00', endTime: '22:00' },
+        { dayOfWeek: 5, dayLabel: 'Friday', isAvailable: true, status: 'preferred', preferredShift: 'swing', startTime: '14:00', endTime: '22:00' },
+        { dayOfWeek: 6, dayLabel: 'Saturday', isAvailable: false, status: 'unavailable' }
+      ],
+      maxWeeklyHours: 40,
+      overtimeWilling: true,
+      preferredSites: ['Corporate HQ - Main Tower', 'Hotel Grand Lobby & Concierge'],
+      preferredServiceTypes: ['dedicated']
+    }
+  }
+];
+
 

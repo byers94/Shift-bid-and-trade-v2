@@ -47,7 +47,10 @@ import {
   Unlock,
   CheckCircle,
   BellRing,
-  AlertOctagon
+  AlertOctagon,
+  Smartphone,
+  Battery,
+  Activity
 } from 'lucide-react';
 import { ScheduledShift, TimeSpecificTask, StandardReportType, DepartureReasonType, SiteProfile } from '../../types/shift';
 import { VerificationCameraModal } from './VerificationCameraModal';
@@ -58,6 +61,9 @@ import { GuardThirtyMinIntervalTracker } from './GuardThirtyMinIntervalTracker';
 import { GuardReportsLogSection } from './GuardReportsLogSection';
 import { GuardDeparturePromptModal } from './GuardDeparturePromptModal';
 import { GuardSiteInfoModal } from './GuardSiteInfoModal';
+import { GuardContinuousPermissionsModal } from './GuardContinuousPermissionsModal';
+import { ShiftBreadcrumbsModal } from '../ops/ShiftBreadcrumbsModal';
+import { useGuardContinuousTelemetry } from '../../hooks/useGuardContinuousTelemetry';
 import { getCurrentLocation, calculateDistance, GeoCoordinates, formatDistance, verifySiteGeofence } from '../../utils/geo';
 
 interface GuardDutyTerminalProps {
@@ -93,8 +99,39 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
     updateGuardGeofenceState,
     submitDepartureReason,
     clearGeofenceBreach,
-    escalateGeofenceBreach
+    escalateGeofenceBreach,
+    addGpsBreadcrumb,
+    getShiftBreadcrumbs
   } = useShiftOps();
+
+  // Continuous 30-Second Background GPS Telemetry Hook
+  const {
+    isTracking,
+    isBackgroundEnabled,
+    wakeLockActive,
+    breadcrumbs: liveBreadcrumbs,
+    lastBreadcrumb,
+    batteryLevel,
+    isPowerSaveMode,
+    isPermissionsModalOpen,
+    openPermissionsModal,
+    closePermissionsModal,
+    permissionsState,
+    updatePermissions,
+    acquireWakeLock,
+    releaseWakeLock,
+    requestPermissions,
+    toggleBackgroundTracking,
+    addBreadcrumbManually
+  } = useGuardContinuousTelemetry({
+    activeShift: activeClockedInShift || null,
+    site: sitesList.find((s) => s.name === activeClockedInShift?.siteName || s.id === activeClockedInShift?.siteId),
+    onAddBreadcrumb: (shiftId, crumb) => {
+      addGpsBreadcrumb(shiftId, crumb);
+    }
+  });
+
+  const [isShiftTrailModalOpen, setIsShiftTrailModalOpen] = useState<boolean>(false);
 
   // Geofence Departure Reason Prompt Modal State
   const [isDeparturePromptOpen, setIsDeparturePromptOpen] = useState<boolean>(false);
@@ -289,6 +326,13 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
       equipmentPhotoUrl: data.equipmentPhotoUrl,
       verifiedByMethod: 'camera_gps'
     });
+
+    // Auto-prompt continuous telemetry permissions if background GPS or power-save mode exemption not granted
+    if (!permissionsState.backgroundGeolocAllowed || !permissionsState.powerSaveExempted) {
+      setTimeout(() => {
+        openPermissionsModal();
+      }, 500);
+    }
   };
 
   const handleExecuteClockOut = (e: React.FormEvent) => {
@@ -596,6 +640,92 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
                         title="Poll live device GPS to verify location"
                       >
                         Check GPS
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 30-Second Continuous GPS Breadcrumb Telemetry & Permissions Status */}
+                <div className="p-2.5 rounded-lg bg-slate-900/90 border border-emerald-500/30 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="relative">
+                        <div className={`w-7 h-7 rounded-lg border flex items-center justify-center ${
+                          isTracking && isBackgroundEnabled
+                            ? 'bg-emerald-950 border-emerald-500/60 text-emerald-400'
+                            : 'bg-amber-950 border-amber-500/60 text-amber-400'
+                        }`}>
+                          <Radio className="w-3.5 h-3.5 animate-pulse" />
+                        </div>
+                        {isTracking && (
+                          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[9px] font-mono uppercase font-bold text-emerald-400">
+                            30s Continuous GPS
+                          </span>
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-700/50 font-mono">
+                            Fix #{activeClockedInShift.breadcrumbs?.length || liveBreadcrumbs.length}
+                          </span>
+                          {wakeLockActive && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-blue-950 text-blue-300 border border-blue-700/50 font-mono">
+                              Screen-Off WakeLock ON
+                            </span>
+                          )}
+                          {isPowerSaveMode && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-700/50 font-mono">
+                              Battery Saver Active
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-300 truncate mt-0.5 flex items-center gap-1">
+                          <span>
+                            {lastBreadcrumb
+                              ? `Fix: ${lastBreadcrumb.latitude.toFixed(5)}, ${lastBreadcrumb.longitude.toFixed(5)} (±${Math.round(lastBreadcrumb.accuracy)}m)`
+                              : 'Continuous 30s background loop active...'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setIsShiftTrailModalOpen(true)}
+                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-bold rounded text-[10px] transition-colors flex items-center gap-1"
+                        title="Review 30-second interval GPS breadcrumb path"
+                      >
+                        <Navigation className="w-3 h-3 text-cyan-400" />
+                        <span>Trail ({activeClockedInShift.breadcrumbs?.length || liveBreadcrumbs.length})</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={openPermissionsModal}
+                        className="px-2 py-1 bg-emerald-700/80 hover:bg-emerald-600 border border-emerald-500/50 text-white font-bold rounded text-[10px] transition-colors flex items-center gap-1"
+                        title="Configure background GPS and power-save permissions"
+                      >
+                        <Smartphone className="w-3 h-3" />
+                        <span>Permissions</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Telemetry controls and quick fix pulse */}
+                  <div className="mt-2 pt-1.5 border-t border-white/10 flex items-center justify-between text-[9px] text-slate-400">
+                    <span className="flex items-center gap-1 font-mono">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+                      Cadence: 30s Auto-Sync
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => addBreadcrumbManually()}
+                        className="text-cyan-400 hover:text-cyan-300 font-mono underline"
+                        title="Force record immediate 30s GPS fix"
+                      >
+                        + Log Instant GPS Fix
                       </button>
                     </div>
                   </div>
@@ -1561,6 +1691,29 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
         onClose={() => setIsSiteInfoModalOpen(false)}
         site={siteInfoTargetSite}
       />
+
+      {/* CONTINUOUS BACKGROUND GPS & POWER-SAVE PERMISSIONS MODAL */}
+      <GuardContinuousPermissionsModal
+        isOpen={isPermissionsModalOpen}
+        onClose={closePermissionsModal}
+        permissions={permissionsState}
+        onUpdatePermissions={updatePermissions}
+        onAcquireWakeLock={acquireWakeLock}
+        onReleaseWakeLock={releaseWakeLock}
+      />
+
+      {/* SHIFT 30S GPS BREADCRUMB TRAIL REVIEW MODAL */}
+      {isShiftTrailModalOpen && (
+        <ShiftBreadcrumbsModal
+          isOpen={isShiftTrailModalOpen}
+          onClose={() => setIsShiftTrailModalOpen(false)}
+          breadcrumbs={activeClockedInShift?.breadcrumbs || liveBreadcrumbs}
+          shift={activeClockedInShift}
+          site={sitesList.find((s) => s.name === activeClockedInShift?.siteName || s.id === activeClockedInShift?.siteId)}
+          guardName={activeGuard.name}
+          guardBadge={activeGuard.badgeNumber}
+        />
+      )}
     </div>
   );
 };
