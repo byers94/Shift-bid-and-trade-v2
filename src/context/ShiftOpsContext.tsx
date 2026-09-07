@@ -2822,7 +2822,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const addAuditLog = (
     action: string,
-    category: 'shift' | 'trade' | 'swap' | 'system' | 'broadcast',
+    category: 'shift' | 'trade' | 'swap' | 'system' | 'broadcast' | string,
     details: string,
     actor: string,
     status: 'info' | 'success' | 'warning' | 'danger'
@@ -5667,7 +5667,8 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           (s) => s.name.toLowerCase() === data.siteName.toLowerCase() || (s.address && data.locationDetails?.includes(s.address))
         );
         const targetCoords = matchedSite?.coordinates || { latitude: 47.6080, longitude: -122.3350 };
-        assignedRover = calculateNearestRoverForInterception(rovers, targetCoords, trafficCondition) || rovers[0];
+        const interceptResult = calculateNearestRoverForInterception(rovers, targetCoords, trafficCondition);
+        assignedRover = interceptResult?.nearestRover || rovers[0];
       } else {
         assignedRover = rovers.find(r => r.id === data.assignedRoverId);
       }
@@ -8457,7 +8458,9 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         urgency: 'critical',
         hoursUntilShift: 1,
         matchGrade: 'top',
-        timestamp: nowIso
+        timestamp: nowIso,
+        broadcastAt: nowIso,
+        dismissed: false
       });
     }
 
@@ -8659,7 +8662,8 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       targetRover = rovers.find((r) => r.id === overrideRoverId);
     }
     if (!targetRover) {
-      targetRover = calculateNearestRoverForInterception(rovers, targetCoords, trafficCondition) || rovers[0];
+      const interceptResult = calculateNearestRoverForInterception(rovers, targetCoords, trafficCondition);
+      targetRover = interceptResult?.nearestRover || rovers[0];
     }
 
     if (!targetRover) {

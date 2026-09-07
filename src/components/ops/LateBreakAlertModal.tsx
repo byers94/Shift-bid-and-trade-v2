@@ -15,7 +15,13 @@ import {
 } from 'lucide-react';
 import { playLateBreakAdminAlertSound } from '../../utils/audioAlert';
 
-export const LateBreakAlertModal: React.FC = () => {
+export interface LateBreakAlertModalProps {
+  onConfigureBreakPolicy?: () => void;
+}
+
+export const LateBreakAlertModal: React.FC<LateBreakAlertModalProps> = ({
+  onConfigureBreakPolicy
+}) => {
   const { lateBreakAlerts, acknowledgeLateBreakAlert, dismissLateBreakAlert, opsPhone } = useShiftOps();
 
   // Find unacknowledged late break alerts

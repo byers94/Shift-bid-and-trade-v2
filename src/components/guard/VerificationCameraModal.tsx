@@ -25,6 +25,8 @@ interface VerificationCameraModalProps {
   onClose: () => void;
   guard: GuardProfile;
   siteName: string;
+  postRole?: string;
+  requiredGear?: string[];
   gpsCoordinates?: GeoCoordinates | null;
   geofenceDistance?: number;
   onCompleteVerification: (data: {

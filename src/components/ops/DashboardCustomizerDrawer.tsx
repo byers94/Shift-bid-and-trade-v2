@@ -62,6 +62,12 @@ const TILE_DEFINITIONS: TileMeta[] = [
     category: 'cad'
   },
   {
+    key: 'mobilePatrolUnits',
+    label: 'Mobile Patrol Units & Sector Coverage',
+    description: 'MPU fleet telemetry, rover status, sector fill rates, and speed telemetry',
+    category: 'cad'
+  },
+  {
     key: 'openShiftsBidding',
     label: 'Open Shifts CAD Queue',
     description: 'Immediate open shifts and unassigned post dispatch queue',
@@ -228,7 +234,7 @@ export const DashboardCustomizerDrawer: React.FC<DashboardCustomizerDrawerProps>
                 Dashboard Tiles & Ordering
               </span>
               <span className="text-xs text-slate-400">
-                {Object.values(tiles).filter(Boolean).length} / 7 Active
+                {Object.values(tiles).filter(Boolean).length} / {TILE_DEFINITIONS.length} Active
               </span>
             </div>
 

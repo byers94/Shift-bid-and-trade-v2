@@ -177,7 +177,7 @@ export interface ShiftClaimEligibilityResult {
 export interface AuditLogEntry {
   id: string;
   action: string;
-  category: 'shift' | 'trade' | 'swap' | 'system' | 'broadcast';
+  category: 'shift' | 'trade' | 'swap' | 'system' | 'broadcast' | string;
   details: string;
   timestamp: string;
   actor: string;
@@ -366,6 +366,11 @@ export interface PriorityPushNotification {
   match?: PriorityShiftMatch;
   title?: string;
   message?: string;
+  body?: string;
+  urgency?: string;
+  hoursUntilShift?: number;
+  matchGrade?: string;
+  timestamp?: string;
   broadcastAt: string;
   dismissed: boolean;
   isSnoozed?: boolean;
@@ -732,11 +737,13 @@ export type OffSiteBreachStatus =
   | 'normal' 
   | 'debounce_pending' 
   | 'breached_unacknowledged' 
+  | 'breached_acknowledged'
   | 'excused' 
   | 'resolved';
 
 export type DepartureReasonType = 
   | 'Authorized Break' 
+  | 'Authorized Meal Break'
   | 'Incident Escort' 
   | 'Perimeter Sweep' 
   | 'Emergency Response' 
@@ -817,6 +824,7 @@ export interface SiteProfile {
   // GPS Coordinates & Geofencing Configuration
   latitude?: number;
   longitude?: number;
+  coordinates?: { latitude: number; longitude: number };
   geofenceRadiusMeters?: number; // Allowed clock-in perimeter (e.g. 50, 100, 200m)
   requireGeofence?: boolean; // Whether GPS validation is mandatory
   geofenceStrictEnforce?: boolean; // Whether out-of-bounds clock-ins are blocked vs logged
@@ -923,6 +931,7 @@ export type CallType =
 
 export type CallDisposition = 
   | 'Resolved'
+  | 'resolved'
   | 'Unfounded'
   | 'Escalated'
   | 'Assistance Rendered'
@@ -1245,7 +1254,9 @@ export interface GuardBackgroundTelemetryPermissions {
   screenWakeLockAcquired: boolean;
   screenWakeLockSupported: boolean;
   backgroundExecutionAllowed: boolean;
+  backgroundGeolocAllowed?: boolean;
   powerSaveModeExemptionConfirmed: boolean;
+  powerSaveExempted?: boolean;
   batteryStatus?: {
     level: number; // 0 - 100
     charging: boolean;

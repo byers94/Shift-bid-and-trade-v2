@@ -3,6 +3,7 @@ import { parseShiftTimeWindow } from './scheduling';
 
 export interface CoachingConflictResult {
   hasConflict: boolean;
+  isValid: boolean;
   hasShiftOverlap: boolean;
   hasBufferViolation: boolean;
   isRestricted: boolean; // true if conflict exists and not overridden
@@ -34,6 +35,7 @@ export function validateCoachingScheduleSlot(
   if (!proposedDate || !proposedTime) {
     return {
       hasConflict: false,
+      isValid: true,
       hasShiftOverlap: false,
       hasBufferViolation: false,
       isRestricted: false,
@@ -50,6 +52,7 @@ export function validateCoachingScheduleSlot(
   if (isNaN(coachingStartMs)) {
     return {
       hasConflict: false,
+      isValid: true,
       hasShiftOverlap: false,
       hasBufferViolation: false,
       isRestricted: false,
@@ -175,6 +178,7 @@ export function validateCoachingScheduleSlot(
 
   return {
     hasConflict,
+    isValid: !hasConflict,
     hasShiftOverlap,
     hasBufferViolation,
     isRestricted: hasConflict,

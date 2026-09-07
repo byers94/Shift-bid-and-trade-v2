@@ -191,7 +191,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
   const [taskFrequency, setTaskFrequency] = useState<TaskScheduleFrequency>('daily');
   const [taskLeadTimeMinutes, setTaskLeadTimeMinutes] = useState(15);
   const [taskGracePeriodMinutes, setTaskGracePeriodMinutes] = useState(20);
-  const [taskPriority, setTaskPriority] = useState<TaskPriority>('priority_sop');
+  const [taskPriority, setTaskPriority] = useState<TaskPriority>('priority');
   const [taskRequirePhoto, setTaskRequirePhoto] = useState(true);
   const [taskRequireGps, setTaskRequireGps] = useState(true);
 
@@ -217,7 +217,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
       locationZone: 'Building A & B Resident Laundry Rooms',
       instructions: 'Verify all dryer cycles are complete and no unattended laundry remains. Turn off supplemental lighting and deadbolt entrance doors.',
       frequency: 'daily' as TaskScheduleFrequency,
-      priority: 'priority_sop' as TaskPriority,
+      priority: 'priority' as TaskPriority,
       leadTimeMinutes: 15,
       gracePeriodMinutes: 20,
       requirePhoto: true,
@@ -256,7 +256,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
       locationZone: 'Ground Floor Fitness Center',
       instructions: 'Unlock main entrance double doors, verify AC is active, turn on ambient lights, and inspect emergency AED station.',
       frequency: 'daily' as TaskScheduleFrequency,
-      priority: 'priority_sop' as TaskPriority,
+      priority: 'priority' as TaskPriority,
       leadTimeMinutes: 15,
       gracePeriodMinutes: 30,
       requirePhoto: false,
@@ -273,7 +273,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
     setTaskFrequency('daily');
     setTaskLeadTimeMinutes(15);
     setTaskGracePeriodMinutes(20);
-    setTaskPriority('priority_sop');
+    setTaskPriority('priority');
     setTaskRequirePhoto(true);
     setTaskRequireGps(true);
     setIsAddingTaskInline(false);
@@ -972,7 +972,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
           <button
             type="button"
             id="btn-add-new-site"
-            onClick={handleOpenCreateModal}
+            onClick={() => handleOpenCreateModal()}
             className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors"
           >
             <Plus className="w-4 h-4" />
@@ -1714,7 +1714,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                           ) : (
                             <span 
                               className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center gap-1"
-                              title={`Validation issues: ${validation.issues.map(i => i.message).join(' • ')}`}
+                              title={`Validation issues: ${validation.issues.map(i => i.message || i.reason).join(' • ')}`}
                             >
                               <AlertTriangle className="w-3 h-3 text-amber-500" />
                               Needs Data ({validation.issues.length})
@@ -1988,7 +1988,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                         <ul className="space-y-0.5 text-[10px] text-amber-700 dark:text-amber-300/90 list-disc list-inside">
                           {validation.issues.map((issue, idx) => (
                             <li key={idx} className="line-clamp-1">
-                              {issue.message}
+                              {issue.message || issue.reason}
                             </li>
                           ))}
                         </ul>
@@ -2238,7 +2238,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                             type="button"
                             onClick={() => handleOpenEditModal(site)}
                             className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/80 transition-colors cursor-pointer"
-                            title={`Issues:\n${validation.issues.map(i => `• ${i.message}`).join('\n')}`}
+                            title={`Issues:\n${validation.issues.map(i => `• ${i.message || i.reason}`).join('\n')}`}
                           >
                             <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400" />
                             {validation.issues.length} Flag{validation.issues.length > 1 ? 's' : ''}
@@ -2691,7 +2691,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                           <MapPin className="w-3 h-3 text-rose-500 shrink-0" />
                           <span>{task.locationZone}</span>
                           <span>•</span>
-                          <span>{task.frequency === 'daily' ? 'Daily' : task.frequency === 'weekdays_only' ? 'Weekdays' : 'Weekends'}</span>
+                          <span>{task.frequency === 'daily' ? 'Daily' : task.frequency === 'weekdays' ? 'Weekdays' : 'Weekends'}</span>
                         </p>
 
                         <p className="text-[11px] text-slate-600 dark:text-slate-300 italic bg-slate-50 dark:bg-slate-800 p-2 rounded border border-slate-100 dark:border-slate-700">
@@ -4041,7 +4041,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                           className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs"
                         >
                           <option value="routine">Routine</option>
-                          <option value="priority_sop">Priority SOP</option>
+                          <option value="priority">Priority SOP</option>
                           <option value="mandatory_sla">Mandatory SLA</option>
                         </select>
                       </div>
@@ -4125,7 +4125,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                             <MapPin className="w-3 h-3 text-rose-500 shrink-0" />
                             <span>{task.locationZone}</span>
                             <span>•</span>
-                            <span>{task.frequency === 'daily' ? 'Daily' : task.frequency === 'weekdays_only' ? 'Weekdays' : 'Weekends'}</span>
+                            <span>{task.frequency === 'daily' ? 'Daily' : task.frequency === 'weekdays' ? 'Weekdays' : 'Weekends'}</span>
                             {task.requirePhoto && <span>• 📸 Photo Req</span>}
                             {task.requireGps && <span>• 📍 GPS Req</span>}
                           </p>
@@ -4396,11 +4396,11 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                                 )}
                                 <div className="flex-1">
                                   <span className={`font-semibold ${issue.severity === 'error' ? 'text-rose-700 dark:text-rose-300' : 'text-amber-800 dark:text-amber-300'}`}>
-                                    {issue.message}
+                                    {issue.message || issue.reason}
                                   </span>
-                                  {issue.suggestedAction && (
+                                  {(issue.suggestedAction || issue.reason) && (
                                     <span className="text-slate-500 dark:text-slate-400 block text-[10px] mt-0.5">
-                                      Fix: {issue.suggestedAction}
+                                      Fix: {issue.suggestedAction || issue.reason}
                                     </span>
                                   )}
                                 </div>

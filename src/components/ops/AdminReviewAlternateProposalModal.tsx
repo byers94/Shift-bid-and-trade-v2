@@ -20,8 +20,19 @@ import { useShiftOps } from '../../context/ShiftOpsContext';
 import { 
   validateCoachingScheduleSlot, 
   validateAlternateCoachingDate, 
-  getRecommendedCoachingSlots 
+  getRecommendedCoachingSlots,
+  CoachingConflictResult
 } from '../../utils/coachingSchedule';
+
+const DEFAULT_CONFLICT_RESULT: CoachingConflictResult = {
+  isValid: true,
+  hasConflict: false,
+  isRestricted: false,
+  hasShiftOverlap: false,
+  hasBufferViolation: false,
+  minBufferObserved: 24,
+  allDayShifts: []
+};
 
 interface AdminReviewAlternateProposalModalProps {
   isOpen: boolean;
@@ -65,9 +76,9 @@ export const AdminReviewAlternateProposalModal: React.FC<AdminReviewAlternatePro
   const [counterError, setCounterError] = useState('');
 
   // Conflict validation for guard's proposed alternate slot
-  const proposedValidation = useMemo(() => {
+  const proposedValidation = useMemo((): CoachingConflictResult => {
     if (!session || !session.proposedAlternateDate) {
-      return { isValid: true, hasShiftOverlap: false, hasBufferViolation: false, minBufferObserved: 24 };
+      return DEFAULT_CONFLICT_RESULT;
     }
     return validateCoachingScheduleSlot(
       session.guardId,
@@ -81,9 +92,9 @@ export const AdminReviewAlternateProposalModal: React.FC<AdminReviewAlternatePro
   }, [session, scheduledShifts, shifts]);
 
   // Conflict validation for supervisor's counter-proposed slot
-  const counterValidation = useMemo(() => {
+  const counterValidation = useMemo((): CoachingConflictResult => {
     if (!session || !counterDate) {
-      return { isValid: true, hasShiftOverlap: false, hasBufferViolation: false, minBufferObserved: 24 };
+      return DEFAULT_CONFLICT_RESULT;
     }
     return validateCoachingScheduleSlot(
       session.guardId,

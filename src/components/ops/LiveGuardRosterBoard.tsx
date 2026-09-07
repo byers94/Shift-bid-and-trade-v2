@@ -36,11 +36,13 @@ import { MealBreakSettingsModal } from './MealBreakSettingsModal';
 interface LiveGuardRosterBoardProps {
   onScheduleShift?: (guardId?: string) => void;
   onSelectSite?: (siteName: string) => void;
+  onOpenCalendar?: (guardId?: string) => void;
 }
 
 export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
   onScheduleShift,
-  onSelectSite
+  onSelectSite,
+  onOpenCalendar
 }) => {
   const { 
     getGuardsLiveTracking, 
@@ -749,9 +751,12 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
                   <span>GPS Map</span>
                 </button>
 
-                {onScheduleShift && (
+                {(onOpenCalendar || onScheduleShift) && (
                   <button
-                    onClick={() => onScheduleShift(item.guardId)}
+                    onClick={() => {
+                      if (onOpenCalendar) onOpenCalendar(item.guardId);
+                      else onScheduleShift?.(item.guardId);
+                    }}
                     className="px-2.5 py-1 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 text-[#1e3a8a] dark:text-blue-300 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ml-auto"
                   >
                     + Assign Shift

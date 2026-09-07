@@ -21,12 +21,14 @@ interface GuardCallOffModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialShift?: ScheduledShift | null;
+  prefillShiftId?: string;
 }
 
 export const GuardCallOffModal: React.FC<GuardCallOffModalProps> = ({
   isOpen,
   onClose,
-  initialShift
+  initialShift,
+  prefillShiftId
 }) => {
   const { 
     scheduledShifts, 
@@ -35,7 +37,7 @@ export const GuardCallOffModal: React.FC<GuardCallOffModalProps> = ({
     showToast 
   } = useShiftOps();
 
-  const [selectedShiftId, setSelectedShiftId] = useState<string>(initialShift?.id || '');
+  const [selectedShiftId, setSelectedShiftId] = useState<string>(initialShift?.id || prefillShiftId || '');
   const [reason, setReason] = useState<CallOffReason>('called_out_sick');
   const [notes, setNotes] = useState<string>('Guard contacted dispatch stating unable to report for shift.');
   const [autoAddBidding, setAutoAddBidding] = useState<boolean>(true);

@@ -210,10 +210,13 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
                    activeMainTab === 'set_schedules' ? 'Set Schedules' :
                    activeMainTab === 'guard_availability' ? 'Availability & Time-Off' :
                    activeMainTab === 'calls_for_service' ? 'Calls & BOLOs' :
-                   activeMainTab === 'reports' ? 'Field Reports & DAR' :
-                   activeMainTab === 'work_orders' ? 'Work Orders' :
-                   activeMainTab === 'sites' ? 'Site Directory' :
-                   activeMainTab === 'performance' ? 'Coaching & QA' : 'Overview'}
+                   activeMainTab === 'standard_reports' ? 'Field Reports & DAR' :
+                   activeMainTab === 'site_tasks' ? 'Work Orders & Tasks' :
+                   activeMainTab === 'site_directory' ? 'Site Directory' :
+                   activeMainTab === 'guard_directory' ? 'Guard Directory' :
+                   activeMainTab === 'top_performers' ? 'Top Performers' :
+                   activeMainTab === 'coaching_analytics' ? 'Coaching & QA' :
+                   activeMainTab === 'audit_terminal' ? 'Audit Terminal' : 'Overview'}
                 </span>
               </nav>
               <h1 className="text-sm sm:text-base lg:text-lg font-extrabold tracking-tight uppercase">
@@ -1093,7 +1096,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
       {activeMainTab === 'calendar_schedule' && (
         <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
           <ShiftSchedulingCalendar 
-            initialGuardFilter={calendarTargetGuardId || undefined}
+            initialGuardId={calendarTargetGuardId || undefined}
           />
         </div>
       )}

@@ -7,18 +7,29 @@ import { Calendar, Clock, MapPin, ShieldAlert, X, ArrowRightLeft, Gift, AlertCir
 interface PostShiftModalProps {
   isOpen: boolean;
   onClose: () => void;
+  defaultShiftDate?: string;
+  defaultSiteName?: string;
+  defaultStartTime?: string;
+  defaultEndTime?: string;
 }
 
-export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose }) => {
+export const PostShiftModal: React.FC<PostShiftModalProps> = ({ 
+  isOpen, 
+  onClose,
+  defaultShiftDate,
+  defaultSiteName,
+  defaultStartTime,
+  defaultEndTime
+}) => {
   const { postTradeRequest, activeGuard } = useShiftOps();
   
   const todayStr = new Date().toISOString().split('T')[0];
   const [tradeType, setTradeType] = useState<'giveaway' | 'swap'>('giveaway');
-  const [siteName, setSiteName] = useState('');
+  const [siteName, setSiteName] = useState(defaultSiteName || '');
   const [location, setLocation] = useState('');
-  const [date, setDate] = useState(todayStr);
-  const [startTime, setStartTime] = useState('14:00');
-  const [endTime, setEndTime] = useState('22:00');
+  const [date, setDate] = useState(defaultShiftDate || todayStr);
+  const [startTime, setStartTime] = useState(defaultStartTime || '14:00');
+  const [endTime, setEndTime] = useState(defaultEndTime || '22:00');
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
 

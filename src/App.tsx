@@ -343,7 +343,7 @@ const AppContent: React.FC = () => {
             {isAdminAuthenticated ? (
               <span className="w-2 h-2 rounded-full bg-emerald-400 ml-0.5" title="Authenticated" />
             ) : (
-              <Lock className="w-3 h-3 text-amber-400 ml-0.5" title="Login Required" />
+              <span title="Login Required"><Lock className="w-3 h-3 text-amber-400 ml-0.5" /></span>
             )}
           </button>
 

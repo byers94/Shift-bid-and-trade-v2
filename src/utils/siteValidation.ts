@@ -4,6 +4,8 @@ export interface SiteValidationIssue {
   field: string;
   label: string;
   reason: string;
+  message?: string;
+  suggestedAction?: string;
   severity: 'error' | 'warning';
   section: 'contact' | 'orders' | 'general' | 'certifications';
 }

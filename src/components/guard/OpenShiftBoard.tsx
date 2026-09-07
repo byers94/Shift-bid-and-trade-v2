@@ -32,7 +32,7 @@ export const OpenShiftBoard: React.FC<OpenShiftBoardProps> = ({ onOpenAlertPrefs
   const [urgencyFilter, setUrgencyFilter] = useState<'all' | 'emergency' | 'standard'>('all');
   const [siteFilter, setSiteFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortOrder, setSortOrder] = useState<'soonest' | 'furthest' | 'emergency' | 'hours'>('soonest');
+  const [sortOrder, setSortOrder] = useState<'soonest' | 'furthest' | 'emergency' | 'urgency' | 'hours'>('soonest');
 
   const filteredShifts = shifts.filter((s) => {
     if (urgencyFilter !== 'all' && s.urgency !== urgencyFilter) {

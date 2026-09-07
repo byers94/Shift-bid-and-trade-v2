@@ -1772,7 +1772,7 @@ export const CallsForServicePanel: React.FC = () => {
         onClose={() => setIsExportModalOpen(false)}
         calls={callsForService}
         sitesList={sitesList}
-        onNotify={showToast}
+        onNotify={(title, message, type) => showToast(title, message, type === 'error' ? 'danger' : type)}
       />
     </div>
   );

@@ -9,6 +9,7 @@ import { ExecutiveRollupTile } from './ExecutiveRollupTile';
 import { DashboardCustomizerDrawer } from './DashboardCustomizerDrawer';
 import { SupervisorSignOffModal } from './SupervisorSignOffModal';
 import { GuardMapDashboard } from './GuardMapDashboard';
+import { MpuPerformance } from './MpuPerformance';
 import { 
   LayoutDashboard, 
   Sliders, 
@@ -79,7 +80,7 @@ export const DispatchCommandDashboard: React.FC<DispatchCommandDashboardProps> =
       case 'exceptions':
         if (!tiles.exceptionsTray && !(tiles as any).exceptions) return null;
         return (
-          <div key="tile-exceptions" className="w-full">
+          <div key="tile-exceptionsTray" className="w-full">
             <PriorityExceptionTray
               onNavigateTab={onNavigateTab}
               onSelectOrientation={handleSelectOrientationById}
@@ -91,7 +92,7 @@ export const DispatchCommandDashboard: React.FC<DispatchCommandDashboardProps> =
       case 'liveGuardStatus':
         if (!tiles.liveOnDutyFieldStatus && !(tiles as any).liveGuardStatus) return null;
         return (
-          <div key="tile-liveGuardStatus" className="w-full h-full min-h-[420px]">
+          <div key="tile-liveOnDutyFieldStatus" className="w-full h-full min-h-[420px]">
             <LiveOnDutyStatusTile
               onNavigateTracking={() => onNavigateTab && onNavigateTab('live_tracking')}
             />
@@ -102,7 +103,7 @@ export const DispatchCommandDashboard: React.FC<DispatchCommandDashboardProps> =
       case 'orientations':
         if (!tiles.upcomingSiteOrientations && !(tiles as any).orientations) return null;
         return (
-          <div key="tile-orientations" className="w-full h-full min-h-[420px]">
+          <div key="tile-upcomingSiteOrientations" className="w-full h-full min-h-[420px]">
             <UpcomingSiteOrientationsTile
               onOpenOrientationModal={handleOpenOrientationModal}
             />
@@ -113,7 +114,7 @@ export const DispatchCommandDashboard: React.FC<DispatchCommandDashboardProps> =
       case 'criticalIncidents':
         if (!tiles.criticalIncidentFeed && !(tiles as any).criticalIncidents) return null;
         return (
-          <div key="tile-criticalIncidents" className="w-full h-full min-h-[420px]">
+          <div key="tile-criticalIncidentFeed" className="w-full h-full min-h-[420px]">
             <CriticalIncidentFeedTile
               onNavigateReports={() => onNavigateTab && onNavigateTab('standard_reports')}
             />
@@ -124,18 +125,43 @@ export const DispatchCommandDashboard: React.FC<DispatchCommandDashboardProps> =
       case 'map':
         if (!tiles.liveMap && !(tiles as any).map) return null;
         return (
-          <div key="tile-map" className="w-full h-full min-h-[480px]">
+          <div key="tile-liveMap" className="w-full h-full min-h-[480px]">
             <GuardMapDashboard />
           </div>
         );
 
+      case 'mobilePatrolUnits':
+        if (!tiles.mobilePatrolUnits) return null;
+        return (
+          <div key="tile-mobilePatrolUnits" className="w-full h-full min-h-[420px]">
+            <MpuPerformance
+              onNavigateToSchedule={() => onNavigateTab && onNavigateTab('operations')}
+              onNavigateToRouting={() => onNavigateTab && onNavigateTab('patrol_routes')}
+            />
+          </div>
+        );
+
       case 'asrExecutiveMetrics':
+        if (!tiles.asrExecutiveMetrics) return null;
+        return (
+          <div key="tile-asrExecutiveMetrics" className="w-full h-full min-h-[420px]">
+            <ExecutiveRollupTile variant="metrics" />
+          </div>
+        );
+
       case 'contractExpirations':
+        if (!tiles.contractExpirations) return null;
+        return (
+          <div key="tile-contractExpirations" className="w-full h-full min-h-[420px]">
+            <ExecutiveRollupTile variant="contracts" />
+          </div>
+        );
+
       case 'executiveRollup':
         if (!tiles.asrExecutiveMetrics && !tiles.contractExpirations && !(tiles as any).executiveRollup) return null;
         return (
           <div key="tile-executiveRollup" className="w-full h-full min-h-[420px]">
-            <ExecutiveRollupTile />
+            <ExecutiveRollupTile variant="all" />
           </div>
         );
 
@@ -143,7 +169,7 @@ export const DispatchCommandDashboard: React.FC<DispatchCommandDashboardProps> =
       case 'openShifts':
         if (!tiles.openShiftsBidding && !(tiles as any).openShifts) return null;
         return (
-          <div key="tile-openShifts" className="w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-xs">
+          <div key="tile-openShiftsBidding" className="w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-xs">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-2.5">
                 <div className="p-2 bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-400 rounded-xl">
@@ -338,7 +364,7 @@ export const DispatchCommandDashboard: React.FC<DispatchCommandDashboardProps> =
 
         {/* 2-Column Responsive Layout for Primary Tiles */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {tileOrder
+          {Array.from(new Set(tileOrder))
             .filter(key => key !== 'exceptionsTray' && key !== 'exceptions')
             .map(key => renderTileComponent(key))}
         </div>
