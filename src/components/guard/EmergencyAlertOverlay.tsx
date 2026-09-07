@@ -249,14 +249,14 @@ export const EmergencyAlertOverlay: React.FC = () => {
             </button>
 
             <p className="text-[10px] text-center text-slate-400 font-mono">
-              Acknowledging logs your badge ({activeGuard.badgeNumber}) and timestamp to Ops Dispatch.
+              Acknowledging logs your badge ({activeGuard.badgeNumber}) and timestamp to Dispatch & Command.
             </p>
           </form>
         ) : (
           <div className="bg-emerald-950/80 border-2 border-emerald-500/80 rounded-2xl p-4 text-center shadow-xl">
             <div className="flex items-center justify-center gap-2 text-emerald-400 font-black text-xs uppercase tracking-wider mb-1">
               <CheckCircle2 className="w-4 h-4" />
-              <span>RECEIPT VERIFIED WITH OPS DISPATCH</span>
+              <span>RECEIPT VERIFIED WITH DISPATCH & COMMAND</span>
             </div>
             <p className="text-[11px] text-emerald-200 font-mono mb-2">
               Officer {activeGuard.name} ({activeGuard.badgeNumber}) acknowledged at{' '}

@@ -270,7 +270,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                   User & Access Management
                 </h2>
                 <span className="bg-blue-800/80 text-blue-200 text-[10px] font-mono font-bold px-2 py-0.5 rounded-md border border-blue-700">
-                  OPS COMMAND
+                  DISPATCH & COMMAND
                 </span>
               </div>
               <p className="text-xs text-blue-200 mt-0.5 font-medium">
@@ -386,7 +386,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                         <KeyRound className="w-4 h-4" />
                       </div>
                       <h3 className="text-sm font-bold text-slate-800">
-                        {selectedAdminId ? 'Edit Dispatcher Credentials' : 'Provision New Ops Admin / Dispatcher'}
+                        {selectedAdminId ? 'Edit Dispatcher Credentials' : 'Provision New Dispatch & Command Admin'}
                       </h3>
                     </div>
                     <button

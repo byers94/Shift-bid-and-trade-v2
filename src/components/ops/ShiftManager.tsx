@@ -962,7 +962,7 @@ export const ShiftManager: React.FC = () => {
                       ) : (
                         <button
                           type="button"
-                          onClick={() => markShiftFilled(shift.id, 'Assigned via Ops')}
+                          onClick={() => markShiftFilled(shift.id, 'Assigned via Dispatch & Command')}
                           className="px-2.5 py-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-md cursor-pointer shadow-2xs"
                         >
                           Fill
@@ -1249,7 +1249,7 @@ export const ShiftManager: React.FC = () => {
                           ) : (
                             <button
                               id={`mark-filled-shift-btn-${shift.id}`}
-                              onClick={() => markShiftFilled(shift.id, 'Assigned via Ops')}
+                              onClick={() => markShiftFilled(shift.id, 'Assigned via Dispatch & Command')}
                               className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-bold text-xs hover:underline flex items-center gap-1 cursor-pointer"
                             >
                               <Check className="w-3.5 h-3.5" />

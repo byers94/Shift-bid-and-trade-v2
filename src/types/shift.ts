@@ -45,6 +45,7 @@ export interface GuardProfile {
   badgeNumber: string;
   role: 'guard' | 'lead' | 'supervisor';
   ojtSites: string[]; // sites guard is fully qualified/trained on
+  trainedSites?: string[]; // trained site IDs per qualification spec
   email?: string;
   trainingLevel?: 'trained' | 'needs_ojt' | 'lead_certified' | 'in_training';
   certifications?: string[];
@@ -253,6 +254,9 @@ export type AdminActionType =
   | 'routes_reoptimized'
   | 'ad_hoc_interception'
   | 'interception_cleared'
+  | 'guard_late_break'
+  | 'late_break_alert_acknowledged'
+  | 'meal_break_duration_updated'
   | 'system_reset';
 
 export interface AdminAction {
@@ -1073,6 +1077,8 @@ export interface ShiftBreakRecord {
   startedAt: string; // ISO timestamp
   endedAt?: string;  // ISO timestamp
   durationMinutes?: number;
+  allocatedMinutes?: number; // Configured break duration (e.g. 10 for rest, 30/custom for meal)
+  overdueAlertSentToAdmin?: boolean;
   note?: string;
 }
 
@@ -1157,7 +1163,63 @@ export interface ScheduledShift {
   // Continuous 30-Second GPS Telemetry Breadcrumbs
   breadcrumbs?: GpsBreadcrumb[];
 
+  // Embedded Site Training & Supervisor Sign-Off
+  requiresOrientation?: boolean;
+  orientationId?: string;
+
+  // Shift Completion Report (End of Shift Check-Out & Handover)
+  completionReport?: ShiftCompletionReport;
+
   createdAt?: string;
+}
+
+export type GearHandoverType = 'relief_officer' | 'lockbox' | 'supervisor' | 'facility_depot';
+
+export interface ShiftCompletionReport {
+  id: string;
+  reportNumber: string;
+  shiftId: string;
+  guardId: string;
+  guardName: string;
+  guardBadge: string;
+  guardPhone?: string;
+  siteName: string;
+  siteId?: string;
+  postRole?: string;
+  shiftDate: string;
+  shiftStartTime?: string;
+  shiftEndTime?: string;
+  actualHoursWorked?: number;
+  
+  // Brief text summary of daily activities
+  activitySummary: string;
+  
+  // Timestamped check-out
+  checkOutTimestamp: string;
+  checkOutTimestampFormatted: string;
+  
+  // Image of all gear being returned or handed over
+  gearReturnedPhotoUrl: string;
+  gearHandoverType: GearHandoverType;
+  gearHandoverRecipient?: string;
+  gearItemsReturned: string[];
+  gearReturnNotes?: string;
+  
+  // Final selfie confirming uniform compliance
+  finalSelfiePhotoUrl: string;
+  uniformComplianceConfirmed: boolean;
+  uniformNotes?: string;
+  
+  // Location & Geofence
+  gpsCoordinates?: {
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+  };
+  geofencePassed?: boolean;
+  geofenceDistanceMeters?: number;
+  
+  submittedAt: string;
 }
 
 export interface GpsBreadcrumb {
@@ -1208,6 +1270,26 @@ export interface LateShiftAlert {
   scheduledStartTime: string;
   minutesLate: number;
   alertTriggeredAt?: string;
+  acknowledged?: boolean;
+  acknowledgedByAdmin?: boolean;
+  createdAt?: string;
+}
+
+export interface LateBreakAlert {
+  id: string;
+  shiftId: string;
+  guardId: string;
+  guardName: string;
+  guardBadge: string;
+  guardPhone?: string;
+  siteId?: string;
+  siteName: string;
+  postRole?: string;
+  breakType: 'meal' | 'rest';
+  startedAt: string;
+  allocatedMinutes: number;
+  minutesLate: number; // minutes overdue (> 5 minutes past allocated return)
+  alertTriggeredAt: string;
   acknowledged?: boolean;
   acknowledgedByAdmin?: boolean;
   createdAt?: string;
@@ -1428,6 +1510,7 @@ export interface StandardShiftReport {
   activityDetails?: ActivityReportDetails;
   maintenanceDetails?: MaintenanceReportDetails;
   incidentDetails?: IncidentReportDetails;
+  completionDetails?: ShiftCompletionReport;
   
   // Review & Workflow
   status: 'submitted' | 'reviewed' | 'flagged_for_client' | 'archived';
@@ -1479,6 +1562,12 @@ export interface GuardLiveTrackingItem {
   isOnBreak?: boolean;
   currentBreakType?: 'meal' | 'rest';
   breakStartedAt?: string;
+  breakAllocatedMinutes?: number;
+  breakElapsedSeconds?: number;
+  breakRemainingSeconds?: number;
+  isBreakOverdue?: boolean;
+  isBreakCriticalLate?: boolean; // > 5 minutes late returning to shift
+  breakOverdueSeconds?: number;
   lastKnownActivity?: string;
   equipmentList?: string[];
   selfiePhotoUrl?: string;
@@ -1821,3 +1910,114 @@ export interface SetScheduleAiSuggestion {
     isAvailableAllDays: boolean;
   }[];
 }
+
+// ----------------------------------------------------
+// Site Training Record (SiteOrientation) & Dashboard Config
+// ----------------------------------------------------
+
+export type SiteOrientationStatus = 
+  | 'PENDING_SUPERVISOR' 
+  | 'SUPERVISOR_EN_ROUTE' 
+  | 'ON_SITE_ACTIVE' 
+  | 'CERTIFIED_RELEASED' 
+  | 'FAILED_ESCALATED';
+
+export interface SiteOrientationCheckpoints {
+  postOrdersReviewed: boolean;
+  accessKeysVerified: boolean;
+  perimeterGeofenceWalked: boolean;
+  emergencyPocConfirmed: boolean;
+}
+
+export interface SiteOrientation {
+  orientationId: string;
+  shiftId: string; // linked billable shift
+  guardId: string; // trainee
+  siteId: string;
+  supervisorId: string | null; // assigned field supervisor
+  windowStart: string; // ISO date/time (defaults to shift start)
+  windowEnd: string; // ISO date/time (defaults to shift start + 90 mins)
+  status: SiteOrientationStatus;
+  checkpoints: SiteOrientationCheckpoints;
+  supervisorNotes: string;
+  completedAt: string | null; // ISO date/time | null
+
+  // Display & Linkage Helpers
+  guardName?: string;
+  guardBadge?: string;
+  guardPhone?: string;
+  siteName?: string;
+  siteAddress?: string;
+  supervisorName?: string;
+  supervisorBadge?: string;
+  supervisorPhone?: string;
+  failureReason?: string;
+  gpsVerifiedAtSite?: boolean;
+  distanceMetersFromSite?: number;
+  createdAt?: string;
+}
+
+export type DashboardPreset = 'WATCH_DESK' | 'FIELD_SUPERVISOR' | 'EXECUTIVE';
+
+export interface DashboardTileVisibility {
+  exceptionsTray: boolean;
+  liveOnDutyFieldStatus: boolean;
+  mobilePatrolUnits: boolean;
+  upcomingSiteOrientations: boolean;
+  criticalIncidentFeed: boolean;
+  liveMap: boolean;
+  openShiftsBidding: boolean;
+  asrExecutiveMetrics: boolean;
+  contractExpirations: boolean;
+}
+
+export interface DashboardConfig {
+  preset: DashboardPreset;
+  tiles: DashboardTileVisibility;
+  tileOrder: string[];
+}
+
+export const DEFAULT_DASHBOARD_PRESETS: Record<DashboardPreset, { tiles: DashboardTileVisibility; tileOrder: string[] }> = {
+  WATCH_DESK: {
+    tiles: {
+      exceptionsTray: true,
+      liveMap: true,
+      liveOnDutyFieldStatus: true,
+      mobilePatrolUnits: true,
+      openShiftsBidding: true,
+      upcomingSiteOrientations: false,
+      criticalIncidentFeed: false,
+      asrExecutiveMetrics: false,
+      contractExpirations: false
+    },
+    tileOrder: ['exceptionsTray', 'liveOnDutyFieldStatus', 'mobilePatrolUnits', 'liveMap', 'openShiftsBidding']
+  },
+  FIELD_SUPERVISOR: {
+    tiles: {
+      exceptionsTray: true,
+      upcomingSiteOrientations: true,
+      liveOnDutyFieldStatus: true,
+      mobilePatrolUnits: false,
+      criticalIncidentFeed: true,
+      liveMap: false,
+      openShiftsBidding: false,
+      asrExecutiveMetrics: false,
+      contractExpirations: false
+    },
+    tileOrder: ['exceptionsTray', 'upcomingSiteOrientations', 'liveOnDutyFieldStatus', 'criticalIncidentFeed']
+  },
+  EXECUTIVE: {
+    tiles: {
+      exceptionsTray: true,
+      criticalIncidentFeed: true,
+      asrExecutiveMetrics: true,
+      contractExpirations: true,
+      liveOnDutyFieldStatus: false,
+      mobilePatrolUnits: false,
+      upcomingSiteOrientations: false,
+      liveMap: false,
+      openShiftsBidding: false
+    },
+    tileOrder: ['exceptionsTray', 'criticalIncidentFeed', 'asrExecutiveMetrics', 'contractExpirations']
+  }
+};

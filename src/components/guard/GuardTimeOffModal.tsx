@@ -426,7 +426,7 @@ export const GuardTimeOffModal: React.FC<GuardTimeOffModalProps> = ({
                   </span>
                 </div>
                 <p className="text-[11px] text-amber-700 dark:text-amber-300/90 leading-relaxed">
-                  You are currently scheduled for the following posts during this date range. Submitting this request will alert Ops Dispatch to arrange relief coverage upon approval:
+                  You are currently scheduled for the following posts during this date range. Submitting this request will alert Dispatch & Command to arrange relief coverage upon approval:
                 </p>
                 <div className="space-y-1.5 max-h-28 overflow-y-auto">
                   {conflictingShifts.map((s) => (
@@ -480,7 +480,7 @@ export const GuardTimeOffModal: React.FC<GuardTimeOffModalProps> = ({
             <div className="p-2.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/60 text-[11px] text-slate-600 dark:text-slate-400 flex items-start gap-2">
               <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
               <span>
-                Your request is pushed directly to the Ops Admin and Dispatch supervisor desk. You will receive an in-app notification when approved or reviewed.
+                Your request is pushed directly to the Dispatch & Command supervisor desk. You will receive an in-app notification when approved or reviewed.
               </span>
             </div>
 
@@ -656,11 +656,11 @@ export const GuardTimeOffModal: React.FC<GuardTimeOffModalProps> = ({
                           }`}
                         >
                           {isPending
-                            ? '⏳ Pending Ops Review'
+                            ? '⏳ Pending Dispatch & Command Review'
                             : isApproved
                             ? '✓ Approved (Off Duty)'
                             : isDenied
-                            ? '✕ Denied by Ops'
+                            ? '✕ Denied by Dispatch & Command'
                             : req.status}
                         </span>
                       </div>

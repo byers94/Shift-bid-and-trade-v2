@@ -634,6 +634,60 @@ export function playGeofenceBreachSound() {
   }
 }
 
+/**
+ * Break Over Alarm Tone for Guard Terminal
+ * Plays an urgent yet clear 3-bell repeating chime notifying guard that break has concluded
+ */
+export function playBreakOverAlertSound() {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const notes = [659.25, 783.99, 1046.50, 1318.51]; // E5 -> G5 -> C6 -> E6
+    notes.forEach((freq, idx) => {
+      const offset = idx * 0.14;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, now + offset);
+      gain.gain.setValueAtTime(0.25, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.35);
+    });
+  } catch (e) {
+    console.warn('Break over alert sound failed:', e);
+  }
+}
+
+/**
+ * Late Guard Return from Break (> 5 minutes overdue) Dispatch CAD tone
+ * Sharp alternating alarm pulses alerting Ops Dispatcher
+ */
+export function playLateBreakAdminAlertSound() {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    [0, 0.18, 0.36, 0.54].forEach((offset, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(idx % 2 === 0 ? 880 : 700, now + offset);
+      gain.gain.setValueAtTime(0.24, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.15);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.15);
+    });
+  } catch (e) {
+    console.warn('Late break admin alert sound failed:', e);
+  }
+}
+
 
 
 

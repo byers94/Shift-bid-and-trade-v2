@@ -153,9 +153,9 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
               {theme === 'dark' ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
             </button>
 
-            {/* Ops Dispatcher phone pill */}
+            {/* Dispatch & Command phone pill */}
             <div className="bg-blue-950/70 border border-blue-400/30 px-2 py-1 rounded text-right">
-              <span className="text-[9px] text-blue-300 block uppercase font-mono">Ops Dispatch</span>
+              <span className="text-[9px] text-blue-300 block uppercase font-mono">Dispatch & Command</span>
               <span className="text-[11px] font-bold text-white font-mono">{opsPhone}</span>
             </div>
           </div>

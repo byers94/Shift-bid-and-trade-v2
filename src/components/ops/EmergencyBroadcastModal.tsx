@@ -63,7 +63,7 @@ export const EmergencyBroadcastModal: React.FC<EmergencyBroadcastModalProps> = (
   const [alertType, setAlertType] = useState<AlertType>('lockdown');
   const [title, setTitle] = useState<string>('CODE RED: IMMEDIATE FACILITY LOCKDOWN');
   const [message, setMessage] = useState<string>(
-    'Immediate shelter in place ordered by Ops Dispatch. All exterior turnstiles, loading docks, and pedestrian access gates must be sealed and locked immediately. Secure all post perimeters and stand by on tactical radio Channel 1.'
+    'Immediate shelter in place ordered by Dispatch & Command. All exterior turnstiles, loading docks, and pedestrian access gates must be sealed and locked immediately. Secure all post perimeters and stand by on tactical radio Channel 1.'
   );
   const [targetAllSites, setTargetAllSites] = useState<boolean>(true);
   const [selectedSites, setSelectedSites] = useState<string[]>([]);
@@ -404,7 +404,7 @@ export const EmergencyBroadcastModal: React.FC<EmergencyBroadcastModalProps> = (
                       >
                         <span className="w-2.5 h-2.5 rounded-full bg-blue-400"></span>
                         <span>ADVISORY</span>
-                        <span className="text-[9px] text-slate-400 font-normal">Ops Notice</span>
+                        <span className="text-[9px] text-slate-400 font-normal">Command Notice</span>
                       </button>
                     </div>
                   </div>

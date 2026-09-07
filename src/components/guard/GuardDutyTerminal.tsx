@@ -50,10 +50,12 @@ import {
   AlertOctagon,
   Smartphone,
   Battery,
-  Activity
+  Activity,
+  Volume2
 } from 'lucide-react';
-import { ScheduledShift, TimeSpecificTask, StandardReportType, DepartureReasonType, SiteProfile } from '../../types/shift';
+import { ScheduledShift, TimeSpecificTask, StandardReportType, DepartureReasonType, SiteProfile, ShiftCompletionReport } from '../../types/shift';
 import { VerificationCameraModal } from './VerificationCameraModal';
+import { GuardShiftCompletionModal } from './GuardShiftCompletionModal';
 import { TimeSpecificTaskAlertBanner } from './TimeSpecificTaskAlertBanner';
 import { GuardTimedTasksSection } from './GuardTimedTasksSection';
 import { StandardReportingModal } from './StandardReportingModal';
@@ -65,6 +67,7 @@ import { GuardContinuousPermissionsModal } from './GuardContinuousPermissionsMod
 import { ShiftBreadcrumbsModal } from '../ops/ShiftBreadcrumbsModal';
 import { useGuardContinuousTelemetry } from '../../hooks/useGuardContinuousTelemetry';
 import { getCurrentLocation, calculateDistance, GeoCoordinates, formatDistance, verifySiteGeofence } from '../../utils/geo';
+import { playBreakOverAlertSound } from '../../utils/audioAlert';
 
 interface GuardDutyTerminalProps {
   onOpenAlertPrefs?: () => void;
@@ -80,6 +83,7 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
     clockOutGuard, 
     startGuardBreak, 
     endGuardBreak,
+    mealBreakDurationMinutes,
     sitesList,
     opsPhone,
     showToast,
@@ -176,7 +180,7 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
   const [postRoleInput, setPostRoleInput] = useState<string>('Access Control & Lobby Desk');
   const [clockInNotes, setClockInNotes] = useState<string>('');
   const [selectedGear, setSelectedGear] = useState<string[]>([
-    'Radio CH-1 (Ops Dispatch)',
+    'Radio CH-1 (Dispatch & Command)',
     'Body-Worn Camera #07',
     'Facility Master Key Card',
     'High-Vis Security Vest'
@@ -203,6 +207,54 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
 
   // Live timer state
   const [elapsedSec, setElapsedSec] = useState<number>(0);
+
+  // Active Break Timer States
+  const currentActiveBreak = activeClockedInShift?.status === 'on_break'
+    ? activeClockedInShift.breaks?.slice(-1)[0]
+    : undefined;
+
+  const [breakElapsedSec, setBreakElapsedSec] = useState<number>(0);
+  const [hasAlertedBreakOver, setHasAlertedBreakOver] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (activeClockedInShift?.status !== 'on_break' || !currentActiveBreak || currentActiveBreak.endedAt) {
+      setBreakElapsedSec(0);
+      setHasAlertedBreakOver(false);
+      return;
+    }
+
+    const updateBreakTimer = () => {
+      const started = new Date(currentActiveBreak.startedAt).getTime();
+      const now = Date.now();
+      const elapsed = Math.max(0, Math.floor((now - started) / 1000));
+      setBreakElapsedSec(elapsed);
+
+      const allocatedMins = currentActiveBreak.allocatedMinutes || (currentActiveBreak.type === 'rest' ? 10 : mealBreakDurationMinutes);
+      const allocatedSec = allocatedMins * 60;
+
+      if (elapsed >= allocatedSec) {
+        setHasAlertedBreakOver((prev) => {
+          if (!prev) {
+            playBreakOverAlertSound();
+            showToast('Break Time Expired', `Your ${currentActiveBreak.type === 'rest' ? '10-minute rest' : `${allocatedMins}-minute meal`} break has ended. Please resume duty immediately.`, 'warning');
+            return true;
+          }
+          return prev;
+        });
+      }
+    };
+
+    updateBreakTimer();
+    const interval = setInterval(updateBreakTimer, 1000);
+    return () => clearInterval(interval);
+  }, [activeClockedInShift?.status, currentActiveBreak, mealBreakDurationMinutes, showToast]);
+
+  const breakAllocatedMinutes = currentActiveBreak?.allocatedMinutes || (currentActiveBreak?.type === 'rest' ? 10 : mealBreakDurationMinutes);
+  const breakTotalAllocatedSec = breakAllocatedMinutes * 60;
+  const breakRemainingSec = breakTotalAllocatedSec - breakElapsedSec;
+  const isBreakOverdue = breakRemainingSec <= 0;
+  const breakOverdueSec = isBreakOverdue ? Math.abs(breakRemainingSec) : 0;
+  const isBreakCriticalLate = breakOverdueSec >= 300; // > 5 minutes late!
 
   // Guard Site Info & POCs Modal state
   const [isSiteInfoModalOpen, setIsSiteInfoModalOpen] = useState<boolean>(false);
@@ -235,7 +287,7 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
     .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
 
   const availableGearOptions = [
-    'Radio CH-1 (Ops Dispatch)',
+    'Radio CH-1 (Dispatch & Command)',
     'Body-Worn Camera #07',
     'Facility Master Key Card',
     'High-Vis Security Vest',
@@ -424,7 +476,8 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
 
   const handleExecuteStartBreak = (e: React.FormEvent) => {
     e.preventDefault();
-    startGuardBreak(activeGuard.id, breakType, breakNote);
+    const allocated = breakType === 'rest' ? 10 : mealBreakDurationMinutes;
+    startGuardBreak(activeGuard.id, breakType, breakNote, allocated);
     setIsBreakModalOpen(false);
     setBreakNote('');
   };
@@ -484,6 +537,147 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
                 Clocked In: {new Date(activeClockedInShift.clockInTime || '').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
               </p>
             </div>
+
+            {/* Live Break Countdown & Overdue Warning Panel (When Guard is On Break) */}
+            {activeClockedInShift.status === 'on_break' && (
+              <div 
+                id="guard-active-break-timer-card"
+                className={`mb-4 p-3.5 rounded-xl border-2 transition-all ${
+                  isBreakCriticalLate
+                    ? 'bg-gradient-to-br from-rose-950 via-rose-900 to-black border-rose-500 shadow-xl shadow-rose-950/60 ring-2 ring-rose-500/50 animate-pulse'
+                    : isBreakOverdue
+                    ? 'bg-gradient-to-br from-amber-950 via-slate-900 to-amber-950 border-amber-500 shadow-lg shadow-amber-950/40'
+                    : 'bg-gradient-to-br from-amber-950/60 via-slate-900 to-slate-950 border-amber-400/80 shadow-md'
+                }`}
+              >
+                {/* Break Type & Countdown Header */}
+                <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <div className={`p-2 rounded-lg ${
+                      isBreakCriticalLate 
+                        ? 'bg-rose-600 text-white animate-bounce' 
+                        : isBreakOverdue 
+                        ? 'bg-amber-600 text-white' 
+                        : 'bg-amber-500/20 text-amber-300 border border-amber-400/40'
+                    }`}>
+                      <Coffee className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full font-mono ${
+                          isBreakCriticalLate
+                            ? 'bg-rose-500 text-white'
+                            : isBreakOverdue
+                            ? 'bg-amber-500 text-slate-950'
+                            : 'bg-amber-400/20 text-amber-300 border border-amber-400/30'
+                        }`}>
+                          {currentActiveBreak?.type === 'rest' ? '☕ 10-Min Rest Break' : `🍱 ${breakAllocatedMinutes}-Min Meal Break`}
+                        </span>
+                        {isBreakOverdue && (
+                          <span className="text-[10px] font-mono font-bold text-rose-300 animate-pulse">
+                            +{formatElapsedTimer(breakOverdueSec)} OVERDUE
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs font-bold text-slate-200 block mt-0.5">
+                        {isBreakCriticalLate 
+                          ? '🚨 Critical Overdue (>5m Late) - Admin Alert Active' 
+                          : isBreakOverdue 
+                          ? '⚠️ Break Time Expired - Return to Post' 
+                          : 'Active Rest / Meal Break Interval'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => playBreakOverAlertSound()}
+                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-amber-300 border border-white/10 transition-colors"
+                    title="Play Alert Tone"
+                  >
+                    <Volume2 className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Big Timer Display */}
+                <div className="py-3 text-center">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-1">
+                    {isBreakOverdue ? 'Break Time Exceeded By' : 'Time Remaining on Break'}
+                  </span>
+                  <div className={`text-3xl sm:text-4xl font-mono font-black tracking-tight flex items-center justify-center gap-2 ${
+                    isBreakCriticalLate ? 'text-rose-400' : isBreakOverdue ? 'text-amber-300' : 'text-emerald-400'
+                  }`}>
+                    <Timer className={`w-6 h-6 ${isBreakOverdue ? 'animate-bounce text-rose-400' : 'text-emerald-400'}`} />
+                    <span>
+                      {isBreakOverdue ? `+${formatElapsedTimer(breakOverdueSec)}` : formatElapsedTimer(breakRemainingSec)}
+                    </span>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="mt-2.5 max-w-xs mx-auto">
+                    <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-white/10">
+                      <div 
+                        className={`h-full transition-all duration-500 rounded-full ${
+                          isBreakCriticalLate 
+                            ? 'bg-rose-500' 
+                            : isBreakOverdue 
+                            ? 'bg-amber-500' 
+                            : 'bg-emerald-500'
+                        }`}
+                        style={{
+                          width: `${Math.min(100, Math.round((breakElapsedSec / Math.max(1, breakTotalAllocatedSec)) * 100))}%`
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono mt-1">
+                      <span>Elapsed: {formatElapsedTimer(breakElapsedSec)}</span>
+                      <span>Target: {breakAllocatedMinutes}m</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Overdue Warnings / Policy notice */}
+                <div className="text-xs space-y-1.5">
+                  {isBreakCriticalLate ? (
+                    <div className="p-2.5 rounded-lg bg-rose-950/80 border border-rose-500/80 text-rose-200 space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold text-[11px] text-rose-300">
+                        <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
+                        <span>DISPATCH ADMIN ALERT TRIGGERED</span>
+                      </div>
+                      <p className="text-[11px] text-rose-200 leading-snug">
+                        You are more than <strong>5 minutes late</strong> returning from break (+{Math.floor(breakOverdueSec / 60)}m {breakOverdueSec % 60}s late). An automated overdue CAD alert has been transmitted to Dispatch. Please resume duty immediately.
+                      </p>
+                    </div>
+                  ) : isBreakOverdue ? (
+                    <div className="p-2.5 rounded-lg bg-amber-950/80 border border-amber-500/80 text-amber-200 space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold text-[11px] text-amber-300">
+                        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span>BREAK OVERDUE - RETURNING TO POST</span>
+                      </div>
+                      <p className="text-[11px] text-amber-200 leading-snug">
+                        Your break expired {formatElapsedTimer(breakOverdueSec)} ago. <strong>Notice:</strong> If you are more than 5 minutes late ({Math.max(0, 300 - breakOverdueSec)}s remaining), Dispatch/Admin will receive an automatic alert!
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="p-2 rounded-lg bg-slate-950/60 border border-white/10 text-[11px] text-slate-300 flex items-center justify-between">
+                      <span>Return to post before countdown reaches 00:00.</span>
+                      <span className="text-amber-400 font-mono font-bold">5-min late policy active</span>
+                    </div>
+                  )}
+
+                  {/* Direct Action Button to Resume Duty */}
+                  <button
+                    id="guard-active-break-resume-btn"
+                    type="button"
+                    onClick={() => endGuardBreak(activeGuard.id)}
+                    className="w-full mt-2 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-md"
+                  >
+                    <Play className="w-4 h-4 fill-white" />
+                    <span>Return to Post & Resume Duty</span>
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Facility & Post Specifications */}
             <div className="bg-slate-950/70 rounded-xl p-3 border border-white/10 space-y-2.5 text-xs">
@@ -814,9 +1008,10 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
                 type="button"
                 onClick={() => setIsClockOutModalOpen(true)}
                 className="py-2.5 px-3 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-sm"
+                title="Submit mandatory Shift Completion Report and timestamp check-out"
               >
                 <LogOut className="w-4 h-4" />
-                <span>Clock Out</span>
+                <span>Completion Report & Clock Out</span>
               </button>
             </div>
           </div>
@@ -1151,7 +1346,7 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
             <div className="flex items-center gap-2">
               <Radio className="w-4 h-4 text-blue-600 dark:text-blue-400 animate-pulse" />
               <div>
-                <div className="text-xs font-bold text-slate-800 dark:text-slate-200">Ops Command Dispatch</div>
+                <div className="text-xs font-bold text-slate-800 dark:text-slate-200">Dispatch & Command</div>
                 <div className="text-[10px] text-slate-500 font-mono">Channel 1 Priority Line • {opsPhone}</div>
               </div>
             </div>
@@ -1161,7 +1356,7 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
               className="px-2.5 py-1 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-bold flex items-center gap-1 hover:bg-blue-100 transition-colors"
             >
               <PhoneCall className="w-3 h-3" />
-              <span>Call Ops</span>
+              <span>Call Dispatch</span>
             </a>
           </div>
         </div>
@@ -1479,17 +1674,7 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
-                    type="button"
-                    onClick={() => setBreakType('meal')}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all ${
-                      breakType === 'meal'
-                        ? 'bg-amber-500 text-white border-amber-600 shadow-sm'
-                        : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                    }`}
-                  >
-                    🍱 30-min Meal Break
-                  </button>
-                  <button
+                    id="guard-select-10min-break-btn"
                     type="button"
                     onClick={() => setBreakType('rest')}
                     className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all ${
@@ -1498,9 +1683,26 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
                         : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
                     }`}
                   >
-                    ☕ 15-min Rest Break
+                    ☕ 10-min Rest Break
+                  </button>
+                  <button
+                    id="guard-select-meal-break-btn"
+                    type="button"
+                    onClick={() => setBreakType('meal')}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all ${
+                      breakType === 'meal'
+                        ? 'bg-amber-500 text-white border-amber-600 shadow-sm'
+                        : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    🍱 {mealBreakDurationMinutes}-min Meal Break
                   </button>
                 </div>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                  {breakType === 'rest' 
+                    ? '10-minute statutory rest interval. You will receive an alert when the 10 minutes expire.'
+                    : `${mealBreakDurationMinutes}-minute admin-scheduled meal interval. Dispatch is alerted if you are > 5m late returning.`}
+                </p>
               </div>
 
               <div>
@@ -1536,77 +1738,29 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
         </div>
       )}
 
-      {/* CLOCK OUT & HANDOVER MODAL */}
-      {isClockOutModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-md w-full p-4 space-y-3 animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-              <div className="flex items-center gap-2">
-                <LogOut className="w-5 h-5 text-red-500" />
-                <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase">Shift Clock-Out & Handover</h3>
-              </div>
-              <button 
-                onClick={() => setIsClockOutModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-white text-xs font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleExecuteClockOut} className="space-y-3">
-              <div className="bg-slate-50 dark:bg-slate-800/80 p-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
-                <div className="flex justify-between items-center text-slate-600 dark:text-slate-400 font-mono">
-                  <span>Shift Duration:</span>
-                  <span className="font-bold text-slate-900 dark:text-white">{formatElapsedTimer(elapsedSec)}</span>
-                </div>
-                <div className="flex justify-between items-center text-slate-600 dark:text-slate-400 font-mono mt-1">
-                  <span>Facility:</span>
-                  <span className="font-bold text-blue-600 dark:text-blue-400">{activeClockedInShift?.siteName}</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400 block mb-1">
-                  Handover Summary to Relief Guard / Ops
-                </label>
-                <textarea
-                  rows={2}
-                  value={handoverSummary}
-                  onChange={(e) => setHandoverSummary(e.target.value)}
-                  placeholder="e.g. Handed keys to Officer Davies. All exterior gates secured. No active incidents."
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:outline-hidden"
-                  required
-                />
-              </div>
-
-              <label className="flex items-center gap-2 p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 rounded-xl text-xs text-emerald-900 dark:text-emerald-200 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={gearReturnedConfirmed}
-                  onChange={(e) => setGearReturnedConfirmed(e.target.checked)}
-                  className="rounded text-emerald-600 focus:ring-emerald-500"
-                />
-                <span className="font-semibold">All issued equipment returned to lockbox / handed over</span>
-              </label>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsClockOutModalOpen(false)}
-                  className="px-3 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold shadow-md"
-                >
-                  Confirm Clock-Out
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* SHIFT COMPLETION REPORT & TIMESTAMPED CHECK-OUT MODAL */}
+      {isClockOutModalOpen && activeClockedInShift && (
+        <GuardShiftCompletionModal
+          isOpen={isClockOutModalOpen}
+          onClose={() => setIsClockOutModalOpen(false)}
+          shift={activeClockedInShift}
+          guard={activeGuard}
+          elapsedSeconds={elapsedSec}
+          currentGpsCoords={lastBreadcrumb ? {
+            latitude: lastBreadcrumb.latitude,
+            longitude: lastBreadcrumb.longitude,
+            accuracy: lastBreadcrumb.accuracy
+          } : undefined}
+          onSubmitReport={(report) => {
+            clockOutGuard(activeGuard.id, {
+              completionReport: report,
+              notes: report.activitySummary,
+              handoverSummary: report.activitySummary,
+              equipmentReturned: true
+            });
+            setIsClockOutModalOpen(false);
+          }}
+        />
       )}
 
       {/* MANDATORY UNIFORM & GEAR VERIFICATION MODAL */}

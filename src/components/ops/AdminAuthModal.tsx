@@ -148,7 +148,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
             </div>
             <div>
               <h3 className="font-black text-sm uppercase tracking-wider">
-                Ops Admin Authorization
+                Dispatch & Command Authorization
               </h3>
               <p className="text-[11px] text-blue-200 font-mono">
                 Restricted Dispatch & Management Console
@@ -168,7 +168,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
         <div className="bg-amber-950/70 border-b border-amber-900/60 p-3 px-5 flex items-start gap-2.5 text-xs text-amber-200/90 shrink-0">
           <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
           <p className="text-[11px] leading-tight">
-            <strong>Access Restricted:</strong> Security guards access the Guard App without login. The Ops dashboard requires supervisor authorization.
+            <strong>Access Restricted:</strong> Security guards access the Guard App without login. The Dispatch & Command console requires supervisor authorization.
           </p>
         </div>
 
@@ -225,7 +225,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                Ops PIN / Password
+                Dispatch PIN / Password
               </label>
               <span className="text-[10px] font-mono text-blue-400">
                 Assigned PIN: <strong>{selectedDispatcher.pin}</strong>
@@ -279,7 +279,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
               className="w-full bg-[#1e3a8a] hover:bg-blue-800 active:bg-blue-950 text-white font-bold py-2.5 rounded-xl text-xs uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer"
             >
               <ShieldCheck className="w-4 h-4" />
-              Authorize & Access Ops Dashboard
+              Authorize & Access Dispatch & Command
             </button>
 
             <button

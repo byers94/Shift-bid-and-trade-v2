@@ -1445,7 +1445,7 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
                     : 'bg-amber-100/70 border-amber-300 text-amber-950'
                 }`}>
                   <p className="font-extrabold uppercase text-[10px] tracking-wider mb-0.5">
-                    Ops Dispatcher Recommendation:
+                    Dispatch & Command Recommendation:
                   </p>
                   <p className="text-xs font-semibold">
                     {isGuardATrainedOnSiteB && isGuardBTrainedOnSiteA ? (

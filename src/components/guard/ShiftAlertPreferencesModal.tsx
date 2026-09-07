@@ -254,7 +254,7 @@ export const ShiftAlertPreferencesModal: React.FC<ShiftAlertPreferencesModalProp
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed">
-                      Immediate notifications when urgent open shifts, short-notice vacancies, or surge premium callouts are published by Ops.
+                      Immediate notifications when urgent open shifts, short-notice vacancies, or surge premium callouts are published by Dispatch & Command.
                     </p>
                     <div className="flex items-center gap-2 mt-2">
                       <button

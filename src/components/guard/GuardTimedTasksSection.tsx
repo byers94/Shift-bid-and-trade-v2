@@ -146,7 +146,7 @@ export const GuardTimedTasksSection: React.FC<GuardTimedTasksSectionProps> = ({
           <span className="text-[10px] text-slate-500 font-mono">0 Scheduled</span>
         </div>
         <p className="text-[11px] text-slate-400">
-          No time-specific tasks (e.g. pool locks, laundry closures) are currently defined for this post. Add time-specific tasks in the Ops Site Directory under Post Orders.
+          No time-specific tasks (e.g. pool locks, laundry closures) are currently defined for this post. Add time-specific tasks in the Dispatch & Command Site Directory under Post Orders.
         </p>
       </div>
     );

@@ -163,7 +163,7 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
       <div className="bg-slate-900 text-white rounded-2xl p-6 text-center space-y-4 border border-slate-800">
         <Car className="w-12 h-12 text-cyan-400 mx-auto animate-bounce" />
         <h3 className="text-base font-bold text-white">Initializing Mobile Patrol Route...</h3>
-        <p className="text-xs text-slate-400">Loading GPS coordinates and site sequence from Ops Dispatch.</p>
+        <p className="text-xs text-slate-400">Loading GPS coordinates and site sequence from Dispatch & Command.</p>
         <button
           onClick={handleManualReoptimize}
           className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold text-xs rounded-xl cursor-pointer"
@@ -189,7 +189,7 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
         gpsCoordinates={currentStop ? { latitude: currentStop.coords.latitude, longitude: currentStop.coords.longitude } : undefined}
         onCompleteVerification={() => {
           setIsPhotoModalOpen(false);
-          showToast('Checkpoint Verified', 'GPS + Photo proof timestamped and synced to Ops.', 'success');
+          showToast('Checkpoint Verified', 'GPS + Photo proof timestamped and synced to Dispatch & Command.', 'success');
         }}
       />
 
@@ -240,7 +240,7 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
               className={`p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-cyan-300 transition-colors cursor-pointer ${
                 isReoptimizing ? 'animate-spin text-cyan-400' : ''
               }`}
-              title="Re-sync sequence from Ops Dispatch"
+              title="Re-sync sequence from Dispatch & Command"
             >
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
@@ -564,7 +564,7 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
               }`}
             >
               <Radio className="w-3 h-3" />
-              <span>Ops Feed</span>
+              <span>Dispatch Feed</span>
             </button>
           </div>
         </div>
@@ -666,9 +666,9 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
           <div className="flex items-center justify-between text-xs font-bold text-slate-200 border-b border-slate-800 pb-2">
             <span className="flex items-center gap-1.5 text-amber-300">
               <Radio className="w-3.5 h-3.5" />
-              <span>Real-Time Ops Shift & Reroute Feed</span>
+              <span>Real-Time Dispatch & Reroute Feed</span>
             </span>
-            <span className="text-[10px] text-slate-400 font-mono">Channel: SECURE-OPS-DISPATCH</span>
+            <span className="text-[10px] text-slate-400 font-mono">Channel: SECURE-DISPATCH-CMD</span>
           </div>
 
           <div className="space-y-1.5 text-[11px] font-mono max-h-48 overflow-y-auto no-scrollbar">
@@ -902,7 +902,7 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
           </div>
           <div>
             <span className="text-[10px] text-slate-400 uppercase font-bold block">Need Route Reassignment?</span>
-            <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">Ops Dispatch: {opsPhone}</span>
+            <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">Dispatch & Command: {opsPhone}</span>
           </div>
         </div>
 

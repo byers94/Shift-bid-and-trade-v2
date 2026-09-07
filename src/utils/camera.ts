@@ -8,7 +8,7 @@ export function addVerificationWatermark(
   options: {
     guardName: string;
     badgeNumber: string;
-    verificationType: 'UNIFORM_SELFIE' | 'EQUIPMENT_INSPECTION';
+    verificationType: 'UNIFORM_SELFIE' | 'EQUIPMENT_INSPECTION' | 'GEAR_RETURN' | 'END_SHIFT_UNIFORM_COMPLIANCE';
     siteName?: string;
     coordinates?: { latitude: number; longitude: number };
     timestamp?: string;
@@ -35,7 +35,20 @@ export function addVerificationWatermark(
   ctx.fillRect(0, height - barHeight, width, barHeight);
 
   // Accent line
-  ctx.fillStyle = options.verificationType === 'UNIFORM_SELFIE' ? '#3b82f6' : '#10b981';
+  let accentColor = '#3b82f6';
+  let typeLabel = 'SECURITY UNIFORM VERIFIED';
+  if (options.verificationType === 'EQUIPMENT_INSPECTION') {
+    accentColor = '#10b981';
+    typeLabel = 'DUTY EQUIPMENT INSPECTED';
+  } else if (options.verificationType === 'GEAR_RETURN') {
+    accentColor = '#06b6d4';
+    typeLabel = 'GEAR RETURN & HANDOVER VERIFIED';
+  } else if (options.verificationType === 'END_SHIFT_UNIFORM_COMPLIANCE') {
+    accentColor = '#8b5cf6';
+    typeLabel = 'END-SHIFT UNIFORM COMPLIANCE VERIFIED';
+  }
+
+  ctx.fillStyle = accentColor;
   ctx.fillRect(0, height - barHeight, width, 3);
 
   // Text details
@@ -44,7 +57,6 @@ export function addVerificationWatermark(
   
   const now = options.timestamp || new Date().toISOString();
   const timeStr = new Date(now).toLocaleString();
-  const typeLabel = options.verificationType === 'UNIFORM_SELFIE' ? 'SECURITY UNIFORM VERIFIED' : 'DUTY EQUIPMENT INSPECTED';
 
   ctx.fillText(
     `[${typeLabel}] ${options.guardName} (Badge #${options.badgeNumber})`,
@@ -90,7 +102,7 @@ export function addVerificationWatermark(
  * Generate a realistic placeholder verification photo if camera hardware is unavailable
  */
 export function generateSampleVerificationPhoto(
-  type: 'UNIFORM_SELFIE' | 'EQUIPMENT_INSPECTION',
+  type: 'UNIFORM_SELFIE' | 'EQUIPMENT_INSPECTION' | 'GEAR_RETURN' | 'END_SHIFT_UNIFORM_COMPLIANCE',
   guardName: string,
   badgeNumber: string,
   siteName?: string
@@ -107,8 +119,14 @@ export function generateSampleVerificationPhoto(
   if (type === 'UNIFORM_SELFIE') {
     grad.addColorStop(0, '#1e293b');
     grad.addColorStop(1, '#0f172a');
-  } else {
+  } else if (type === 'EQUIPMENT_INSPECTION') {
     grad.addColorStop(0, '#134e4a');
+    grad.addColorStop(1, '#0f172a');
+  } else if (type === 'GEAR_RETURN') {
+    grad.addColorStop(0, '#0e7490');
+    grad.addColorStop(1, '#0f172a');
+  } else {
+    grad.addColorStop(0, '#4c1d95');
     grad.addColorStop(1, '#0f172a');
   }
   ctx.fillStyle = grad;
@@ -150,7 +168,7 @@ export function generateSampleVerificationPhoto(
     ctx.fillStyle = '#94a3b8';
     ctx.font = '12px sans-serif';
     ctx.fillText('High-Visibility Vest, Badge # & Epaulets Compliant', 320, 295);
-  } else {
+  } else if (type === 'EQUIPMENT_INSPECTION') {
     // Equipment layout representation
     ctx.fillStyle = 'rgba(16, 185, 129, 0.15)';
     ctx.beginPath();
@@ -169,6 +187,44 @@ export function generateSampleVerificationPhoto(
     ctx.fillStyle = '#94a3b8';
     ctx.font = '12px sans-serif';
     ctx.fillText('Radio CH-1, Bodycam #07, Master Keycard & Trauma Kit', 320, 295);
+  } else if (type === 'GEAR_RETURN') {
+    // Gear return & handover representation
+    ctx.fillStyle = 'rgba(6, 182, 212, 0.15)';
+    ctx.beginPath();
+    ctx.arc(320, 200, 90, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#22d3ee';
+    ctx.font = 'bold 36px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('📻 🔑 📷 🦺', 320, 210);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.fillText('ALL GEAR RETURNED & HANDED OVER', 320, 270);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('Radio, Keys, Body-Worn Camera & Duty Vest Accounted For', 320, 295);
+  } else {
+    // Final end-of-shift uniform compliance selfie
+    ctx.fillStyle = 'rgba(139, 92, 246, 0.15)';
+    ctx.beginPath();
+    ctx.arc(320, 200, 90, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#c084fc';
+    ctx.font = 'bold 36px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('👮‍♂️ ✨', 320, 210);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.fillText('FINAL END-OF-SHIFT UNIFORM COMPLIANCE', 320, 270);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('Badge Visible, Duty Vest & Approved Uniform Verified at Check-Out', 320, 295);
   }
 
   ctx.textAlign = 'left';
@@ -178,14 +234,27 @@ export function generateSampleVerificationPhoto(
   ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
   ctx.fillRect(0, 480 - barHeight, 640, barHeight);
 
-  ctx.fillStyle = type === 'UNIFORM_SELFIE' ? '#3b82f6' : '#10b981';
+  let bottomAccent = '#3b82f6';
+  let bottomType = 'UNIFORM SELFIE';
+  if (type === 'EQUIPMENT_INSPECTION') {
+    bottomAccent = '#10b981';
+    bottomType = 'EQUIPMENT CHECK';
+  } else if (type === 'GEAR_RETURN') {
+    bottomAccent = '#06b6d4';
+    bottomType = 'GEAR RETURN & HANDOVER';
+  } else if (type === 'END_SHIFT_UNIFORM_COMPLIANCE') {
+    bottomAccent = '#8b5cf6';
+    bottomType = 'END-OF-SHIFT UNIFORM COMPLIANCE';
+  }
+
+  ctx.fillStyle = bottomAccent;
   ctx.fillRect(0, 480 - barHeight, 640, 3);
 
   const timeStr = new Date().toLocaleString();
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 12px monospace';
   ctx.fillText(
-    `[${type === 'UNIFORM_SELFIE' ? 'UNIFORM SELFIE' : 'EQUIPMENT CHECK'}] ${guardName} (Badge #${badgeNumber})`,
+    `[${bottomType}] ${guardName} (Badge #${badgeNumber})`,
     15,
     480 - barHeight + 24
   );

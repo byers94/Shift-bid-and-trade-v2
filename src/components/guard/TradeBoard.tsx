@@ -174,7 +174,7 @@ export const TradeBoard: React.FC<TradeBoardProps> = ({ onOpenAlertPrefs }) => {
             <ArrowRightLeft className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
             <h4 className="font-bold text-slate-700 dark:text-slate-300 text-sm">No Active Shift Trades</h4>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-4">
-              Need coverage? Submit a shift to Ops for approval to list it here.
+              Need coverage? Submit a shift to Dispatch & Command for approval to list it here.
             </p>
             <button
               onClick={() => setIsPostModalOpen(true)}
@@ -214,7 +214,7 @@ export const TradeBoard: React.FC<TradeBoardProps> = ({ onOpenAlertPrefs }) => {
 
                     {isPendingApproval ? (
                       <span className="bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 text-[10px] font-black px-2 py-0.5 rounded uppercase border border-amber-300/60 dark:border-amber-800">
-                        Pending Ops
+                        Pending Command
                       </span>
                     ) : hasPendingSwap ? (
                       <span className="bg-purple-100 dark:bg-purple-950/80 text-purple-800 dark:text-purple-300 text-[10px] font-black px-2 py-0.5 rounded uppercase border border-purple-300/60 dark:border-purple-800">
@@ -310,11 +310,11 @@ export const TradeBoard: React.FC<TradeBoardProps> = ({ onOpenAlertPrefs }) => {
                     </div>
                   ) : isPendingApproval ? (
                     <div className="text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-900/60 p-2 rounded text-center font-medium">
-                      Waiting for Ops Manager Approval
+                      Waiting for Dispatch & Command Approval
                     </div>
                   ) : hasPendingSwap ? (
                     <div className="text-[11px] text-purple-900 dark:text-purple-200 bg-purple-50 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-900/60 p-2 rounded text-center font-medium">
-                      Swap proposal pending Ops review
+                      Swap proposal pending Dispatch & Command review
                     </div>
                   ) : isMine ? (
                     <div className="text-[11px] text-blue-900 dark:text-blue-200 bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900/60 p-2 rounded text-center font-medium">

@@ -185,11 +185,11 @@ export const BidModal: React.FC<BidModalProps> = ({ shift, isOpen, onClose }) =>
                 <div className="flex items-center gap-2 mb-1.5">
                   <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span>
                   <span className="text-xs font-bold text-blue-900 uppercase">
-                    Bid Logged in Ops System
+                    Bid Logged in Dispatch & Command
                   </span>
                 </div>
                 <p className="text-xs text-blue-800">
-                  Your bid has been recorded in the Ops Admin audit feed as{' '}
+                  Your bid has been recorded in the Dispatch & Command audit feed as{' '}
                   <strong className="underline">
                     {selectedStatus === 'trained' ? 'TRAINED' : 'NEEDS OJT'}
                   </strong>.
@@ -200,7 +200,7 @@ export const BidModal: React.FC<BidModalProps> = ({ shift, isOpen, onClose }) =>
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <span className="text-[11px] font-bold text-slate-500 uppercase">
-                    SMS Payload to Ops ({opsPhone}):
+                    SMS Payload to Dispatch ({opsPhone}):
                   </span>
                   <button
                     onClick={handleCopy}

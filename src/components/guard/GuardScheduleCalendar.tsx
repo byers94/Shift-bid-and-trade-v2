@@ -649,7 +649,7 @@ export const GuardScheduleCalendar: React.FC<GuardScheduleCalendarProps> = ({
                 <div className="flex-1">
                   <div className="flex items-center justify-between">
                     <span className="font-extrabold uppercase text-[11px] tracking-wider text-amber-800 dark:text-amber-300">
-                      ⏳ Leave Request Pending Ops Review ({getPendingTimeOffForDate(selectedDateStr)?.type})
+                      ⏳ Leave Request Pending Dispatch & Command Review ({getPendingTimeOffForDate(selectedDateStr)?.type})
                     </span>
                     <span className="text-[10px] font-mono bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-100 px-2 py-0.5 rounded-full font-bold">
                       Pending Approval
@@ -934,7 +934,7 @@ export const GuardScheduleCalendar: React.FC<GuardScheduleCalendarProps> = ({
                   <span>Pending Leave: {getPendingTimeOffForDate(selectedDateStr)?.reason}</span>
                 </span>
                 <span className="text-[10px] font-mono font-bold bg-amber-200 dark:bg-amber-900 px-1.5 py-0.5 rounded text-amber-900 dark:text-amber-100">
-                  Pending Ops Approval
+                  Pending Command Approval
                 </span>
               </div>
             )}

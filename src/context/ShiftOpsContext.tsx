@@ -72,7 +72,16 @@ import {
   OffSiteBreachStatus,
   DepartureReasonType,
   GeofenceParcel,
-  GpsBreadcrumb
+  GpsBreadcrumb,
+  ShiftCompletionReport,
+  LateBreakAlert,
+  SiteOrientation,
+  SiteOrientationStatus,
+  SiteOrientationCheckpoints,
+  DashboardConfig,
+  DashboardPreset,
+  DashboardTileVisibility,
+  DEFAULT_DASHBOARD_PRESETS
 } from '../types/shift';
 import { generateSyntheticShiftBreadcrumbs } from '../utils/breadcrumbHelper';
 import {
@@ -134,7 +143,8 @@ import {
   INITIAL_TIME_OFF_REQUESTS,
   INITIAL_CALL_OFF_RECORDS,
   INITIAL_COACHING_SESSIONS,
-  INITIAL_AVAILABILITY_CHANGE_REQUESTS
+  INITIAL_AVAILABILITY_CHANGE_REQUESTS,
+  INITIAL_ORIENTATIONS
 } from '../data/mockData';
 import { generateSetScheduleAiSuggestions } from '../utils/autoFillHeuristics';
 import { calculateHours, generateSmsLink, calculateShiftLateStatus, getShiftElapsedSeconds, formatElapsedTimer } from '../utils/time';
@@ -158,6 +168,8 @@ import {
   playClockOutAlertSound,
   playLateAlertSound,
   playBreakAlertSound,
+  playBreakOverAlertSound,
+  playLateBreakAdminAlertSound,
   playPriorityShiftAlertSound,
   playTaskAlertSound,
   playTaskCompletedSound,
@@ -547,11 +559,17 @@ interface ShiftOpsContextType {
     options?: { 
       notes?: string; 
       handoverSummary?: string; 
-      equipmentReturned?: boolean 
+      equipmentReturned?: boolean;
+      completionReport?: ShiftCompletionReport;
     }
   ) => void;
-  startGuardBreak: (guardId: string, breakType?: 'meal' | 'rest', note?: string) => void;
+  startGuardBreak: (guardId: string, breakType?: 'meal' | 'rest', note?: string, customDurationMinutes?: number) => void;
   endGuardBreak: (guardId: string) => void;
+  mealBreakDurationMinutes: number;
+  setMealBreakDurationMinutes: (minutes: number) => void;
+  lateBreakAlerts: LateBreakAlert[];
+  acknowledgeLateBreakAlert: (alertId: string, note?: string) => void;
+  dismissLateBreakAlert: (alertId: string) => void;
   scheduleNewShift: (
     data: Omit<ScheduledShift, 'id' | 'createdAt' | 'status'> & { status?: ShiftDutyStatus }
   ) => ScheduledShift;
@@ -685,6 +703,23 @@ interface ShiftOpsContextType {
   }) => { callOffRecord: GuardCallOffRecord; urgentShift?: Shift };
   quickAddCallOffToBiddingQueue: (callOffId: string, options?: { sendPushNotification?: boolean; urgency?: 'standard' | 'emergency' }) => Shift | null;
 
+  // Dispatch & Command Dashboard Configuration
+  dashboardConfig: DashboardConfig;
+  updateDashboardConfig: (config: Partial<DashboardConfig>) => void;
+  setDashboardPreset: (preset: DashboardPreset) => void;
+  toggleDashboardTile: (tileKey: keyof DashboardTileVisibility) => void;
+  setDashboardTileOrder: (order: string[]) => void;
+
+  // Embedded Site Training (SiteOrientation) & Supervisor Sign-Off Engine
+  siteOrientations: SiteOrientation[];
+  createSiteOrientation: (data: Omit<SiteOrientation, 'orientationId' | 'createdAt'>) => SiteOrientation;
+  updateSiteOrientation: (orientationId: string, updates: Partial<SiteOrientation>) => void;
+  assignSupervisorToOrientation: (orientationId: string, supervisorId: string, supervisorName?: string) => void;
+  verifySupervisorArrivalGps: (orientationId: string, coords?: { latitude: number; longitude: number }) => { inGeofence: boolean; distanceMeters: number };
+  approveAndReleaseSolo: (orientationId: string, notes?: string, checkpoints?: Partial<SiteOrientationCheckpoints>) => void;
+  failAndEscalateOrientation: (orientationId: string, reason: string, notes?: string) => void;
+  checkAndCreateOrientationForShift: (shift: ScheduledShift, guardId: string, supervisorId?: string | null) => SiteOrientation | null;
+
   // System
   resetToDefaults: () => void;
 }
@@ -728,8 +763,23 @@ const STORAGE_KEY_DATE_SPECIFIC_MAX_TIME_OFF = 'secureshift_date_specific_max_ti
 const STORAGE_KEY_CALL_OFF_RECORDS = 'secureshift_call_off_records_v1';
 const STORAGE_KEY_COACHING_SESSIONS = 'secureshift_coaching_sessions_v1';
 const STORAGE_KEY_AVAILABILITY_CHANGE_REQUESTS = 'secureshift_availability_change_requests_v1';
+const STORAGE_KEY_MEAL_BREAK_DURATION = 'secureshift_meal_break_duration_minutes_v1';
+const STORAGE_KEY_ORIENTATIONS = 'secureshift_site_orientations_v1';
+const STORAGE_KEY_DASHBOARD_CONFIG = 'secureshift_dashboard_config_v1';
 
 export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Admin-Configured Meal Break Duration Policy (Default 30 minutes)
+  const [mealBreakDurationMinutes, setMealBreakDurationMinutesState] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_MEAL_BREAK_DURATION);
+      return saved ? Math.max(5, parseInt(saved, 10) || 30) : 30;
+    } catch {
+      return 30;
+    }
+  });
+
+  // Late Return From Break Alerts (> 5 min late) for Ops Admin
+  const [lateBreakAlerts, setLateBreakAlerts] = useState<LateBreakAlert[]>([]);
   const [scheduledShifts, setScheduledShifts] = useState<ScheduledShift[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_SCHEDULED_SHIFTS);
@@ -1288,6 +1338,429 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       console.warn('Failed to save telemetry logs', e);
     }
   }, [telemetryLogs]);
+
+  // Dispatch & Command Dashboard Configuration State
+  const [dashboardConfig, setDashboardConfigState] = useState<DashboardConfig>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_DASHBOARD_CONFIG);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const presetKey = (parsed.preset as DashboardPreset) || 'WATCH_DESK';
+        const defaultPreset = DEFAULT_DASHBOARD_PRESETS[presetKey] || DEFAULT_DASHBOARD_PRESETS.WATCH_DESK;
+        return {
+          preset: presetKey,
+          tiles: { ...defaultPreset.tiles, ...(parsed.tiles || {}) },
+          tileOrder: parsed.tileOrder && parsed.tileOrder.length > 0 ? parsed.tileOrder : defaultPreset.tileOrder
+        };
+      }
+    } catch (e) {
+      console.warn('Failed to load dashboard config', e);
+    }
+    return {
+      preset: 'WATCH_DESK',
+      tiles: { ...DEFAULT_DASHBOARD_PRESETS.WATCH_DESK.tiles },
+      tileOrder: [...DEFAULT_DASHBOARD_PRESETS.WATCH_DESK.tileOrder]
+    };
+  });
+
+  // Site Orientation & Supervisor Sign-Off Records State
+  const [siteOrientations, setSiteOrientations] = useState<SiteOrientation[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_ORIENTATIONS);
+      return saved ? JSON.parse(saved) : INITIAL_ORIENTATIONS;
+    } catch {
+      return INITIAL_ORIENTATIONS;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_DASHBOARD_CONFIG, JSON.stringify(dashboardConfig));
+    } catch (e) {
+      console.warn('Failed to save dashboard config', e);
+    }
+  }, [dashboardConfig]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_ORIENTATIONS, JSON.stringify(siteOrientations));
+    } catch (e) {
+      console.warn('Failed to save site orientations', e);
+    }
+  }, [siteOrientations]);
+
+  const updateDashboardConfig = (config: Partial<DashboardConfig>) => {
+    setDashboardConfigState(prev => ({
+      ...prev,
+      ...config,
+      tiles: config.tiles ? { ...prev.tiles, ...config.tiles } : prev.tiles,
+      tileOrder: config.tileOrder ? config.tileOrder : prev.tileOrder
+    }));
+  };
+
+  const setDashboardPreset = (preset: DashboardPreset) => {
+    const defaultPresetConfig = DEFAULT_DASHBOARD_PRESETS[preset] || DEFAULT_DASHBOARD_PRESETS.WATCH_DESK;
+    setDashboardConfigState({
+      preset,
+      tiles: { ...defaultPresetConfig.tiles },
+      tileOrder: [...defaultPresetConfig.tileOrder]
+    });
+    showToast(
+      'Command Preset Applied',
+      `Switched to ${preset.replace(/_/g, ' ')} view preset.`,
+      'info'
+    );
+  };
+
+  const toggleDashboardTile = (tileKey: keyof DashboardTileVisibility) => {
+    setDashboardConfigState(prev => {
+      const nextVal = !prev.tiles[tileKey];
+      const updatedTiles = { ...prev.tiles, [tileKey]: nextVal };
+      let updatedOrder = [...prev.tileOrder];
+      if (nextVal && !updatedOrder.includes(tileKey)) {
+        updatedOrder.push(tileKey);
+      }
+      return {
+        ...prev,
+        tiles: updatedTiles,
+        tileOrder: updatedOrder
+      };
+    });
+  };
+
+  const setDashboardTileOrder = (order: string[]) => {
+    setDashboardConfigState(prev => ({
+      ...prev,
+      tileOrder: order
+    }));
+  };
+
+  const createSiteOrientation = (data: Omit<SiteOrientation, 'orientationId' | 'createdAt'>): SiteOrientation => {
+    const orientationId = `orient-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
+    const nowIso = new Date().toISOString();
+    
+    const guard = guardsList.find(g => g.id === data.guardId);
+    const site = sitesList.find(s => s.id === data.siteId || s.name === data.siteName);
+    const supervisor = data.supervisorId ? guardsList.find(g => g.id === data.supervisorId) : null;
+
+    const newOrientation: SiteOrientation = {
+      ...data,
+      orientationId,
+      guardName: data.guardName || guard?.name || 'Trainee Officer',
+      guardBadge: data.guardBadge || guard?.badgeNumber || 'SEC-0000',
+      guardPhone: data.guardPhone || guard?.phone,
+      siteName: data.siteName || site?.name || 'Assigned Site',
+      siteAddress: data.siteAddress || site?.address,
+      supervisorName: data.supervisorName || supervisor?.name,
+      supervisorBadge: data.supervisorBadge || supervisor?.badgeNumber,
+      supervisorPhone: data.supervisorPhone || supervisor?.phone,
+      createdAt: nowIso
+    };
+
+    setSiteOrientations(prev => [newOrientation, ...prev]);
+
+    if (!newOrientation.supervisorId) {
+      addAuditLog(
+        'SUPERVISOR_ORIENTATION_REQUIRED',
+        'shift',
+        `Supervisor Required for Site Orientation at ${newOrientation.siteName} for Officer ${newOrientation.guardName} (${newOrientation.guardBadge})`,
+        'Dispatch Engine',
+        'warning'
+      );
+      showToast(
+        'Supervisor Required for Orientation',
+        `Supervisor Required for Site Orientation at ${newOrientation.siteName} for Officer ${newOrientation.guardName}.`,
+        'warning'
+      );
+    } else {
+      showToast(
+        'Site Orientation Scheduled',
+        `Orientation active for ${newOrientation.guardName} at ${newOrientation.siteName}.`,
+        'info'
+      );
+    }
+
+    return newOrientation;
+  };
+
+  const updateSiteOrientation = (orientationId: string, updates: Partial<SiteOrientation>) => {
+    setSiteOrientations(prev => prev.map(o => o.orientationId === orientationId ? { ...o, ...updates } : o));
+  };
+
+  const assignSupervisorToOrientation = (orientationId: string, supervisorId: string, supervisorName?: string) => {
+    const supervisor = guardsList.find(g => g.id === supervisorId);
+    const supName = supervisorName || supervisor?.name || 'Field Supervisor';
+    const supBadge = supervisor?.badgeNumber || 'SUP-01';
+    const supPhone = supervisor?.phone;
+
+    setSiteOrientations(prev => prev.map(o => {
+      if (o.orientationId === orientationId) {
+        return {
+          ...o,
+          supervisorId,
+          supervisorName: supName,
+          supervisorBadge: supBadge,
+          supervisorPhone: supPhone,
+          status: o.status === 'PENDING_SUPERVISOR' ? 'SUPERVISOR_EN_ROUTE' : o.status
+        };
+      }
+      return o;
+    }));
+
+    const orientation = siteOrientations.find(o => o.orientationId === orientationId);
+    if (orientation) {
+      logAdminAction({
+        type: 'shift_scheduled',
+        title: `Supervisor Dispatched: ${supName}`,
+        description: `Dispatched ${supName} (${supBadge}) to conduct site qualification sign-off for ${orientation.guardName} at ${orientation.siteName}.`,
+        adminName: "Dispatch Command",
+        adminBadge: "OPS-CMD-01",
+        badgeVariant: 'blue',
+        metadata: { orientationId, supervisorId, siteId: orientation.siteId, guardId: orientation.guardId }
+      });
+      showToast(
+        'Supervisor Dispatched',
+        `${supName} dispatched to ${orientation.siteName} for Officer ${orientation.guardName}.`,
+        'info'
+      );
+    }
+  };
+
+  const verifySupervisorArrivalGps = (orientationId: string, coords?: { latitude: number; longitude: number }): { inGeofence: boolean; distanceMeters: number } => {
+    const orientation = siteOrientations.find(o => o.orientationId === orientationId);
+    if (!orientation) return { inGeofence: false, distanceMeters: 999 };
+
+    const site = sitesList.find(s => s.id === orientation.siteId || s.name === orientation.siteName);
+    const siteLat = site?.latitude || 47.6117;
+    const siteLng = site?.longitude || -122.3533;
+    const geofenceRadius = site?.geofenceRadiusMeters || 120;
+
+    const supLat = coords?.latitude ?? siteLat + (Math.random() * 0.0001 - 0.00005);
+    const supLng = coords?.longitude ?? siteLng + (Math.random() * 0.0001 - 0.00005);
+
+    const distMeters = Math.round(calculateDistance(supLat, supLng, siteLat, siteLng));
+    const inGeofence = distMeters <= geofenceRadius;
+
+    setSiteOrientations(prev => prev.map(o => {
+      if (o.orientationId === orientationId) {
+        return {
+          ...o,
+          gpsVerifiedAtSite: inGeofence,
+          distanceMetersFromSite: distMeters,
+          status: inGeofence && (o.status === 'PENDING_SUPERVISOR' || o.status === 'SUPERVISOR_EN_ROUTE') ? 'ON_SITE_ACTIVE' : o.status
+        };
+      }
+      return o;
+    }));
+
+    return { inGeofence, distanceMeters: distMeters };
+  };
+
+  const approveAndReleaseSolo = (
+    orientationId: string, 
+    notes?: string, 
+    checkpoints?: Partial<SiteOrientationCheckpoints>
+  ) => {
+    const orientation = siteOrientations.find(o => o.orientationId === orientationId);
+    if (!orientation) return;
+
+    const nowIso = new Date().toISOString();
+    const finalCheckpoints: SiteOrientationCheckpoints = {
+      postOrdersReviewed: checkpoints?.postOrdersReviewed ?? true,
+      accessKeysVerified: checkpoints?.accessKeysVerified ?? true,
+      perimeterGeofenceWalked: checkpoints?.perimeterGeofenceWalked ?? true,
+      emergencyPocConfirmed: checkpoints?.emergencyPocConfirmed ?? true
+    };
+    const finalNotes = notes?.trim() || orientation.supervisorNotes || 'All 4 verification checkpoints completed on site. Guard verified on post orders, master access keys, perimeter walk, and emergency escalation POCs. Approved and released for solo duty.';
+
+    setSiteOrientations(prev => prev.map(o => {
+      if (o.orientationId === orientationId) {
+        return {
+          ...o,
+          status: 'CERTIFIED_RELEASED',
+          checkpoints: finalCheckpoints,
+          supervisorNotes: finalNotes,
+          completedAt: nowIso,
+          gpsVerifiedAtSite: true
+        };
+      }
+      return o;
+    }));
+
+    // Award permanent site qualification to guard
+    setGuardsList(prev => prev.map(g => {
+      if (g.id === orientation.guardId) {
+        const existingTrained = g.trainedSites || [];
+        const existingOjt = g.ojtSites || [];
+        const updatedTrained = Array.from(new Set([...existingTrained, orientation.siteId, orientation.siteName].filter(Boolean) as string[]));
+        const updatedOjt = Array.from(new Set([...existingOjt, orientation.siteName, orientation.siteId].filter(Boolean) as string[]));
+        return {
+          ...g,
+          trainingLevel: g.trainingLevel === 'needs_ojt' ? 'trained' : g.trainingLevel,
+          trainedSites: updatedTrained,
+          ojtSites: updatedOjt
+        };
+      }
+      return g;
+    }));
+
+    if (activeGuard.id === orientation.guardId) {
+      setActiveGuard(prev => ({
+        ...prev,
+        trainingLevel: prev.trainingLevel === 'needs_ojt' ? 'trained' : prev.trainingLevel,
+        trainedSites: Array.from(new Set([...(prev.trainedSites || []), orientation.siteId, orientation.siteName].filter(Boolean) as string[])),
+        ojtSites: Array.from(new Set([...(prev.ojtSites || []), orientation.siteName, orientation.siteId].filter(Boolean) as string[]))
+      }));
+    }
+    if (authenticatedGuard?.id === orientation.guardId) {
+      setAuthenticatedGuard(prev => prev ? {
+        ...prev,
+        trainingLevel: prev.trainingLevel === 'needs_ojt' ? 'trained' : prev.trainingLevel,
+        trainedSites: Array.from(new Set([...(prev.trainedSites || []), orientation.siteId, orientation.siteName].filter(Boolean) as string[])),
+        ojtSites: Array.from(new Set([...(prev.ojtSites || []), orientation.siteName, orientation.siteId].filter(Boolean) as string[]))
+      } : prev);
+    }
+
+    setScheduledShifts(prev => prev.map(s => {
+      if (s.id === orientation.shiftId || s.orientationId === orientationId) {
+        return {
+          ...s,
+          requiresOrientation: false
+        };
+      }
+      return s;
+    }));
+
+    logAdminAction({
+      type: 'user_updated',
+      title: `Guard Certified & Released: ${orientation.guardName}`,
+      description: `Officer ${orientation.guardName} (${orientation.guardBadge}) completed orientation and is certified for solo post at ${orientation.siteName}. Permanent site qualification awarded.`,
+      adminName: orientation.supervisorName || "Field Supervisor",
+      adminBadge: orientation.supervisorBadge || "SUP-LEAD-01",
+      badgeVariant: 'emerald',
+      metadata: {
+        orientationId,
+        guardId: orientation.guardId,
+        siteId: orientation.siteId,
+        siteName: orientation.siteName,
+        checkpoints: finalCheckpoints
+      }
+    });
+
+    addAuditLog(
+      'GUARD_CERTIFIED_RELEASED',
+      'shift',
+      `Officer ${orientation.guardName} (${orientation.guardBadge}) certified and released for solo post at ${orientation.siteName}. Permanent qualification recorded.`,
+      orientation.supervisorName || "Field Supervisor",
+      'success'
+    );
+
+    showToast(
+      'Officer Certified & Released',
+      `Officer ${orientation.guardName} is now fully qualified for solo duty at ${orientation.siteName}!`,
+      'success'
+    );
+  };
+
+  const failAndEscalateOrientation = (orientationId: string, reason: string, notes?: string) => {
+    const orientation = siteOrientations.find(o => o.orientationId === orientationId);
+    if (!orientation) return;
+
+    setSiteOrientations(prev => prev.map(o => {
+      if (o.orientationId === orientationId) {
+        return {
+          ...o,
+          status: 'FAILED_ESCALATED',
+          failureReason: reason,
+          supervisorNotes: notes || o.supervisorNotes
+        };
+      }
+      return o;
+    }));
+
+    logAdminAction({
+      type: 'user_updated',
+      title: `Orientation Escalated: ${orientation.guardName}`,
+      description: `Officer orientation at ${orientation.siteName} escalated: ${reason}. Immediate relief or remedial coaching required.`,
+      adminName: orientation.supervisorName || "Field Supervisor",
+      adminBadge: orientation.supervisorBadge || "SUP-01",
+      badgeVariant: 'rose',
+      metadata: { orientationId, reason, notes }
+    });
+
+    showToast(
+      'Orientation Escalated',
+      `Remediation required for ${orientation.guardName} at ${orientation.siteName}.`,
+      'danger'
+    );
+  };
+
+  const checkAndCreateOrientationForShift = (
+    shift: ScheduledShift, 
+    guardId: string, 
+    supervisorId?: string | null
+  ): SiteOrientation | null => {
+    const guard = guardsList.find(g => g.id === guardId);
+    if (!guard) return null;
+
+    const targetSiteId = shift.siteId || '';
+    const targetSiteName = shift.siteName || '';
+    const trainedList = guard.trainedSites || guard.ojtSites || [];
+
+    const isTrained = trainedList.includes(targetSiteId) || trainedList.includes(targetSiteName);
+    if (isTrained) {
+      return null;
+    }
+
+    const existing = siteOrientations.find(o => 
+      (o.shiftId === shift.id || (o.guardId === guardId && o.siteId === targetSiteId)) && 
+      o.status !== 'FAILED_ESCALATED'
+    );
+    if (existing) {
+      return existing;
+    }
+
+    let windowStart = new Date().toISOString();
+    let windowEnd = new Date(Date.now() + 90 * 60 * 1000).toISOString();
+
+    if (shift.date && shift.startTime) {
+      try {
+        const [shH, shM] = shift.startTime.split(':').map(Number);
+        const startD = new Date(`${shift.date}T${String(shH).padStart(2, '0')}:${String(shM).padStart(2, '0')}:00`);
+        if (!isNaN(startD.getTime())) {
+          windowStart = startD.toISOString();
+          windowEnd = new Date(startD.getTime() + 90 * 60 * 1000).toISOString();
+        }
+      } catch {}
+    }
+
+    const newOrientation = createSiteOrientation({
+      shiftId: shift.id,
+      guardId: guard.id,
+      guardName: guard.name,
+      guardBadge: guard.badgeNumber,
+      guardPhone: guard.phone,
+      siteId: targetSiteId,
+      siteName: targetSiteName,
+      siteAddress: shift.siteAddress,
+      supervisorId: supervisorId || null,
+      windowStart,
+      windowEnd,
+      status: supervisorId ? 'SUPERVISOR_EN_ROUTE' : 'PENDING_SUPERVISOR',
+      checkpoints: {
+        postOrdersReviewed: false,
+        accessKeysVerified: false,
+        perimeterGeofenceWalked: false,
+        emergencyPocConfirmed: false
+      },
+      supervisorNotes: '',
+      completedAt: null
+    });
+
+    setScheduledShifts(prev => prev.map(s => s.id === shift.id ? { ...s, requiresOrientation: true, orientationId: newOrientation.orientationId } : s));
+
+    return newOrientation;
+  };
 
   const updateAlertPreferences = (prefs: Partial<ShiftAlertPreferences>) => {
     setAlertPreferencesState((prev) => {
@@ -5891,7 +6364,8 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     options?: { 
       notes?: string; 
       handoverSummary?: string; 
-      equipmentReturned?: boolean 
+      equipmentReturned?: boolean;
+      completionReport?: ShiftCompletionReport;
     }
   ) => {
     const activeShift = scheduledShifts.find(
@@ -5903,7 +6377,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return;
     }
 
-    const nowIso = new Date().toISOString();
+    const nowIso = options?.completionReport?.checkOutTimestamp || new Date().toISOString();
     const guard = guardsList.find((g) => g.id === guardId) || activeGuard;
 
     // Close any open breaks
@@ -5923,28 +6397,68 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       ...activeShift,
       status: 'completed',
       clockOutTime: nowIso,
-      clockOutNotes: options?.notes || 'Shift completed and clocked out via Guard Terminal.',
-      handoverSummary: options?.handoverSummary || 'Handover completed to relief officer. All posts secure.',
+      clockOutNotes: options?.completionReport?.activitySummary || options?.notes || 'Shift completed and clocked out via Guard Terminal.',
+      handoverSummary: options?.completionReport?.activitySummary || options?.handoverSummary || 'Handover completed to relief officer. All posts secure.',
       actualHoursWorked: Math.max(0.1, actualHoursWorked),
       breaks: updatedBreaks,
-      breadcrumbs: finalBreadcrumbs
+      breadcrumbs: finalBreadcrumbs,
+      completionReport: options?.completionReport
     };
 
     setScheduledShifts((prev) => prev.map((s) => s.id === activeShift.id ? updatedShift : s));
 
-    // Save GPS Breadcrumb Trail with the reporting history for this shift
+    // Save GPS Breadcrumb Trail & Completion Report with the reporting history for this shift
     setStandardReports((prev) => {
       const existingReport = prev.find((r) => r.shiftId === activeShift.id);
+      
+      const reportMedia: ReportMediaAttachment[] = [];
+      if (options?.completionReport?.gearReturnedPhotoUrl) {
+        reportMedia.push({
+          id: `med-gear-${Date.now()}`,
+          type: 'photo',
+          url: options.completionReport.gearReturnedPhotoUrl,
+          caption: `Shift Completion Gear Return (${options.completionReport.gearItemsReturned?.join(', ') || 'All Gear'}) - Handover: ${options.completionReport.gearHandoverType}`,
+          capturedAt: nowIso,
+          gpsCoordinates: options.completionReport.gpsCoordinates || activeShift.gpsCoordinates
+        });
+      }
+      if (options?.completionReport?.finalSelfiePhotoUrl) {
+        reportMedia.push({
+          id: `med-selfie-${Date.now() + 1}`,
+          type: 'photo',
+          url: options.completionReport.finalSelfiePhotoUrl,
+          caption: `End-of-Shift Uniform Compliance Selfie - Officer ${guard.name} (${guard.badgeNumber})`,
+          capturedAt: nowIso,
+          gpsCoordinates: options.completionReport.gpsCoordinates || activeShift.gpsCoordinates
+        });
+      }
+      if (reportMedia.length === 0) {
+        reportMedia.push({
+          id: `med-${Date.now()}`,
+          type: 'photo',
+          url: activeShift.selfiePhotoUrl || 'https://images.unsplash.com/photo-1541872703-74c5e44368f9?auto=format&fit=crop&w=600&q=80',
+          caption: `Shift completion handover photo by Officer ${guard.name} (${guard.badgeNumber})`,
+          capturedAt: nowIso,
+          gpsCoordinates: activeShift.gpsCoordinates
+        });
+      }
+
       if (existingReport) {
         return prev.map((r) => r.shiftId === activeShift.id ? {
           ...r,
           shiftBreadcrumbs: finalBreadcrumbs,
-          breadcrumbsCount: finalBreadcrumbs.length
+          breadcrumbsCount: finalBreadcrumbs.length,
+          completionDetails: options?.completionReport,
+          media: [...reportMedia, ...r.media.filter(m => !m.id.startsWith('med-gear-') && !m.id.startsWith('med-selfie-'))]
         } : r);
       } else {
+        const observationNotes = options?.completionReport 
+          ? `[SHIFT COMPLETION REPORT]\nActivity Summary: ${options.completionReport.activitySummary}\nCheck-Out: ${options.completionReport.checkOutTimestampFormatted}\nGear Handover: ${options.completionReport.gearHandoverType} (${options.completionReport.gearItemsReturned?.join(', ') || 'All gear'})\nUniform Compliance: ${options.completionReport.uniformComplianceConfirmed ? 'VERIFIED COMPLIANT' : 'UNVERIFIED'}`
+          : `Shift completed. ${options?.notes || ''} Handover: ${options?.handoverSummary || 'All posts inspected and clear.'} 30s GPS breadcrumb trail saved with ${finalBreadcrumbs.length} continuous telemetry fixes.`;
+
         const completionReport: StandardShiftReport = {
-          id: `RPT-${Date.now()}`,
-          reportNumber: `RPT-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`,
+          id: options?.completionReport?.id || `RPT-${Date.now()}`,
+          reportNumber: options?.completionReport?.reportNumber || `RPT-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`,
           reportType: 'activity',
           shiftId: activeShift.id,
           siteId: activeShift.siteId,
@@ -5956,25 +6470,17 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           guardPhone: guard.phone,
           timestamp: nowIso,
           createdAt: nowIso,
-          gpsCoordinates: activeShift.gpsCoordinates,
+          gpsCoordinates: options?.completionReport?.gpsCoordinates || activeShift.gpsCoordinates,
           status: 'submitted',
           shiftBreadcrumbs: finalBreadcrumbs,
           breadcrumbsCount: finalBreadcrumbs.length,
-          media: [
-            {
-              id: `med-${Date.now()}`,
-              type: 'photo',
-              url: activeShift.selfiePhotoUrl || 'https://images.unsplash.com/photo-1541872703-74c5e44368f9?auto=format&fit=crop&w=600&q=80',
-              caption: `Shift completion handover photo by Officer ${guard.name} (${guard.badgeNumber})`,
-              capturedAt: nowIso,
-              gpsCoordinates: activeShift.gpsCoordinates
-            }
-          ],
+          completionDetails: options?.completionReport,
+          media: reportMedia,
           activityDetails: {
             patrolType: 'foot_patrol',
             zoneChecked: activeShift.postRole || 'Facility Perimeter & Access Post',
             status: 'all_clear',
-            observationNotes: `Shift completed. ${options?.notes || ''} Handover: ${options?.handoverSummary || 'All posts inspected and clear.'} 30s GPS breadcrumb trail saved with ${finalBreadcrumbs.length} continuous telemetry fixes.`,
+            observationNotes: observationNotes,
             isThirtyMinCheckin: false,
             doorsCheckedCount: 4,
             lightsCheckedCount: 12
@@ -5986,36 +6492,187 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     playClockOutAlertSound();
 
+    const reportDesc = options?.completionReport
+      ? `${guard.name} (${guard.badgeNumber}) filed Shift Completion Report at ${activeShift.siteName}. Hours logged: ${actualHoursWorked}h. Returned gear & uniform compliance verified.`
+      : `${guard.name} (${guard.badgeNumber}) completed shift at ${activeShift.siteName}. Hours logged: ${actualHoursWorked}h.`;
+
     logAdminAction({
       type: 'guard_clocked_out',
       adminName: guard.name,
       adminBadge: guard.badgeNumber,
       badgeVariant: 'slate',
-      title: `Officer Clocked Out: ${guard.name}`,
-      description: `${guard.name} (${guard.badgeNumber}) completed shift at ${activeShift.siteName}. Hours logged: ${actualHoursWorked}h.`,
+      title: options?.completionReport ? `Shift Completion Report: ${guard.name}` : `Officer Clocked Out: ${guard.name}`,
+      description: reportDesc,
       metadata: {
         siteName: activeShift.siteName,
         actualHoursWorked,
-        clockOutTime: nowIso
+        clockOutTime: nowIso,
+        hasCompletionReport: Boolean(options?.completionReport),
+        completionReportId: options?.completionReport?.id
       }
     });
 
     addAuditLog(
       'SHIFT_DUTY_CLOCK_OUT',
       guard.id,
-      `${guard.name} completed duty at ${activeShift.siteName}. Logged ${actualHoursWorked} hours. Handover: ${options?.handoverSummary || 'Completed'}.`,
+      `${guard.name} completed duty at ${activeShift.siteName}. Logged ${actualHoursWorked} hours. ${options?.completionReport ? 'Shift Completion Report submitted.' : `Handover: ${options?.handoverSummary || 'Completed'}.`}`,
       guard.name,
       'info'
     );
 
     showToast(
-      'Shift Complete & Clocked Out',
-      `Officer ${guard.name} clocked out from ${activeShift.siteName}. Logged: ${actualHoursWorked} hrs.`,
+      options?.completionReport ? 'Shift Completion Report Submitted' : 'Shift Complete & Clocked Out',
+      `Officer ${guard.name} completed shift at ${activeShift.siteName} (${actualHoursWorked} hrs). Check-out timestamped.`,
+      'success'
+    );
+  };
+
+  const setMealBreakDurationMinutes = (minutes: number) => {
+    const valid = Math.max(5, Math.min(180, Math.round(minutes)));
+    setMealBreakDurationMinutesState(valid);
+    try {
+      localStorage.setItem(STORAGE_KEY_MEAL_BREAK_DURATION, valid.toString());
+    } catch (e) {
+      console.warn('Failed to save meal break duration', e);
+    }
+    logAdminAction({
+      type: 'user_updated',
+      title: 'Meal Break Duration Policy Updated',
+      description: `Admin updated company meal break policy to ${valid} minutes.`,
+      adminName: "Lt. Mark O'Connor",
+      adminBadge: "OPS-CMD-01",
+      badgeVariant: 'purple',
+      metadata: { mealBreakDurationMinutes: valid }
+    });
+    showToast(
+      'Meal Break Policy Updated',
+      `Meal break duration is now set to ${valid} minutes.`,
       'info'
     );
   };
 
-  const startGuardBreak = (guardId: string, breakType: 'meal' | 'rest' = 'meal', note?: string) => {
+  const acknowledgeLateBreakAlert = (alertId: string, note?: string) => {
+    setLateBreakAlerts((prev) =>
+      prev.map((a) => (a.id === alertId ? { ...a, acknowledged: true, acknowledgedByAdmin: true } : a))
+    );
+    const targetAlert = lateBreakAlerts.find((a) => a.id === alertId);
+    if (targetAlert) {
+      logAdminAction({
+        type: 'late_shift_alert_acknowledged',
+        adminName: "Lt. Mark O'Connor",
+        adminBadge: 'OPS-CMD-01',
+        badgeVariant: 'amber',
+        title: `Late Break Acknowledged: ${targetAlert.guardName}`,
+        description: `Ops acknowledged officer ${targetAlert.guardName} is +${targetAlert.minutesLate}m overdue returning from break. ${note ? `Note: ${note}` : ''}`
+      });
+    }
+    showToast('Alert Acknowledged', 'Logged dispatcher review of overdue break return.', 'info');
+  };
+
+  const dismissLateBreakAlert = (alertId: string) => {
+    setLateBreakAlerts((prev) => prev.filter((a) => a.id !== alertId));
+  };
+
+  // Real-time Automated Guard Break Monitor:
+  // Evaluates every 2 seconds for shifts in 'on_break' status.
+  // Alerts Admin if a guard is MORE THAN 5 MINUTES LATE returning to shift!
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const nowMs = Date.now();
+
+      setScheduledShifts((prevShifts) => {
+        let shiftsModified = false;
+        const generatedAlerts: LateBreakAlert[] = [];
+
+        prevShifts.forEach((shift) => {
+          if (shift.status === 'on_break') {
+            const activeBreak = shift.breaks?.slice(-1)[0];
+            if (activeBreak && !activeBreak.endedAt) {
+              const allocatedMins = activeBreak.allocatedMinutes || (activeBreak.type === 'rest' ? 10 : mealBreakDurationMinutes);
+              const elapsedSecs = Math.max(0, Math.floor((nowMs - new Date(activeBreak.startedAt).getTime()) / 1000));
+              const allocatedSecs = allocatedMins * 60;
+              const overdueSecs = elapsedSecs - allocatedSecs;
+
+              // Check if officer is MORE THAN 5 MINUTES (300 seconds) late returning
+              if (overdueSecs >= 300) {
+                const minutesLate = Math.floor(overdueSecs / 60);
+
+                if (!activeBreak.overdueAlertSentToAdmin) {
+                  activeBreak.overdueAlertSentToAdmin = true;
+                  shiftsModified = true;
+
+                  const alertId = `late-brk-${shift.id}-${activeBreak.id}`;
+                  generatedAlerts.push({
+                    id: alertId,
+                    shiftId: shift.id,
+                    guardId: shift.guardId,
+                    guardName: shift.guardName,
+                    guardBadge: shift.guardBadge,
+                    guardPhone: shift.guardPhone,
+                    siteId: shift.siteId,
+                    siteName: shift.siteName,
+                    postRole: shift.postRole,
+                    breakType: activeBreak.type,
+                    startedAt: activeBreak.startedAt,
+                    allocatedMinutes: allocatedMins,
+                    minutesLate,
+                    alertTriggeredAt: new Date().toISOString(),
+                    acknowledged: false
+                  });
+
+                  // Trigger audible dispatch tone
+                  playLateBreakAdminAlertSound();
+
+                  // Dispatch Admin Action
+                  logAdminAction({
+                    type: 'guard_late_break',
+                    title: `🚨 Officer >5m Late Returning From Break: ${shift.guardName}`,
+                    description: `Officer ${shift.guardName} (${shift.guardBadge}) at ${shift.siteName} is +${minutesLate}m overdue returning from ${activeBreak.type === 'meal' ? 'meal' : '10-min rest'} break.`,
+                    adminName: 'Dispatch CAD Sentinel',
+                    adminBadge: 'CAD-AUTO',
+                    badgeVariant: 'rose',
+                    metadata: {
+                      shiftId: shift.id,
+                      guardId: shift.guardId,
+                      breakType: activeBreak.type,
+                      minutesLate,
+                      allocatedMinutes: allocatedMins
+                    }
+                  });
+
+                  // Show urgent notification
+                  showToast(
+                    `🚨 Officer Late Returning From Break (+${minutesLate}m)`,
+                    `${shift.guardName} at ${shift.siteName} is >5 minutes late returning to active post.`,
+                    'danger'
+                  );
+                }
+              }
+            }
+          }
+        });
+
+        if (generatedAlerts.length > 0) {
+          setLateBreakAlerts((prevAlerts) => {
+            const existingIds = new Set(prevAlerts.map((a) => a.id));
+            const fresh = generatedAlerts.filter((a) => !existingIds.has(a.id));
+            return [...fresh, ...prevAlerts];
+          });
+        }
+
+        return shiftsModified ? [...prevShifts] : prevShifts;
+      });
+    }, 2000);
+
+    return () => clearInterval(timer);
+  }, [mealBreakDurationMinutes]);
+
+  const startGuardBreak = (
+    guardId: string, 
+    breakType: 'meal' | 'rest' = 'meal', 
+    note?: string,
+    customDurationMinutes?: number
+  ) => {
     const activeShift = scheduledShifts.find(
       (s) => s.guardId === guardId && s.status === 'on_duty'
     );
@@ -6025,12 +6682,18 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return;
     }
 
+    const allocatedMinutes = breakType === 'rest' 
+      ? 10 
+      : (customDurationMinutes || mealBreakDurationMinutes || 30);
+
     const nowIso = new Date().toISOString();
     const newBreak: ShiftBreakRecord = {
       id: `brk-${Date.now()}`,
       type: breakType,
       startedAt: nowIso,
-      note: note || (breakType === 'meal' ? '30-minute meal break' : '15-minute rest break')
+      allocatedMinutes,
+      overdueAlertSentToAdmin: false,
+      note: note || (breakType === 'meal' ? `${allocatedMinutes}-minute meal break` : '10-minute rest break')
     };
 
     const updatedShift: ScheduledShift = {
@@ -6049,12 +6712,12 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       adminBadge: guard.badgeNumber,
       badgeVariant: 'amber',
       title: `Officer on Break: ${guard.name}`,
-      description: `${guard.name} started a ${breakType} break at ${activeShift.siteName}.`
+      description: `${guard.name} started a ${allocatedMinutes}-minute ${breakType === 'meal' ? 'meal' : 'rest'} break at ${activeShift.siteName}.`
     });
 
     showToast(
       'Break Started',
-      `Officer ${guard.name} is now on ${breakType} break at ${activeShift.siteName}.`,
+      `Officer ${guard.name} is now on ${allocatedMinutes}-min ${breakType === 'meal' ? 'Meal Break' : 'Rest Break'} at ${activeShift.siteName}.`,
       'info'
     );
   };
@@ -6085,6 +6748,10 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     setScheduledShifts((prev) => prev.map((s) => s.id === activeShift.id ? updatedShift : s));
+    
+    // Clear any active late break alerts for this guard
+    setLateBreakAlerts((prev) => prev.filter((a) => a.guardId !== guardId && a.shiftId !== activeShift.id));
+
     playBreakAlertSound();
 
     const guard = guardsList.find((g) => g.id === guardId) || activeGuard;
@@ -6098,7 +6765,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     });
 
     showToast(
-      'Break Finished',
+      'Break Finished - Resumed Post Duty',
       `Officer ${guard.name} returned to ON DUTY status at ${activeShift.siteName}.`,
       'success'
     );
@@ -6116,16 +6783,32 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       assignedRover = rovers[0];
     }
 
+    // Automated Training Scheduler Check:
+    // When an admin assigns a guard to a shift where !guard.trainedSites.includes(siteId)
+    // Flag shift with requiresOrientation: true and generate SiteOrientation block for the first 90 mins
+    const guardObj = guardsList.find(g => g.id === data.guardId);
+    const trained = guardObj?.trainedSites || guardObj?.ojtSites || [];
+    const siteIdToCheck = data.siteId || '';
+    const siteNameToCheck = data.siteName || '';
+    const isUntrained = !trained.includes(siteIdToCheck) && !trained.includes(siteNameToCheck);
+
     const newShift: ScheduledShift = {
       ...data,
       id,
       assignedRoverUnit: data.assignedRoverUnit || assignedRover?.unitNumber,
       assignedRoverId: data.assignedRoverId || assignedRover?.id,
       status: data.status || 'scheduled',
+      requiresOrientation: isUntrained || Boolean(data.requiresOrientation),
       createdAt: nowIso
     };
 
     setScheduledShifts((prev) => [newShift, ...prev]);
+
+    if (isUntrained) {
+      setTimeout(() => {
+        checkAndCreateOrientationForShift(newShift, data.guardId);
+      }, 0);
+    }
 
     // If this is a roving shift, synchronize guard's roving group and assign to Rover Vehicle
     if (data.isRovingShift && data.rovingGroup) {
@@ -6408,7 +7091,31 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }
       }
 
-      return {
+        const latestBreak = activeShift?.breaks?.slice(-1)[0];
+        const isCurrentlyOnBreak = activeShift?.status === 'on_break' && Boolean(latestBreak && !latestBreak.endedAt);
+        let breakElapsedSeconds = 0;
+        let breakRemainingSeconds = 0;
+        let isBreakOverdue = false;
+        let isBreakCriticalLate = false;
+        let breakOverdueSeconds = 0;
+        let breakAllocatedMinutes = 0;
+
+        if (isCurrentlyOnBreak && latestBreak) {
+          breakAllocatedMinutes = latestBreak.allocatedMinutes || (latestBreak.type === 'rest' ? 10 : mealBreakDurationMinutes);
+          const breakStartMs = new Date(latestBreak.startedAt).getTime();
+          breakElapsedSeconds = Math.max(0, Math.floor((Date.now() - breakStartMs) / 1000));
+          const totalAllocatedSeconds = breakAllocatedMinutes * 60;
+          breakRemainingSeconds = totalAllocatedSeconds - breakElapsedSeconds;
+          if (breakRemainingSeconds < 0) {
+            isBreakOverdue = true;
+            breakOverdueSeconds = Math.abs(breakRemainingSeconds);
+            if (breakOverdueSeconds >= 300) {
+              isBreakCriticalLate = true;
+            }
+          }
+        }
+
+        return {
         guardId: guard.id,
         guardName: guard.name,
         guardBadge: guard.badgeNumber,
@@ -6421,8 +7128,14 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         clockInTime: activeShift?.clockInTime,
         elapsedSeconds,
         isOnBreak: activeShift?.status === 'on_break',
-        currentBreakType: activeShift?.breaks?.slice(-1)[0]?.endedAt ? undefined : activeShift?.breaks?.slice(-1)[0]?.type,
-        breakStartedAt: activeShift?.breaks?.slice(-1)[0]?.endedAt ? undefined : activeShift?.breaks?.slice(-1)[0]?.startedAt,
+        currentBreakType: latestBreak?.endedAt ? undefined : latestBreak?.type,
+        breakStartedAt: latestBreak?.endedAt ? undefined : latestBreak?.startedAt,
+        breakAllocatedMinutes: isCurrentlyOnBreak ? breakAllocatedMinutes : undefined,
+        breakElapsedSeconds: isCurrentlyOnBreak ? breakElapsedSeconds : undefined,
+        breakRemainingSeconds: isCurrentlyOnBreak ? breakRemainingSeconds : undefined,
+        isBreakOverdue: isCurrentlyOnBreak ? isBreakOverdue : undefined,
+        isBreakCriticalLate: isCurrentlyOnBreak ? isBreakCriticalLate : undefined,
+        breakOverdueSeconds: isCurrentlyOnBreak ? breakOverdueSeconds : undefined,
         equipmentList: currentShift?.equipmentIssued,
         gpsVerified: currentShift?.gpsVerified,
         geofencePassed: currentShift?.geofencePassed,
@@ -8421,12 +9134,20 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setCallOffRecords(INITIAL_CALL_OFF_RECORDS);
     setCoachingSessions(INITIAL_COACHING_SESSIONS);
     setAvailabilityChangeRequests(INITIAL_AVAILABILITY_CHANGE_REQUESTS);
+    setSiteOrientations(INITIAL_ORIENTATIONS);
+    setDashboardConfigState({
+      preset: 'WATCH_DESK',
+      tiles: { ...DEFAULT_DASHBOARD_PRESETS.WATCH_DESK.tiles },
+      tileOrder: [...DEFAULT_DASHBOARD_PRESETS.WATCH_DESK.tileOrder]
+    });
     localStorage.removeItem(STORAGE_KEY_SET_SCHEDULES);
     localStorage.removeItem(STORAGE_KEY_TIME_OFF_REQUESTS);
     localStorage.removeItem(STORAGE_KEY_CALL_OFF_RECORDS);
     localStorage.removeItem(STORAGE_KEY_COACHING_SESSIONS);
     localStorage.removeItem(STORAGE_KEY_AVAILABILITY_CHANGE_REQUESTS);
-    showToast('System Reset', 'Demo shift, trade, schedule, time tracking, CFS calls, rover routes, set schedules, and telemetry restored to initial state.', 'info');
+    localStorage.removeItem(STORAGE_KEY_ORIENTATIONS);
+    localStorage.removeItem(STORAGE_KEY_DASHBOARD_CONFIG);
+    showToast('System Reset', 'Demo shift, trade, schedule, command dashboard, orientations, and telemetry restored to initial state.', 'info');
   };
 
   return (
@@ -8467,6 +9188,11 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         activeClockedInShift,
         lateShiftAlerts,
         dismissedLateAlertIds,
+        mealBreakDurationMinutes,
+        setMealBreakDurationMinutes,
+        lateBreakAlerts,
+        acknowledgeLateBreakAlert,
+        dismissLateBreakAlert,
         clockInGuard,
         clockOutGuard,
         startGuardBreak,
@@ -8640,6 +9366,19 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         denyTradePost,
         approveSwap,
         denySwap,
+        dashboardConfig,
+        updateDashboardConfig,
+        setDashboardPreset,
+        toggleDashboardTile,
+        setDashboardTileOrder,
+        siteOrientations,
+        createSiteOrientation,
+        updateSiteOrientation,
+        assignSupervisorToOrientation,
+        verifySupervisorArrivalGps,
+        approveAndReleaseSolo,
+        failAndEscalateOrientation,
+        checkAndCreateOrientationForShift,
         resetToDefaults
       }}
     >

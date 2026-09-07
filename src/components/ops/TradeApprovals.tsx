@@ -996,7 +996,7 @@ export const TradeApprovals: React.FC<TradeApprovalsProps> = ({ onOpenGuardDirec
                           {trade.bidAt ? formatDateTime(trade.bidAt) : 'Direct Post'}
                         </div>
                         <div>
-                          <span className="text-[9px] text-slate-400 block uppercase">3. Ops Resolved</span>
+                          <span className="text-[9px] text-slate-400 block uppercase">3. Command Resolved</span>
                           {trade.resolvedAt ? formatDateTime(trade.resolvedAt) : 'Pending'}
                         </div>
                       </div>

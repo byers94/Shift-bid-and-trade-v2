@@ -511,7 +511,7 @@ export const ActiveCallsPanel: React.FC = () => {
                   Clear Call: {clearingCall.id}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Select resolution disposition and submit officer notes to Ops dispatch records.
+                  Select resolution disposition and submit officer notes to Dispatch & Command dispatch records.
                 </p>
               </div>
               <button

@@ -68,7 +68,7 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
               {tradeType === 'swap' ? '🔄 Post Shift for Swap (Trade)' : '🎁 Give Up / Drop Shift (Giveaway)'}
             </h3>
             <p className="text-[11px] text-blue-200">
-              Submit request to Ops Admin for review before it goes live on the Guard Board
+              Submit request to Dispatch & Command for review before it goes live on the Guard Board
             </p>
           </div>
           <button 
@@ -277,7 +277,7 @@ export const PostShiftModal: React.FC<PostShiftModalProps> = ({ isOpen, onClose 
               className="w-full border border-slate-300 dark:border-slate-700 rounded-lg p-2.5 text-sm text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-800 placeholder:text-slate-400 dark:placeholder:text-slate-500 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
             <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-              Ops dispatchers can review and edit these notes before approving the listing.
+              Dispatch & Command can review and edit these notes before approving the listing.
             </p>
           </div>
 

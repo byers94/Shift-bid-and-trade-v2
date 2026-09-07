@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShiftOpsProvider, useShiftOps } from './context/ShiftOpsContext';
 import { GuardView } from './components/guard/GuardView';
 import { OpsAdminView } from './components/ops/OpsAdminView';
@@ -43,6 +43,57 @@ interface AdminAuthGateProps {
   adminBadge: string;
 }
 
+function getTargetViewFromUrl(): 'guard' | 'ops' | 'dual' | null {
+  if (typeof window === 'undefined') return null;
+  const path = window.location.pathname.toLowerCase();
+  const hash = window.location.hash.toLowerCase().replace('#', '');
+  const params = new URLSearchParams(window.location.search);
+  const viewParam = params.get('view')?.toLowerCase();
+
+  if (
+    path === '/command' ||
+    path === '/admin' ||
+    path === '/dispatch' ||
+    path.startsWith('/command/') ||
+    path.startsWith('/admin/') ||
+    path.startsWith('/dispatch/') ||
+    hash === 'command' ||
+    hash === 'admin' ||
+    hash === 'dispatch' ||
+    hash === 'ops' ||
+    viewParam === 'command' ||
+    viewParam === 'admin' ||
+    viewParam === 'dispatch' ||
+    viewParam === 'ops'
+  ) {
+    return 'ops';
+  }
+
+  if (path === '/guard' || path.startsWith('/guard/') || hash === 'guard' || viewParam === 'guard') {
+    return 'guard';
+  }
+
+  if (path === '/dual' || path.startsWith('/dual/') || hash === 'dual' || viewParam === 'dual') {
+    return 'dual';
+  }
+
+  return null;
+}
+
+function updateBrowserRoute(view: 'guard' | 'ops' | 'dual') {
+  if (typeof window === 'undefined') return;
+  try {
+    const targetPath = view === 'ops' ? '/command' : view === 'guard' ? '/guard' : '/dual';
+    if (window.location.pathname !== targetPath) {
+      window.history.replaceState({ view }, '', targetPath);
+    }
+  } catch {
+    try {
+      window.location.hash = view === 'ops' ? 'command' : view;
+    } catch {}
+  }
+}
+
 const AdminAuthGate: React.FC<AdminAuthGateProps> = ({
   isAdminAuthenticated,
   onOpenLoginModal,
@@ -63,7 +114,7 @@ const AdminAuthGate: React.FC<AdminAuthGateProps> = ({
           </div>
 
           <h2 className="text-base font-black uppercase tracking-wider text-white mb-1">
-            Ops Admin Console Locked
+            Dispatch & Command Console Locked
           </h2>
           <p className="text-xs text-blue-200 font-mono mb-4">
             Restricted to Authorized Dispatch & Supervisor Staff
@@ -72,7 +123,7 @@ const AdminAuthGate: React.FC<AdminAuthGateProps> = ({
           <div className="bg-amber-950/60 border border-amber-900/80 rounded-xl p-3 text-left mb-6 text-xs text-amber-200 flex items-start gap-2.5">
             <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
             <p className="text-[11px] leading-tight">
-              Security guards are prohibited from accessing Ops dispatch controls. Guards should use the <strong>Guard App</strong>.
+              Security guards are prohibited from accessing Dispatch & Command controls. Guards should use the <strong>Guard App</strong>.
             </p>
           </div>
 
@@ -82,7 +133,7 @@ const AdminAuthGate: React.FC<AdminAuthGateProps> = ({
             className="w-full bg-[#1e3a8a] hover:bg-blue-800 active:bg-blue-950 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer"
           >
             <KeyRound className="w-4 h-4" />
-            Enter Ops Authorization PIN
+            Enter Dispatch & Command PIN
           </button>
 
           <button
@@ -137,6 +188,35 @@ const AppContent: React.FC = () => {
     return DISPATCHER_PRESETS[0];
   });
 
+  // Synchronize route with URL and browser history without breaking /admin or /command links
+  useEffect(() => {
+    const handleRouteChange = () => {
+      const targetView = getTargetViewFromUrl();
+      if (targetView) {
+        if (targetView === 'ops') {
+          if (isAdminAuthenticated) {
+            setActiveView('ops');
+          } else {
+            setPendingTargetView('ops');
+            setShowLoginModal(true);
+          }
+        } else {
+          setActiveView(targetView);
+        }
+      }
+    };
+
+    // Initial check on load
+    handleRouteChange();
+
+    window.addEventListener('popstate', handleRouteChange);
+    window.addEventListener('hashchange', handleRouteChange);
+    return () => {
+      window.removeEventListener('popstate', handleRouteChange);
+      window.removeEventListener('hashchange', handleRouteChange);
+    };
+  }, [isAdminAuthenticated, setActiveView]);
+
   const handleAdminLoginSuccess = (dispatcher: DispatcherIdentity) => {
     setIsAdminAuthenticated(true);
     setAdminUser(dispatcher);
@@ -148,7 +228,7 @@ const AppContent: React.FC = () => {
     logAdminAction({
       type: 'admin_login',
       title: 'Dispatcher Logged In',
-      description: `${dispatcher.name} authenticated into Ops Command Console (Role: ${dispatcher.role.toUpperCase()})`,
+      description: `${dispatcher.name} authenticated into Dispatch & Command Console (Role: ${dispatcher.role.toUpperCase()})`,
       adminName: dispatcher.name,
       adminBadge: dispatcher.badgeId,
       badgeVariant: 'emerald',
@@ -156,11 +236,15 @@ const AppContent: React.FC = () => {
     });
 
     setShowLoginModal(false);
-    showToast('Ops Access Authorized', `Welcome, ${dispatcher.name} (${dispatcher.badgeId}).`, 'success');
+    showToast('Dispatch & Command Authorized', `Welcome, ${dispatcher.name} (${dispatcher.badgeId}).`, 'success');
 
     if (pendingTargetView) {
       setActiveView(pendingTargetView);
+      updateBrowserRoute(pendingTargetView);
       setPendingTargetView(null);
+    } else {
+      setActiveView('ops');
+      updateBrowserRoute('ops');
     }
   };
 
@@ -178,23 +262,32 @@ const AppContent: React.FC = () => {
     try {
       localStorage.removeItem(STORAGE_ADMIN_AUTH_KEY);
     } catch {}
-    showToast('Ops Console Locked', 'Dispatcher credentials required to re-enter.', 'info');
+    showToast('Dispatch & Command Locked', 'Dispatcher credentials required to re-enter.', 'info');
     if (activeView === 'ops') {
       setActiveView('guard');
+      updateBrowserRoute('guard');
     }
   };
 
   const handleSwitchView = (view: 'guard' | 'ops' | 'dual') => {
     if (view === 'guard') {
       setActiveView('guard');
+      updateBrowserRoute('guard');
       return;
     }
 
-    // Attempting to access Ops or Dual view
+    if (view === 'dual') {
+      setActiveView('dual');
+      updateBrowserRoute('dual');
+      return;
+    }
+
+    // Attempting to access Dispatch & Command view
     if (isAdminAuthenticated) {
-      setActiveView(view);
+      setActiveView('ops');
+      updateBrowserRoute('ops');
     } else {
-      setPendingTargetView(view);
+      setPendingTargetView('ops');
       setShowLoginModal(true);
     }
   };
@@ -234,7 +327,7 @@ const AppContent: React.FC = () => {
             <span>Guard App</span>
           </button>
 
-          {/* Ops Admin (Protected by PIN / password login) */}
+          {/* Dispatch & Command (Protected by PIN / password login) */}
           <button
             id="view-mode-ops-btn"
             onClick={() => handleSwitchView('ops')}
@@ -243,10 +336,10 @@ const AppContent: React.FC = () => {
                 ? 'bg-[#1e3a8a] text-white shadow-xs'
                 : 'text-slate-300 hover:text-white hover:bg-slate-800/50'
             }`}
-            title="Ops Manager Command Center (Supervisor PIN required)"
+            title="Dispatch & Command Center (Supervisor PIN required)"
           >
             <LayoutDashboard className="w-3.5 h-3.5" />
-            <span>Ops Admin</span>
+            <span>Dispatch & Command</span>
             {isAdminAuthenticated ? (
               <span className="w-2 h-2 rounded-full bg-emerald-400 ml-0.5" title="Authenticated" />
             ) : (
@@ -263,7 +356,7 @@ const AppContent: React.FC = () => {
                 ? 'bg-[#1e3a8a] text-white shadow-xs'
                 : 'text-slate-300 hover:text-white hover:bg-slate-800/50'
             }`}
-            title="Split screen: Guard view on left, Ops manager on right"
+            title="Split screen: Guard view on left, Dispatch & Command on right"
           >
             <Columns className="w-3.5 h-3.5" />
             <span className="hidden md:inline">Dual Split View</span>
@@ -428,7 +521,7 @@ const AppContent: React.FC = () => {
                   Admin Authentication & Guard Protection
                 </h4>
                 <p className="text-[11px] text-amber-800 dark:text-amber-300/90 leading-relaxed">
-                  Security guards access the Guard App immediately without any login friction. The Ops Admin command dashboard is protected by an authentication layer requiring a dispatcher PIN (<strong>Default PIN: 1099</strong> or 1-click demo login).
+                  Security guards access the Guard App immediately without any login friction. The Dispatch & Command dashboard is protected by an authentication layer requiring a dispatcher PIN (<strong>Default PIN: 1099</strong> or 1-click demo login).
                 </p>
               </div>
 
@@ -447,7 +540,7 @@ const AppContent: React.FC = () => {
               <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-300">
                 <h4 className="font-bold text-slate-800 dark:text-slate-200 text-sm mb-1 flex items-center gap-1.5">
                   <LayoutDashboard className="w-4 h-4 text-[#1e3a8a] dark:text-blue-400" />
-                  2. Ops Admin View (Authorized Dispatch Environment)
+                  2. Dispatch & Command (Authorized Dispatch Environment)
                 </h4>
                 <ul className="list-disc pl-4 space-y-1 mt-1 text-slate-600 dark:text-slate-400">
                   <li><strong>Full Scrollable Dashboard:</strong> Complete management view with fluid vertical scrolling.</li>

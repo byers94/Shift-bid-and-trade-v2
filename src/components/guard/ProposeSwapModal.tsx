@@ -271,13 +271,13 @@ export const ProposeSwapModal: React.FC<ProposeSwapModalProps> = ({ trade, isOpe
                 <AlertTriangle className={`w-4 h-4 mt-0.5 shrink-0 ${ojtStatus === 'needs_ojt' ? 'text-red-600 dark:text-red-400' : 'text-slate-400'}`} />
                 <div>
                   <span className="block text-xs font-bold text-red-700 dark:text-red-400">Needs OJT</span>
-                  <span className="text-[10px] text-red-600 dark:text-red-400">Requires Ops signoff</span>
+                  <span className="text-[10px] text-red-600 dark:text-red-400">Requires Command signoff</span>
                 </div>
               </button>
             </div>
             {ojtStatus === 'needs_ojt' && (
               <p className="text-[11px] text-red-600 dark:text-red-400 font-medium mt-1.5 bg-red-50 dark:bg-red-950/40 p-2 rounded border border-red-200 dark:border-red-900/60">
-                Note: Selecting "Needs OJT" highlights this proposal in RED for Ops review so management can verify training coverage.
+                Note: Selecting "Needs OJT" highlights this proposal in RED for Dispatch & Command review so management can verify training coverage.
               </p>
             )}
           </div>

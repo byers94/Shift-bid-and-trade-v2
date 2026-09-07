@@ -113,7 +113,7 @@ export const LateShiftAlertModal: React.FC<LateShiftAlertModalProps> = ({ onReas
               )}
 
               <button
-                onClick={() => acknowledgeLateAlert(alert.shiftId, 'Acknowledged by Ops Dispatcher')}
+                onClick={() => acknowledgeLateAlert(alert.shiftId, 'Acknowledged by Dispatch & Command')}
                 className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black flex items-center gap-1 transition-colors cursor-pointer shadow-xs"
               >
                 <CheckCheck className="w-3.5 h-3.5" />

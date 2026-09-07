@@ -24,7 +24,8 @@ import {
   GuardWeeklyAvailability,
   DailyAvailabilityRule,
   DayOfWeek,
-  AvailabilityChangeRequest
+  AvailabilityChangeRequest,
+  SiteOrientation
 } from '../types/shift';
 
 export const OPS_DISPATCH_PHONE = '+1 (800) 555-0199';
@@ -2103,6 +2104,7 @@ export const CURRENT_GUARD: GuardProfile = {
   hireDate: '2024-03-15',
   notes: 'Senior patrol guard, reliable on maritime and commercial facilities.',
   ojtSites: ['Port Authority - Pier 7', 'Corporate HQ', 'Retail Plaza', 'West Medical Center'],
+  trainedSites: ['site-1', 'site-2', 'site-5', 'site-3', 'Port Authority - Pier 7', 'Corporate HQ', 'Retail Plaza', 'West Medical Center'],
   username: 'alex.mercer',
   password: 'password123',
   pin: '8842',
@@ -2423,7 +2425,33 @@ export const GUARDS_LIST: GuardProfile[] = [
       notes: 'Weekend night coverage. Requires attendance follow-up.'
     }
   }
-];
+].map((g: any): GuardProfile => {
+  const siteMap: Record<string, string> = {
+    'Port Authority - Pier 7': 'site-1',
+    'Corporate HQ': 'site-2',
+    'Corporate HQ - Main Tower': 'site-2',
+    'West Medical Center': 'site-3',
+    'West Medical Center - Emergency Dept': 'site-3',
+    'City Airport Gate 4': 'site-4',
+    'Retail Plaza': 'site-5',
+    'Retail Plaza - Patrol': 'site-5',
+    'Tech Campus North': 'site-6',
+    'Tech Campus North - Data Center': 'site-6',
+    'Downtown Financial Center': 'site-7',
+    'Industrial Warehouse': 'site-8',
+    'Industrial Warehouse Night Watch': 'site-8',
+    'Hotel Lobby': 'site-9',
+    'Hotel Grand Lobby & Concierge': 'site-9',
+    'Waterfront Chemical Plant': 'site-10',
+    'Bellevue Innovation Tech Park': 'site-11',
+    'Midtown Commercial Lofts': 'site-12'
+  };
+  const resolvedIds = (g.ojtSites || []).map((s) => siteMap[s] || s);
+  return {
+    ...g,
+    trainedSites: g.trainedSites || Array.from(new Set([...resolvedIds, ...(g.ojtSites || [])]))
+  };
+});
 
 const getTodayDateStr = (offsetDays: number = 0): string => {
   const d = new Date();
@@ -4378,6 +4406,114 @@ export const INITIAL_STANDARD_REPORTS: StandardShiftReport[] = [
       notes: 'Critical incident review complete. All bodycam and incident files archived for Hospital Risk Management.'
     },
     createdAt: new Date(Date.now() - 140 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'rpt-mnt-water-01',
+    reportNumber: 'MNT-2026-0829-05',
+    reportType: 'maintenance',
+    shiftId: 'sched-104',
+    siteId: 'site-11',
+    siteName: 'Bellevue Innovation Tech Park',
+    siteAddress: '3005 112th Ave NE, Bellevue, WA 98004',
+    guardId: 'guard-103',
+    guardName: 'Marcus Wright',
+    guardBadge: 'SEC-6340',
+    guardPhone: '+1 (555) 567-8901',
+    timestamp: new Date(Date.now() - 3.5 * 3600 * 1000).toISOString(),
+    gpsCoordinates: { latitude: 47.6234, longitude: -122.1890, accuracy: 3.2 },
+    media: [
+      {
+        id: 'med-flood-01',
+        type: 'photo',
+        url: 'https://images.unsplash.com/photo-1542013936693-884638332954?w=800&auto=format&fit=crop&q=80',
+        caption: 'Sub-basement Boiler Room 104 - 3-inch pressurized water main failure & active flooding',
+        capturedAt: new Date(Date.now() - 3.5 * 3600 * 1000).toISOString(),
+        fileName: 'boiler_room_flood.jpg',
+        fileSizeMb: 3.1,
+        gpsCoordinates: { latitude: 47.6234, longitude: -122.1890 }
+      }
+    ],
+    maintenanceDetails: {
+      issueCategory: 'plumbing_leak',
+      severity: 'critical_safety_hazard',
+      specificLocation: 'Building B - Sub-basement Mechanical Room B-02',
+      issueTitle: 'Maintenance / Water Emergency: 3-inch Pressurized Riser Rupture & Sub-level Flooding',
+      detailedDescription: 'During the 02:00 mechanical room acoustic check, discovered water rushing across floor plates with standing depth of ~4 inches near 480V transformer bank. High risk of electrical arc and server floor penetration.',
+      safetyHazard: true,
+      propertyStaffNotified: true,
+      notifiedPersonName: 'Facility Chief Engineer (Tom Halpert) & Ops Dispatch',
+      suggestedAction: 'Emergency main valve shutoff executed by guard. Rapid extraction team and disaster restoration dispatched.',
+      workOrderStatus: 'work_order_created',
+      workOrderNumber: 'WO-WATER-9921'
+    },
+    status: 'reviewed',
+    reviewedByAdmin: {
+      adminName: "Lt. Mark O'Connor",
+      adminBadge: 'OPS-CMD-01',
+      reviewedAt: new Date(Date.now() - 2.8 * 3600 * 1000).toISOString(),
+      notes: 'Emergency shutoff verified. Restoration vendor on site.'
+    },
+    createdAt: new Date(Date.now() - 3.5 * 3600 * 1000).toISOString()
+  },
+  {
+    id: 'rpt-inc-prop-01',
+    reportNumber: 'INC-2026-0829-06',
+    reportType: 'incident',
+    shiftId: 'sched-105',
+    siteId: 'site-8',
+    siteName: 'Industrial Warehouse Night Watch',
+    siteAddress: '4500 Marginal Way S, Industrial District, Seattle, WA 98134',
+    guardId: 'guard-105',
+    guardName: 'David Silva',
+    guardBadge: 'SEC-5510',
+    guardPhone: '+1 (555) 789-0123',
+    timestamp: new Date(Date.now() - 7.2 * 3600 * 1000).toISOString(),
+    gpsCoordinates: { latitude: 47.5621, longitude: -122.3412, accuracy: 4.0 },
+    media: [
+      {
+        id: 'med-prop-01',
+        type: 'photo',
+        url: 'https://images.unsplash.com/photo-1558441719-8b489c634a1b?w=800&auto=format&fit=crop&q=80',
+        caption: 'North Perimeter Chain-link Fence Cut & Fleet Van Side Window Smashed',
+        capturedAt: new Date(Date.now() - 7.2 * 3600 * 1000).toISOString(),
+        fileName: 'fence_breach_vandalism.jpg',
+        fileSizeMb: 2.8,
+        gpsCoordinates: { latitude: 47.5621, longitude: -122.3412 }
+      }
+    ],
+    incidentDetails: {
+      incidentCategory: 'property_damage',
+      severity: 'high',
+      incidentTitle: 'Property Damage & Forced Perimeter Breach - Police Dispatched',
+      summary: 'Perimeter fence cut with bolt cutters on north boundary. Two commercial freight fleet vehicles sustained smashed driver-side quarter glass.',
+      detailedTimeline: '01:15 - Perimeter sensor trip on Zone 4.\n01:18 - Guard arrived on scene; observed 4-foot fence breach and shattered auto glass on Van #12 and #14.\n01:21 - Guard contacted 911 dispatch.\n01:34 - Seattle PD Unit 412 on site. Evidence logged.',
+      actionTakenByGuard: 'Secured area, preserved footprints in soil near fence gap, photographed point of entry and damaged vehicles, escorted SPD patrol officers, deployed temporary caution perimeter.',
+      partiesInvolved: [
+        {
+          id: 'pty-unknown-2',
+          name: 'Unknown Suspects (Fled Scene)',
+          role: 'suspect',
+          description: 'Two dark-clad individuals seen retreating north on Marginal Way prior to officer arrival'
+        }
+      ],
+      policeReportNumber: 'SPD-2026-104921',
+      escalatedToEmergencyServices: true,
+      emergencyServicesContacted: ['police_911'],
+      emergencyContactTime: '01:21',
+      cadIncidentNumber: 'CAD-911-889012',
+      respondingUnits: 'Seattle Police Unit 412 (Ofc. Briggs #8812)',
+      trespassNoticeIssued: false,
+      supervisorNotified: true,
+      supervisorName: 'Supervisor Chloe Bennett'
+    },
+    status: 'reviewed',
+    reviewedByAdmin: {
+      adminName: 'Capt. Marcus Vance',
+      adminBadge: 'OPS-LEAD-01',
+      reviewedAt: new Date(Date.now() - 6.5 * 3600 * 1000).toISOString(),
+      notes: 'Police case SPD-2026-104921 active. Property manager notified for perimeter fence repair.'
+    },
+    createdAt: new Date(Date.now() - 7.2 * 3600 * 1000).toISOString()
   }
 ];
 
@@ -5077,5 +5213,142 @@ export const INITIAL_AVAILABILITY_CHANGE_REQUESTS: AvailabilityChangeRequest[] =
     }
   }
 ];
+
+export const INITIAL_ORIENTATIONS: SiteOrientation[] = [
+  {
+    orientationId: 'orient-001',
+    shiftId: 'SCHED-2026-0826-04',
+    guardId: 'guard-102',
+    guardName: 'Mike Chen',
+    guardBadge: 'SEC-9104',
+    guardPhone: '+1 (555) 456-7890',
+    siteId: 'site-1',
+    siteName: 'Port Authority - Pier 7',
+    siteAddress: '2200 Alaskan Way, Pier 7, Seattle, WA 98121',
+    supervisorId: null, // UNASSIGNED -> Triggers "Supervisor Required for Site Orientation at Port Authority - Pier 7"
+    windowStart: new Date(Date.now() + 75 * 60 * 1000).toISOString(),
+    windowEnd: new Date(Date.now() + 165 * 60 * 1000).toISOString(),
+    status: 'PENDING_SUPERVISOR',
+    checkpoints: {
+      postOrdersReviewed: false,
+      accessKeysVerified: false,
+      perimeterGeofenceWalked: false,
+      emergencyPocConfirmed: false
+    },
+    supervisorNotes: '',
+    completedAt: null,
+    createdAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString()
+  },
+  {
+    orientationId: 'orient-002',
+    shiftId: 'SCHED-2026-0826-02',
+    guardId: 'guard-106',
+    guardName: 'Jamar Vance',
+    guardBadge: 'SEC-3820',
+    guardPhone: '+1 (555) 890-1234',
+    siteId: 'site-3',
+    siteName: 'West Medical Center - Emergency Dept',
+    siteAddress: '1200 Terry Ave, Seattle, WA 98101',
+    supervisorId: 'guard-107',
+    supervisorName: 'Chloe Bennett',
+    supervisorBadge: 'SEC-1102',
+    supervisorPhone: '+1 (555) 901-2345',
+    windowStart: new Date(Date.now() - 35 * 60 * 1000).toISOString(),
+    windowEnd: new Date(Date.now() + 55 * 60 * 1000).toISOString(),
+    status: 'ON_SITE_ACTIVE',
+    checkpoints: {
+      postOrdersReviewed: true,
+      accessKeysVerified: true,
+      perimeterGeofenceWalked: false,
+      emergencyPocConfirmed: true
+    },
+    supervisorNotes: 'Completed review of Emergency Room access strikes, trauma bay bypass, and Code Silver procedures. Currently completing perimeter geofence audit.',
+    completedAt: null,
+    gpsVerifiedAtSite: true,
+    distanceMetersFromSite: 18,
+    createdAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString()
+  },
+  {
+    orientationId: 'orient-003',
+    shiftId: 'SCHED-2026-0826-08',
+    guardId: 'guard-111',
+    guardName: 'Brandon Cole',
+    guardBadge: 'SEC-5091',
+    guardPhone: '+1 (555) 654-3210',
+    siteId: 'site-2',
+    siteName: 'Corporate HQ - Main Tower',
+    siteAddress: '500 Executive Blvd, Main Tower, Bellevue, WA 98004',
+    supervisorId: 'guard-103',
+    supervisorName: 'Marcus Wright',
+    supervisorBadge: 'SEC-6340',
+    supervisorPhone: '+1 (555) 567-8901',
+    windowStart: new Date(Date.now() + 25 * 60 * 1000).toISOString(),
+    windowEnd: new Date(Date.now() + 115 * 60 * 1000).toISOString(),
+    status: 'SUPERVISOR_EN_ROUTE',
+    checkpoints: {
+      postOrdersReviewed: false,
+      accessKeysVerified: false,
+      perimeterGeofenceWalked: false,
+      emergencyPocConfirmed: false
+    },
+    supervisorNotes: 'En route in Mobile Patrol Unit 102. ETA 15 minutes to Main Tower security office.',
+    completedAt: null,
+    createdAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString()
+  },
+  {
+    orientationId: 'orient-004',
+    shiftId: 'SCHED-2026-0826-01',
+    guardId: 'guard-104',
+    guardName: 'Elena Rostova',
+    guardBadge: 'SEC-4199',
+    guardPhone: '+1 (555) 678-9012',
+    siteId: 'site-9',
+    siteName: 'Hotel Grand Lobby & Concierge',
+    siteAddress: '1000 6th Ave, Seattle, WA 98104',
+    supervisorId: 'guard-107',
+    supervisorName: 'Chloe Bennett',
+    supervisorBadge: 'SEC-1102',
+    supervisorPhone: '+1 (555) 901-2345',
+    windowStart: new Date(Date.now() - 300 * 60 * 1000).toISOString(),
+    windowEnd: new Date(Date.now() - 210 * 60 * 1000).toISOString(),
+    status: 'CERTIFIED_RELEASED',
+    checkpoints: {
+      postOrdersReviewed: true,
+      accessKeysVerified: true,
+      perimeterGeofenceWalked: true,
+      emergencyPocConfirmed: true
+    },
+    supervisorNotes: 'Officer demonstrates exceptional command of guest privacy protocols, electronic master key fobs, and after-hours rooftop access control. Certified and released for solo duty.',
+    completedAt: new Date(Date.now() - 215 * 60 * 1000).toISOString(),
+    gpsVerifiedAtSite: true,
+    distanceMetersFromSite: 12,
+    createdAt: new Date(Date.now() - 8 * 3600 * 1000).toISOString()
+  },
+  {
+    orientationId: 'orient-005',
+    shiftId: 'SCHED-2026-0827-01',
+    guardId: 'guard-110',
+    guardName: 'Jordan Hayes',
+    guardBadge: 'SEC-2944',
+    guardPhone: '+1 (555) 543-9876',
+    siteId: 'site-6',
+    siteName: 'Tech Campus North - Data Center',
+    siteAddress: '1501 4th Ave, Tech District, Seattle, WA 98101',
+    supervisorId: null,
+    windowStart: new Date(Date.now() + 18 * 3600 * 1000).toISOString(),
+    windowEnd: new Date(Date.now() + 19.5 * 3600 * 1000).toISOString(),
+    status: 'PENDING_SUPERVISOR',
+    checkpoints: {
+      postOrdersReviewed: false,
+      accessKeysVerified: false,
+      perimeterGeofenceWalked: false,
+      emergencyPocConfirmed: false
+    },
+    supervisorNotes: '',
+    completedAt: null,
+    createdAt: new Date(Date.now() - 1 * 3600 * 1000).toISOString()
+  }
+];
+
 
 

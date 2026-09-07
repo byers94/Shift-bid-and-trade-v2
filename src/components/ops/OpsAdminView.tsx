@@ -15,6 +15,8 @@ import { CallsForServicePanel } from './CallsForServicePanel';
 import { LiveGuardRosterBoard } from './LiveGuardRosterBoard';
 import { ShiftSchedulingCalendar } from './ShiftSchedulingCalendar';
 import { LateShiftAlertModal } from './LateShiftAlertModal';
+import { LateBreakAlertModal } from './LateBreakAlertModal';
+import { MealBreakSettingsModal } from './MealBreakSettingsModal';
 import { RoverRouteOptimizationPanel } from './RoverRouteOptimizationPanel';
 import { SiteTaskOverview } from './SiteTaskOverview';
 import { StandardReportsHub } from './StandardReportsHub';
@@ -24,6 +26,7 @@ import { CallOffQueuePanel } from './CallOffQueuePanel';
 import { CoachingPerformanceDashboard } from './CoachingPerformanceDashboard';
 import { MpuPerformance } from './MpuPerformance';
 import { GuardMapDashboard } from './GuardMapDashboard';
+import { DispatchCommandDashboard } from './DispatchCommandDashboard';
 import { 
   ShieldCheck, 
   Activity, 
@@ -58,7 +61,9 @@ import {
   CalendarRange,
   BarChart3,
   Gauge,
-  Compass
+  Compass,
+  Coffee,
+  LayoutDashboard
 } from 'lucide-react';
 
 interface OpsAdminViewProps {
@@ -88,6 +93,8 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
     shiftClaims,
     getGuardsLiveTracking,
     lateShiftAlerts,
+    lateBreakAlerts,
+    mealBreakDurationMinutes,
     rovers,
     activeInterceptions,
     taskCompletionLogs,
@@ -95,15 +102,17 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
     setSchedules,
     timeOffRequests,
     availabilityChangeRequests,
-    callOffRecords
+    callOffRecords,
+    siteOrientations
   } = useShiftOps();
 
   const [activeMainTab, setActiveMainTabState] = useState<
-    'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'audit_terminal'
+    'command_dashboard' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'audit_terminal'
   >(() => {
     try {
       const saved = localStorage.getItem(STORAGE_OPS_MAIN_TAB_KEY);
       if (
+        saved === 'command_dashboard' ||
         saved === 'operations' || 
         saved === 'live_tracking' || 
         saved === 'live_map' || 
@@ -125,10 +134,10 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         return saved as any;
       }
     } catch {}
-    return 'operations';
+    return 'command_dashboard';
   });
 
-  const setActiveMainTab = (tab: 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'audit_terminal') => {
+  const setActiveMainTab = (tab: 'command_dashboard' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'audit_terminal') => {
     setActiveMainTabState(tab);
     try {
       localStorage.setItem(STORAGE_OPS_MAIN_TAB_KEY, tab);
@@ -142,6 +151,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   const [selectedBidsShiftId, setSelectedBidsShiftId] = useState<string | null>(null);
   const [isAutoFillModalOpen, setIsAutoFillModalOpen] = useState(false);
   const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
+  const [isMealBreakSettingsOpen, setIsMealBreakSettingsOpen] = useState(false);
   const [calendarTargetGuardId, setCalendarTargetGuardId] = useState<string | null>(null);
 
   const activeShiftsCount = shifts.filter((s) => s.status === 'open').length;
@@ -167,6 +177,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   const pendingAvailabilityRequestsCount = (availabilityChangeRequests || []).filter(r => r.status === 'pending').length;
   const uncoveredCallOffsCount = (callOffRecords || []).filter(r => !r.replacementGuardName).length;
   const setSchedulesCount = (setSchedules || []).length;
+  const pendingOrientationsCount = (siteOrientations || []).filter(o => o.status === 'PENDING_SUPERVISOR' || o.status === 'SUPERVISOR_EN_ROUTE').length;
 
   return (
     <main 
@@ -182,11 +193,34 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
               <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5 text-blue-300" />
             </div>
             <div>
+              {/* Route Breadcrumb */}
+              <nav className="flex items-center gap-1 text-[10px] text-blue-200/90 font-mono tracking-wide mb-0.5" aria-label="Breadcrumb">
+                <span className="text-blue-300">SecureShift</span>
+                <span className="text-blue-400/60">/</span>
+                <span className="text-white font-bold">Dispatch & Command</span>
+                <span className="text-blue-400/60">/</span>
+                <span className="text-blue-300 uppercase">
+                  {activeMainTab === 'command_dashboard' ? 'Command & Supervisor Dashboard' :
+                   activeMainTab === 'operations' ? 'Shift & Trade Operations' :
+                   activeMainTab === 'live_tracking' ? 'Live Guard Roster' :
+                   activeMainTab === 'live_map' ? 'GPS Tactical Radar' :
+                   activeMainTab === 'rover_routing' ? 'Mobile Route Optimization' :
+                   activeMainTab === 'mpu_performance' ? 'MPU Sector Performance' :
+                   activeMainTab === 'calendar_schedule' ? 'Shift Calendar' :
+                   activeMainTab === 'set_schedules' ? 'Set Schedules' :
+                   activeMainTab === 'guard_availability' ? 'Availability & Time-Off' :
+                   activeMainTab === 'calls_for_service' ? 'Calls & BOLOs' :
+                   activeMainTab === 'reports' ? 'Field Reports & DAR' :
+                   activeMainTab === 'work_orders' ? 'Work Orders' :
+                   activeMainTab === 'sites' ? 'Site Directory' :
+                   activeMainTab === 'performance' ? 'Coaching & QA' : 'Overview'}
+                </span>
+              </nav>
               <h1 className="text-sm sm:text-base lg:text-lg font-extrabold tracking-tight uppercase">
-                Ops Admin Dashboard
+                Dispatch & Command Dashboard
               </h1>
               <p className="text-[9px] sm:text-[10px] lg:text-xs text-blue-200 dark:text-blue-300 uppercase tracking-widest font-semibold">
-                Shift & Trade Command Center
+                Shift & Security Operations Command Center
               </p>
             </div>
           </div>
@@ -203,7 +237,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
               title="Manage Dispatchers, Admin PINs, and System Credentials"
             >
               <UserCheck className="w-3.5 h-3.5 text-blue-300" />
-              <span className="hidden sm:inline">Admin Access</span>
+              <span className="hidden sm:inline">Access Controls</span>
             </button>
 
             {/* Authenticated Dispatcher Badge & Lock Button */}
@@ -221,7 +255,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
                 <button
                   id="ops-admin-lock-btn"
                   onClick={onLock}
-                  title="Lock Ops Console"
+                  title="Lock Dispatch & Command Console"
                   className="p-1 bg-red-600/80 hover:bg-red-600 text-white rounded-md text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
                 >
                   <Lock className="w-3 h-3" />
@@ -235,6 +269,30 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         {/* Real-time Metric Indicators & Quick Actions Toolbar */}
         <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1 no-scrollbar border-t border-blue-800/60 dark:border-slate-800/80 pt-2.5">
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* Command Dashboard & Orientations Quick Indicator */}
+            <button
+              id="header-command-dashboard-btn"
+              type="button"
+              onClick={() => setActiveMainTab('command_dashboard')}
+              className={`hover:opacity-95 transition-all cursor-pointer group px-2.5 py-1 rounded-lg border text-left ${
+                activeMainTab === 'command_dashboard'
+                  ? 'bg-blue-600 border-blue-300 ring-2 ring-blue-400/50'
+                  : 'bg-blue-900/80 dark:bg-slate-900/90 hover:bg-blue-800 border-blue-400/50 dark:border-blue-700'
+              }`}
+              title="Click to launch Central Dispatch & Command Dashboard"
+            >
+              <p className="text-[8px] sm:text-[9px] text-blue-200 uppercase font-bold flex items-center gap-1">
+                <LayoutDashboard className="w-2.5 h-2.5 text-blue-300" />
+                Command CAD
+              </p>
+              <p className="text-xs sm:text-sm font-black font-mono text-white">
+                SENTINEL{' '}
+                {pendingOrientationsCount > 0 && (
+                  <span className="text-[10px] font-bold text-amber-300">({pendingOrientationsCount} OJT)</span>
+                )}
+              </p>
+            </button>
+
             {/* Live on Duty Guards Quick Indicator */}
             <button
               id="header-live-tracking-btn"
@@ -272,6 +330,25 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
                 </p>
                 <p className="text-xs sm:text-sm font-black font-mono text-rose-100">
                   {lateGuardsCount} Overdue
+                </p>
+              </button>
+            )}
+
+            {/* Overdue Late Break Return (>5m) Warning Chip */}
+            {lateBreakAlerts.filter((a) => !a.acknowledged).length > 0 && (
+              <button
+                id="header-late-break-alerts-btn"
+                type="button"
+                onClick={() => setActiveMainTab('live_tracking')}
+                className="hover:opacity-95 transition-all cursor-pointer group px-2.5 py-1 rounded-lg border border-rose-500/80 bg-rose-950/95 text-left ring-2 ring-rose-500/50 animate-bounce"
+                title="Click to view guards > 5 minutes late returning from break"
+              >
+                <p className="text-[8px] sm:text-[9px] text-rose-300 uppercase font-bold flex items-center gap-1">
+                  <Coffee className="w-2.5 h-2.5 text-rose-400" />
+                  Break &gt;5m Late
+                </p>
+                <p className="text-xs sm:text-sm font-black font-mono text-rose-100">
+                  {lateBreakAlerts.filter((a) => !a.acknowledged).length} Overdue
                 </p>
               </button>
             )}
@@ -365,6 +442,19 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Meal Break Duration Settings Configuration Trigger */}
+            <button
+              id="header-open-meal-break-settings-btn"
+              type="button"
+              onClick={() => setIsMealBreakSettingsOpen(true)}
+              className="px-2 sm:px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 border border-amber-500/50 bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 dark:bg-slate-900/80 dark:hover:bg-slate-800 cursor-pointer shadow-xs"
+              title="Configure Meal Break Duration & 5-minute late alert rules"
+            >
+              <Coffee className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden md:inline">Break Policy: {mealBreakDurationMinutes}m</span>
+              <span className="md:hidden font-mono">{mealBreakDurationMinutes}m</span>
+            </button>
+
             {/* Emergency Broadcast Trigger Button */}
             <button
               id="open-emergency-broadcast-btn"
@@ -413,6 +503,26 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
       {/* Sub-Nav Tabs Strip */}
       <div className="bg-slate-800 dark:bg-slate-900 text-white px-3 sm:px-4 lg:px-6 py-2 flex flex-wrap items-center justify-between gap-2 border-b border-slate-700 dark:border-slate-800 shrink-0">
         <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto max-w-full pb-0.5 no-scrollbar">
+          {/* Dispatch & Command Dashboard Premier Tab */}
+          <button
+            id="tab-command-dashboard-btn"
+            type="button"
+            onClick={() => setActiveMainTab('command_dashboard')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              activeMainTab === 'command_dashboard'
+                ? 'bg-blue-600 text-white shadow-xs font-black ring-1 ring-blue-400'
+                : 'text-blue-300 hover:text-white hover:bg-slate-700 dark:hover:bg-slate-800'
+            }`}
+          >
+            <LayoutDashboard className="w-3.5 h-3.5" />
+            <span>Command Dashboard</span>
+            {pendingOrientationsCount > 0 && (
+              <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
+                {pendingOrientationsCount}
+              </span>
+            )}
+          </button>
+
           <button
             id="tab-operations-btn"
             type="button"
@@ -820,6 +930,16 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
       )}
 
       {/* Main Content Area Based on Active Tab */}
+      {activeMainTab === 'command_dashboard' && (
+        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
+          <DispatchCommandDashboard
+            onNavigateTab={(tab) => setActiveMainTab(tab)}
+            adminName={adminName}
+            adminBadge={adminBadge}
+          />
+        </div>
+      )}
+
       {activeMainTab === 'operations' && (
         <div className="flex-1 p-3 sm:p-4 lg:p-6 flex flex-col min-h-0 overflow-y-auto">
           {/* Mobile/Tablet Operational Section Switcher (Visible on screens smaller than xl) */}
@@ -1103,6 +1223,17 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
           setCalendarTargetGuardId(null);
           setActiveMainTab('calendar_schedule');
         }}
+      />
+
+      {/* Late Break Return (>5m Overdue) Admin Alert Modal */}
+      <LateBreakAlertModal
+        onConfigureBreakPolicy={() => setIsMealBreakSettingsOpen(true)}
+      />
+
+      {/* Admin Meal Break Duration Settings Modal */}
+      <MealBreakSettingsModal
+        isOpen={isMealBreakSettingsOpen}
+        onClose={() => setIsMealBreakSettingsOpen(false)}
       />
     </main>
   );

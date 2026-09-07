@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { ShiftDutyStatus } from '../../types/shift';
 import { GuardMapDashboard } from './GuardMapDashboard';
+import { MealBreakSettingsModal } from './MealBreakSettingsModal';
 
 interface LiveGuardRosterBoardProps {
   onScheduleShift?: (guardId?: string) => void;
@@ -46,6 +47,9 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
     scheduledShifts, 
     lateShiftAlerts, 
     acknowledgeLateAlert, 
+    lateBreakAlerts,
+    acknowledgeLateBreakAlert,
+    mealBreakDurationMinutes,
     reassignScheduledShift,
     clockOutGuard,
     sitesList,
@@ -61,6 +65,7 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
   const [filterSite, setFilterSite] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'table' | 'map'>('table');
   const [selectedGuardForMap, setSelectedGuardForMap] = useState<string | null>(null);
+  const [isMealBreakModalOpen, setIsMealBreakModalOpen] = useState(false);
   const [tick, setTick] = useState(0);
 
   // Modal state for excusing departure as supervisor
@@ -172,6 +177,78 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
           </div>
         </div>
 
+        {/* Urgent Late Break Return Alerts Banner */}
+        {lateBreakAlerts.filter((a) => !a.acknowledged).length > 0 && (
+          <div 
+            id="roster-late-break-alerts-banner"
+            className="p-3.5 rounded-xl bg-gradient-to-r from-rose-950 via-rose-900 to-amber-950 border-2 border-rose-500 text-white shadow-xl space-y-2 animate-in fade-in"
+          >
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 bg-rose-600 rounded-lg text-white animate-bounce">
+                  <Coffee className="w-4 h-4" />
+                </span>
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-rose-200">
+                    🚨 OVERDUE BREAK: {lateBreakAlerts.filter((a) => !a.acknowledged).length} Guard(s) &gt; 5 Minutes Late Returning From Break
+                  </h4>
+                  <p className="text-[11px] text-rose-300">
+                    Officers have exceeded scheduled break duration by more than 5 minutes. Dispatch alert triggered.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsMealBreakModalOpen(true)}
+                className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-lg text-[10px] shrink-0 transition-colors"
+              >
+                Meal Break Policy ({mealBreakDurationMinutes}m)
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+              {lateBreakAlerts.filter((a) => !a.acknowledged).map((alert) => (
+                <div 
+                  key={alert.id}
+                  className="bg-slate-950/80 p-2.5 rounded-lg border border-rose-600/60 flex items-center justify-between gap-2"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-black text-white truncate">{alert.guardName}</span>
+                      <span className="text-[10px] font-mono text-slate-400">({alert.guardBadge})</span>
+                      <span className="text-[10px] font-mono font-bold text-rose-300 bg-rose-950 px-1.5 py-0.5 rounded border border-rose-800 animate-pulse">
+                        +{alert.minutesLate}m Late
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-300 truncate block">
+                      {alert.siteName} • {alert.breakType === 'meal' ? `${alert.allocatedMinutes}m Meal` : '10m Rest'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <a
+                      href={`tel:${alert.guardPhone}`}
+                      className="p-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-[10px] font-bold flex items-center gap-1"
+                      title={`Call ${alert.guardName}`}
+                    >
+                      <PhoneCall className="w-3 h-3" />
+                      <span className="hidden sm:inline">Call</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => acknowledgeLateBreakAlert(alert.id, 'Acknowledged by dispatcher')}
+                      className="px-2 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-md text-[10px] font-bold"
+                    >
+                      Ack
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Status Counters */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
           {breachCount > 0 && (
@@ -234,6 +311,17 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
           >
             <Calendar className="w-3.5 h-3.5" />
             <span>{scheduledTodayCount} Upcoming</span>
+          </button>
+
+          <button
+            type="button"
+            id="roster-break-policy-btn"
+            onClick={() => setIsMealBreakModalOpen(true)}
+            className="px-3 py-1.5 rounded-xl border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+            title="Configure meal break duration & late return thresholds"
+          >
+            <Coffee className="w-3.5 h-3.5 text-amber-500" />
+            <span>Break Policy: {mealBreakDurationMinutes}m</span>
           </button>
 
           {onScheduleShift && (
@@ -390,9 +478,19 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
                       </span>
                     )}
                     {!isBreached && !isDebouncing && isOnBreak && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                        item.isBreakCriticalLate
+                          ? 'bg-rose-600 text-white shadow-md animate-pulse'
+                          : item.isBreakOverdue
+                          ? 'bg-amber-500 text-slate-950 shadow-sm'
+                          : 'bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
+                      }`}>
                         <Coffee className="w-3 h-3" />
-                        On Break
+                        {item.isBreakCriticalLate
+                          ? `🚨 Overdue (+${Math.floor((item.breakOverdueSeconds || 0) / 60)}m)`
+                          : item.isBreakOverdue
+                          ? `⚠️ Expired (+${formatElapsedTimer(item.breakOverdueSeconds || 0)})`
+                          : `Break (${item.breakRemainingSeconds !== undefined ? formatElapsedTimer(item.breakRemainingSeconds) : 'Active'})`}
                       </span>
                     )}
                     {isLate && !isBreached && (
@@ -551,6 +649,37 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
                     </div>
                   )}
 
+                  {/* Dedicated Active Break Telemetry Box */}
+                  {isOnBreak && (
+                    <div className={`p-2.5 rounded-xl border text-xs space-y-1 ${
+                      item.isBreakCriticalLate
+                        ? 'bg-rose-950/80 border-rose-500 text-rose-100 shadow-md ring-1 ring-rose-500/50 animate-pulse'
+                        : item.isBreakOverdue
+                        ? 'bg-amber-950/70 border-amber-500/80 text-amber-100'
+                        : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200'
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+                          <Coffee className="w-3.5 h-3.5 text-amber-500" />
+                          <span>{item.breakAllocatedMinutes === 10 ? '10-Min Rest Break' : `Meal Break (${item.breakAllocatedMinutes || mealBreakDurationMinutes}m)`}</span>
+                        </span>
+                        <span className="font-mono font-bold text-[11px]">
+                          {item.isBreakCriticalLate ? (
+                            <span className="text-rose-300 font-black animate-pulse">+{Math.floor((item.breakOverdueSeconds || 0) / 60)}m &gt;5m Late</span>
+                          ) : item.isBreakOverdue ? (
+                            <span className="text-amber-300 font-bold">+{formatElapsedTimer(item.breakOverdueSeconds || 0)} Expired</span>
+                          ) : (
+                            <span className="text-emerald-500 dark:text-emerald-400 font-bold">{formatElapsedTimer(item.breakRemainingSeconds || 0)} left</span>
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] opacity-80 font-mono">
+                        <span>Elapsed: {formatElapsedTimer(item.breakElapsedSeconds || 0)}</span>
+                        <span>Allowance: {item.breakAllocatedMinutes || mealBreakDurationMinutes}m</span>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Scheduled Times */}
                   {item.activeShift && (
                     <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
@@ -599,9 +728,9 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
 
                 {isOnDuty && (
                   <button
-                    onClick={() => clockOutGuard(item.guardId, { notes: 'Clocked out by Ops Admin Override' })}
+                    onClick={() => clockOutGuard(item.guardId, { notes: 'Clocked out by Dispatch & Command Override' })}
                     className="px-2 py-1 bg-red-600 hover:bg-red-500 text-white rounded-lg text-[10px] font-bold transition-colors cursor-pointer"
-                    title="Clock out officer on behalf of Ops"
+                    title="Clock out officer on behalf of Dispatch & Command"
                   >
                     End Shift
                   </button>
@@ -694,7 +823,7 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
                 <textarea
                   value={excusalNotesInput}
                   onChange={(e) => setExcusalNotesInput(e.target.value)}
-                  placeholder="e.g. Authorized by Ops Mgr via Radio Channel 2. Expected return in 20m."
+                  placeholder="e.g. Authorized by Dispatch & Command via Radio Channel 2. Expected return in 20m."
                   rows={2}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:ring-2 focus:ring-amber-500 focus:outline-hidden"
                 />
@@ -719,6 +848,12 @@ export const LiveGuardRosterBoard: React.FC<LiveGuardRosterBoardProps> = ({
           </div>
         </div>
       )}
+
+      {/* Admin Meal Break Duration & Late Alerts Settings Modal */}
+      <MealBreakSettingsModal
+        isOpen={isMealBreakModalOpen}
+        onClose={() => setIsMealBreakModalOpen(false)}
+      />
     </div>
   );
 };
