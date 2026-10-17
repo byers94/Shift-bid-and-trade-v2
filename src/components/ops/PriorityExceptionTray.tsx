@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Flame
 } from 'lucide-react';
+import { CadPanicDistressCard } from './CadPanicDistressCard';
 
 interface PriorityExceptionItem {
   id: string;
@@ -170,8 +171,16 @@ export const PriorityExceptionTray: React.FC<PriorityExceptionTrayProps> = ({
   const highCount = exceptions.filter(e => e.urgency === 'high').length;
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-rose-200/90 dark:border-rose-950/60 shadow-xs overflow-hidden">
-      {/* Tray Header */}
+    <div className="space-y-3">
+      {/* Persistent Code-Red Officer Distress Card (When Panic/SOS is active) */}
+      <CadPanicDistressCard 
+        onDispatchBackup={() => {
+          if (onNavigateTab) onNavigateTab('operations');
+        }}
+      />
+
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-rose-200/90 dark:border-rose-950/60 shadow-xs overflow-hidden">
+        {/* Tray Header */}
       <div className="p-4 sm:p-5 border-b border-rose-100 dark:border-rose-950/70 bg-gradient-to-r from-rose-50/70 via-rose-50/40 to-transparent dark:from-rose-950/40 dark:via-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center space-x-3">
           <div className="p-2.5 bg-rose-600 text-white rounded-xl shadow-xs animate-pulse">
@@ -288,5 +297,6 @@ export const PriorityExceptionTray: React.FC<PriorityExceptionTrayProps> = ({
         )}
       </div>
     </div>
-  );
+  </div>
+);
 };

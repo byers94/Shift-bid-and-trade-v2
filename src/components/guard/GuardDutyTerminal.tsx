@@ -68,6 +68,7 @@ import { ShiftBreadcrumbsModal } from '../ops/ShiftBreadcrumbsModal';
 import { useGuardContinuousTelemetry } from '../../hooks/useGuardContinuousTelemetry';
 import { getCurrentLocation, calculateDistance, GeoCoordinates, formatDistance, verifySiteGeofence } from '../../utils/geo';
 import { playBreakOverAlertSound } from '../../utils/audioAlert';
+import { GuardPanicButton } from './GuardPanicButton';
 
 interface GuardDutyTerminalProps {
   onOpenAlertPrefs?: () => void;
@@ -490,6 +491,14 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
       {/* ACTIVE CLOCKED IN VIEW */}
       {activeClockedInShift ? (
         <div className="space-y-3 animate-in fade-in duration-200">
+          {/* Active Flashing Panic/SOS Banner & Distress Trigger */}
+          <GuardPanicButton 
+            activeShift={activeClockedInShift}
+            variant="telemetry_bar"
+            showActiveBanner={true}
+            className="w-full"
+          />
+
           {/* Main Duty Status Banner */}
           <div className={`p-4 rounded-2xl border-2 shadow-lg transition-all ${
             activeClockedInShift.status === 'on_break'
@@ -884,7 +893,7 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
                       <button
                         type="button"
                         onClick={() => setIsShiftTrailModalOpen(true)}
@@ -903,6 +912,11 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
                         <Smartphone className="w-3 h-3" />
                         <span>Permissions</span>
                       </button>
+                      <GuardPanicButton
+                        activeShift={activeClockedInShift}
+                        variant="compact"
+                        showActiveBanner={false}
+                      />
                     </div>
                   </div>
 
@@ -1380,6 +1394,20 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
                 Ready for Duty
               </span>
             </div>
+          </div>
+
+          {/* Standby Panic / SOS Distress Bar */}
+          <div className="bg-slate-900/90 border border-red-500/40 p-2.5 rounded-xl flex items-center justify-between gap-2 shadow-sm">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-red-950 border border-red-500/60 flex items-center justify-center text-red-400">
+                <AlertOctagon className="w-4 h-4 animate-pulse" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-red-400 uppercase tracking-wider block">Officer Emergency SOS</span>
+                <span className="text-[11px] text-slate-300 font-medium">Continuous 2s hold emits code-red CAD distress</span>
+              </div>
+            </div>
+            <GuardPanicButton variant="compact" showActiveBanner={true} />
           </div>
 
           {/* Today's Scheduled Shifts Quick-Select (if any) */}

@@ -15,6 +15,7 @@ import { TimeSpecificTaskAlertBanner } from './TimeSpecificTaskAlertBanner';
 import { UpcomingShiftReminderBanner } from './UpcomingShiftReminderBanner';
 import { GuardLeaderboardView } from './GuardLeaderboardView';
 import { GuardCoachingAlertBanner } from './GuardCoachingAlertBanner';
+import { GuardPanicButton } from './GuardPanicButton';
 import { 
   Shield, 
   UserCheck, 
@@ -321,6 +322,20 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
           </button>
         </div>
       </header>
+
+      {/* Officer Emergency Panic / SOS Distress Bar */}
+      <div 
+        id="guard-view-panic-sos-tray"
+        className="bg-slate-950 border-b border-red-900/80 px-3 py-1.5 flex items-center justify-between gap-2 shadow-inner"
+      >
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="w-2 h-2 rounded-full bg-red-500 animate-ping shrink-0" />
+          <span className="text-[10px] font-black uppercase tracking-wider text-red-300 font-mono truncate">
+            EMERGENCY CAD DISTRESS
+          </span>
+        </div>
+        <GuardPanicButton variant="compact" showActiveBanner={true} />
+      </div>
 
       {/* Active Shift Duty Banner if Clocked In */}
       {activeClockedInShift && (
