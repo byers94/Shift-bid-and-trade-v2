@@ -69,6 +69,7 @@ import { useGuardContinuousTelemetry } from '../../hooks/useGuardContinuousTelem
 import { getCurrentLocation, calculateDistance, GeoCoordinates, formatDistance, verifySiteGeofence } from '../../utils/geo';
 import { playBreakOverAlertSound } from '../../utils/audioAlert';
 import { GuardPanicButton } from './GuardPanicButton';
+import { ShiftHandoffModal, ShiftHandoffAcknowledgment } from './ShiftHandoffModal';
 
 interface GuardDutyTerminalProps {
   onOpenAlertPrefs?: () => void;
@@ -137,6 +138,10 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
   });
 
   const [isShiftTrailModalOpen, setIsShiftTrailModalOpen] = useState<boolean>(false);
+
+  // 48-Hour Shift Handoff (Pass-Down) Modal State
+  const [isHandoffModalOpen, setIsHandoffModalOpen] = useState<boolean>(false);
+  const [handoffAckRecord, setHandoffAckRecord] = useState<ShiftHandoffAcknowledgment | null>(null);
 
   // Geofence Departure Reason Prompt Modal State
   const [isDeparturePromptOpen, setIsDeparturePromptOpen] = useState<boolean>(false);
@@ -380,6 +385,9 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
       verifiedByMethod: 'camera_gps'
     });
 
+    // Automatically prompt 48-Hour Site Pass-Down upon shift status changing to ACTIVE (on_duty)
+    setIsHandoffModalOpen(true);
+
     // Auto-prompt continuous telemetry permissions if background GPS or power-save mode exemption not granted
     if (!permissionsState.backgroundGeolocAllowed || !permissionsState.powerSaveExempted) {
       setTimeout(() => {
@@ -526,10 +534,25 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
                 </div>
               </div>
 
-              {/* GPS Verified Status Badge */}
-              <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-300 bg-emerald-950/80 px-2 py-1 rounded-lg border border-emerald-600/40">
-                <Compass className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
-                <span>GPS Verified</span>
+              {/* Pass-Down Trigger & GPS Verified Status Badge */}
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <button
+                  id="view-site-passdown-active-btn"
+                  type="button"
+                  onClick={() => setIsHandoffModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-indigo-600/40 hover:bg-indigo-600/60 text-indigo-200 border border-indigo-400/50 transition-colors cursor-pointer shadow-xs"
+                  title="Reopen 48-Hour Site Pass-Down Intelligence Summary"
+                >
+                  <FileText className="w-3.5 h-3.5 text-indigo-300" />
+                  <span>View Site Pass-Down (48h)</span>
+                  {handoffAckRecord && (
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  )}
+                </button>
+                <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-300 bg-emerald-950/80 px-2 py-1 rounded-lg border border-emerald-600/40">
+                  <Compass className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
+                  <span>GPS Verified</span>
+                </div>
               </div>
             </div>
 
@@ -1390,9 +1413,21 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
                 </div>
               </div>
 
-              <span className="text-[10px] font-bold bg-blue-950/80 px-2 py-1 rounded-full text-blue-200 border border-blue-500/40">
-                Ready for Duty
-              </span>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <button
+                  id="view-site-passdown-standby-btn"
+                  type="button"
+                  onClick={() => setIsHandoffModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-600/50 hover:bg-indigo-500/70 text-white border border-indigo-400/60 text-[10px] font-bold transition-colors cursor-pointer shadow-xs"
+                  title="Preview 48-Hour Site Pass-Down Log before clock-in"
+                >
+                  <FileText className="w-3 h-3 text-indigo-200" />
+                  <span>View Site Pass-Down (48h)</span>
+                </button>
+                <span className="text-[10px] font-bold bg-blue-950/80 px-2 py-1 rounded-full text-blue-200 border border-blue-500/40">
+                  Ready for Duty
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1896,6 +1931,22 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
           guardBadge={activeGuard.badgeNumber}
         />
       )}
+
+      {/* 48-HOUR SHIFT HANDOFF (PASS-DOWN) MODAL */}
+      <ShiftHandoffModal
+        isOpen={isHandoffModalOpen}
+        onClose={() => setIsHandoffModalOpen(false)}
+        activeShift={activeClockedInShift}
+        fallbackSiteName={selectedSiteName}
+        onAcknowledge={(ack) => {
+          setHandoffAckRecord(ack);
+          showToast(
+            'Pass-Down Briefing Acknowledged',
+            `Officer ${activeGuard.name} acknowledged 48h site pass-down for ${activeClockedInShift?.siteName || selectedSiteName}.`,
+            'success'
+          );
+        }}
+      />
     </div>
   );
 };
