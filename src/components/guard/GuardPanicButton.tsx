@@ -110,6 +110,8 @@ interface GuardPanicButtonProps {
   className?: string;
   /** Show the top flashing banner automatically when SOS is active */
   showActiveBanner?: boolean;
+  /** Suppress rendering the standalone trigger pill when only rendering the active banner */
+  hideTriggerButton?: boolean;
 }
 
 export const GuardPanicButton: React.FC<GuardPanicButtonProps> = ({
@@ -118,7 +120,8 @@ export const GuardPanicButton: React.FC<GuardPanicButtonProps> = ({
   onCancel,
   variant = 'telemetry_bar',
   className = '',
-  showActiveBanner = true
+  showActiveBanner = true,
+  hideTriggerButton = false
 }) => {
   const { 
     activeGuard, 
@@ -135,13 +138,17 @@ export const GuardPanicButton: React.FC<GuardPanicButtonProps> = ({
 
   // Hold-to-activate states (2.0s hold requirement)
   const [isPressing, setIsPressing] = useState<boolean>(false);
-  const [holdProgress, setHoldProgress] = useState<number>(0); // 0.0 to 1.0
+  const [triggerHoldProgress, setTriggerHoldProgress] = useState<number>(0); // 0.0 to 1.0
   const [isActivating, setIsActivating] = useState<boolean>(false);
 
-  // Cancellation modal state
+  // Cancellation modal state & 3.0s Hold-to-Confirm Safe state
   const [isCancelModalOpen, setIsCancelModalOpen] = useState<boolean>(false);
-  const [cancelReason, setCancelReason] = useState<string>('Accidental pocket activation');
+  const [cancelReason, setCancelReason] = useState<string>('');
   const [cancelNotes, setCancelNotes] = useState<string>('');
+  const [holdProgress, setHoldProgress] = useState<number>(0); // 0 to 100
+  const [isHolding, setIsHolding] = useState<boolean>(false);
+  const [elapsed, setElapsed] = useState<number>(0); // 0 to 3000ms
+  const [isSafeConfirmed, setIsSafeConfirmed] = useState<boolean>(false);
 
   // Elapsed distress timer
   const [distressElapsedSec, setDistressElapsedSec] = useState<number>(0);
@@ -149,6 +156,11 @@ export const GuardPanicButton: React.FC<GuardPanicButtonProps> = ({
   const holdStartTimeRef = useRef<number | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const hasTriggeredRef = useRef<boolean>(false);
+
+  const cancelHoldStartRef = useRef<number | null>(null);
+  const cancelHoldFrameRef = useRef<number | null>(null);
+  const cancelCompleteTimeoutRef = useRef<number | null>(null);
+  const hasConfirmedSafeRef = useRef<boolean>(false);
 
   // Sound tone generator fallback
   const playDistressSiren = useCallback(() => {
@@ -200,6 +212,12 @@ export const GuardPanicButton: React.FC<GuardPanicButtonProps> = ({
       if (animFrameRef.current) {
         cancelAnimationFrame(animFrameRef.current);
       }
+      if (cancelHoldFrameRef.current) {
+        cancelAnimationFrame(cancelHoldFrameRef.current);
+      }
+      if (cancelCompleteTimeoutRef.current) {
+        clearTimeout(cancelCompleteTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -211,7 +229,7 @@ export const GuardPanicButton: React.FC<GuardPanicButtonProps> = ({
     }
     holdStartTimeRef.current = null;
     setIsPressing(false);
-    setHoldProgress(0);
+    setTriggerHoldProgress(0);
     hasTriggeredRef.current = false;
   }, []);
 
@@ -361,13 +379,13 @@ export const GuardPanicButton: React.FC<GuardPanicButtonProps> = ({
 
     holdStartTimeRef.current = performance.now();
     setIsPressing(true);
-    setHoldProgress(0);
+    setTriggerHoldProgress(0);
 
     const checkProgress = () => {
       if (!holdStartTimeRef.current) return;
-      const elapsed = performance.now() - holdStartTimeRef.current;
-      const progress = Math.min(1, elapsed / 2000); // 2000ms = 2.0 seconds
-      setHoldProgress(progress);
+      const elapsedMs = performance.now() - holdStartTimeRef.current;
+      const progress = Math.min(1, elapsedMs / 2000); // 2000ms = 2.0 seconds
+      setTriggerHoldProgress(progress);
 
       if (progress >= 1) {
         executeDistressTrigger();
@@ -379,15 +397,29 @@ export const GuardPanicButton: React.FC<GuardPanicButtonProps> = ({
     animFrameRef.current = requestAnimationFrame(checkProgress);
   }, [executeDistressTrigger, isActivating]);
 
-  // Confirm cancel false alarm
-  const handleConfirmCancelFalseAlarm = () => {
-    clearDistress(cancelReason);
+  // Reset 3.0s cancel hold state if released early
+  const resetCancelHold = useCallback(() => {
+    if (hasConfirmedSafeRef.current) return;
+    if (cancelHoldFrameRef.current) {
+      cancelAnimationFrame(cancelHoldFrameRef.current);
+      cancelHoldFrameRef.current = null;
+    }
+    cancelHoldStartRef.current = null;
+    setIsHolding(false);
+    setHoldProgress(0);
+    setElapsed(0);
+  }, []);
+
+  // Confirm cancel false alarm stand-down execution
+  const handleConfirmCancelFalseAlarm = useCallback(() => {
+    const resolvedReason = cancelReason || 'Accidental pocket activation';
+    clearDistress(resolvedReason);
 
     try {
       logAdminAction({
         type: 'emergency_broadcast_resolved',
         title: 'OFFICER DISTRESS CANCELLED (FALSE ALARM)',
-        description: `Guard ${activeGuard.name} cancelled Panic/SOS alert: "${cancelReason}". Notes: ${cancelNotes || 'None'}.`,
+        description: `Guard ${activeGuard.name} cancelled Panic/SOS alert: "${resolvedReason}". Notes: ${cancelNotes || 'None'}.`,
         adminName: activeGuard.name,
         adminBadge: activeGuard.badgeNumber,
         badgeVariant: 'emerald'
@@ -403,15 +435,72 @@ export const GuardPanicButton: React.FC<GuardPanicButtonProps> = ({
     }
 
     setIsCancelModalOpen(false);
+    setCancelReason('');
     setCancelNotes('');
+    setHoldProgress(0);
+    setElapsed(0);
+    setIsHolding(false);
+    setIsSafeConfirmed(false);
+    hasConfirmedSafeRef.current = false;
     if (onCancel) onCancel();
-  };
+  }, [activeGuard, cancelNotes, cancelReason, clearDistress, logAdminAction, onCancel, showToast]);
+
+  // Start 3.0-second continuous hold on "Confirm I Am Safe" button
+  const handleStartCancelHold = useCallback((e: React.SyntheticEvent) => {
+    if (!cancelReason || isSafeConfirmed || hasConfirmedSafeRef.current) return;
+    if (e.type === 'mousedown' && (e as React.MouseEvent).button !== 0) return;
+
+    try {
+      navigator.vibrate?.(50);
+    } catch {
+      // ignore haptic unsupported
+    }
+
+    cancelHoldStartRef.current = performance.now();
+    setIsHolding(true);
+    setHoldProgress(0);
+    setElapsed(0);
+
+    const tick = () => {
+      if (!cancelHoldStartRef.current) return;
+      const currentElapsed = Math.min(3000, performance.now() - cancelHoldStartRef.current);
+      const nextProgress = Math.min(100, (currentElapsed / 3000) * 100);
+
+      setElapsed(currentElapsed);
+      setHoldProgress(nextProgress);
+
+      if (currentElapsed >= 3000 || nextProgress >= 100) {
+        hasConfirmedSafeRef.current = true;
+        cancelHoldStartRef.current = null;
+        cancelHoldFrameRef.current = null;
+        setIsHolding(false);
+        setHoldProgress(100);
+        setElapsed(3000);
+        setIsSafeConfirmed(true);
+
+        try {
+          navigator.vibrate?.([60, 40, 100]);
+        } catch {
+          // ignore
+        }
+
+        cancelCompleteTimeoutRef.current = window.setTimeout(() => {
+          handleConfirmCancelFalseAlarm();
+        }, 350);
+      } else {
+        cancelHoldFrameRef.current = requestAnimationFrame(tick);
+      }
+    };
+
+    cancelHoldFrameRef.current = requestAnimationFrame(tick);
+  }, [cancelReason, handleConfirmCancelFalseAlarm, isSafeConfirmed]);
 
   // Radial progress calculations (circle r = 18, circumference = ~113.1)
   const circleRadius = 18;
   const circumference = 2 * Math.PI * circleRadius;
-  const strokeDashoffset = circumference - (holdProgress * circumference);
-  const remainingSeconds = Math.max(0, (2.0 - (holdProgress * 2.0))).toFixed(1);
+  const strokeDashoffset = circumference - (triggerHoldProgress * circumference);
+  const remainingSeconds = Math.max(0, (2.0 - (triggerHoldProgress * 2.0))).toFixed(1);
+  const shouldHideTriggerPill = hideTriggerButton || className.split(/\s+/).includes('hidden');
 
   return (
     <>
@@ -474,117 +563,119 @@ export const GuardPanicButton: React.FC<GuardPanicButtonProps> = ({
       )}
 
       {/* 2. HOLD-TO-ACTIVATE PANIC / SOS BUTTON */}
-      <div 
-        id="guard-panic-sos-button-container"
-        className={`inline-flex items-center select-none ${className}`}
-      >
-        <button
-          id="guard-panic-sos-trigger-btn"
-          type="button"
-          onMouseDown={handlePressStart}
-          onMouseUp={resetHold}
-          onMouseLeave={resetHold}
-          onTouchStart={handlePressStart}
-          onTouchEnd={resetHold}
-          onTouchCancel={resetHold}
-          onContextMenu={(e) => e.preventDefault()}
-          disabled={Boolean(activeDistress)}
-          className={`relative overflow-hidden group flex items-center justify-between font-black transition-all cursor-pointer touch-none select-none ${
-            activeDistress
-              ? 'bg-red-950/90 border-red-600 text-red-300 opacity-90 cursor-default ring-2 ring-red-500/40'
-              : isPressing
-              ? 'bg-gradient-to-r from-red-600 via-rose-600 to-red-700 border-white text-white shadow-2xl shadow-red-600/70 scale-[0.98] ring-2 ring-red-500/60'
-              : 'bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-600 border-red-400 text-white shadow-md shadow-red-950/50 hover:shadow-red-600/40'
-          } ${
-            variant === 'compact'
-              ? 'text-[11px] h-8 px-2.5 py-1 gap-1.5 rounded-lg border'
-              : 'text-xs sm:text-sm h-11 px-3 py-1.5 gap-2.5 rounded-xl border-2'
-          }`}
-          style={{ touchAction: 'none' }}
-          title={activeDistress ? 'Distress Signal Active' : 'Hold continuously for 2.0 seconds to emit Code-Red SOS Distress'}
+      {!shouldHideTriggerPill && (
+        <div 
+          id="guard-panic-sos-button-container"
+          className={`inline-flex items-center select-none ${className}`}
         >
-          {/* Radial progress ring SVG */}
-          <div className={`relative flex items-center justify-center shrink-0 ${
-            variant === 'compact' ? 'w-5 h-5' : 'w-7 h-7 sm:w-8 sm:h-8'
-          }`}>
-            <svg className="w-full h-full -rotate-90 transform" viewBox="0 0 44 44">
-              {/* Background circle track */}
-              <circle
-                cx="22"
-                cy="22"
-                r={circleRadius}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="4"
-                className="text-red-900/40"
-              />
-              {/* Animated progress circle */}
-              <circle
-                cx="22"
-                cy="22"
-                r={circleRadius}
-                fill="none"
-                stroke={isPressing ? '#ffffff' : '#fca5a5'}
-                strokeWidth="4.5"
-                strokeLinecap="round"
-                strokeDasharray={circumference}
-                strokeDashoffset={activeDistress ? 0 : strokeDashoffset}
-                className="transition-all duration-75 ease-linear"
-              />
-            </svg>
+          <button
+            id="guard-panic-sos-trigger-btn"
+            type="button"
+            onMouseDown={handlePressStart}
+            onMouseUp={resetHold}
+            onMouseLeave={resetHold}
+            onTouchStart={handlePressStart}
+            onTouchEnd={resetHold}
+            onTouchCancel={resetHold}
+            onContextMenu={(e) => e.preventDefault()}
+            disabled={Boolean(activeDistress)}
+            className={`relative overflow-hidden group flex items-center justify-between font-black transition-all cursor-pointer touch-none select-none ${
+              activeDistress
+                ? 'bg-red-950/90 border-red-600 text-red-300 opacity-90 cursor-default ring-2 ring-red-500/40'
+                : isPressing
+                ? 'bg-gradient-to-r from-red-600 via-rose-600 to-red-700 border-white text-white shadow-2xl shadow-red-600/70 scale-[0.98] ring-2 ring-red-500/60'
+                : 'bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-600 border-red-400 text-white shadow-md shadow-red-950/50 hover:shadow-red-600/40'
+            } ${
+              variant === 'compact'
+                ? 'text-[11px] h-8 px-2.5 py-1 gap-1.5 rounded-lg border'
+                : 'text-xs sm:text-sm h-11 px-3 py-1.5 gap-2.5 rounded-xl border-2'
+            }`}
+            style={{ touchAction: 'none' }}
+            title={activeDistress ? 'Distress Signal Active' : 'Hold continuously for 2.0 seconds to emit Code-Red SOS Distress'}
+          >
+            {/* Radial progress ring SVG */}
+            <div className={`relative flex items-center justify-center shrink-0 ${
+              variant === 'compact' ? 'w-5 h-5' : 'w-7 h-7 sm:w-8 sm:h-8'
+            }`}>
+              <svg className="w-full h-full -rotate-90 transform" viewBox="0 0 44 44">
+                {/* Background circle track */}
+                <circle
+                  cx="22"
+                  cy="22"
+                  r={circleRadius}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                  className="text-red-900/40"
+                />
+                {/* Animated progress circle */}
+                <circle
+                  cx="22"
+                  cy="22"
+                  r={circleRadius}
+                  fill="none"
+                  stroke={isPressing ? '#ffffff' : '#fca5a5'}
+                  strokeWidth="4.5"
+                  strokeLinecap="round"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={activeDistress ? 0 : strokeDashoffset}
+                  className="transition-all duration-75 ease-linear"
+                />
+              </svg>
 
-            {/* Center icon / countdown number */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              {activeDistress ? (
-                <AlertOctagon className={variant === 'compact' ? 'w-3 h-3 text-white animate-spin' : 'w-4 h-4 text-white animate-spin'} />
-              ) : isPressing ? (
-                <span className="font-mono text-[8px] font-black text-white">
-                  {remainingSeconds}
-                </span>
-              ) : (
-                <ShieldAlert className={variant === 'compact' ? 'w-3 h-3 text-white' : 'w-4 h-4 text-white group-hover:scale-110 transition-transform'} />
-              )}
+              {/* Center icon / countdown number */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                {activeDistress ? (
+                  <AlertOctagon className={variant === 'compact' ? 'w-3 h-3 text-white animate-spin' : 'w-4 h-4 text-white animate-spin'} />
+                ) : isPressing ? (
+                  <span className="font-mono text-[8px] font-black text-white">
+                    {remainingSeconds}
+                  </span>
+                ) : (
+                  <ShieldAlert className={variant === 'compact' ? 'w-3 h-3 text-white' : 'w-4 h-4 text-white group-hover:scale-110 transition-transform'} />
+                )}
+              </div>
             </div>
-          </div>
 
-          {/* Button Text & Status Indicator */}
-          {variant === 'compact' ? (
-            <div className="flex items-center gap-1 leading-none whitespace-nowrap">
-              <span className="font-black uppercase tracking-wider text-[10px] text-white">
-                {activeDistress ? 'SOS ACTIVE' : isPressing ? `HOLD ${(holdProgress * 100).toFixed(0)}%` : 'SOS'}
-              </span>
-              {!activeDistress && !isPressing && (
-                <span className="text-[9px] font-mono bg-red-950/90 px-1 py-0.5 rounded text-red-200 border border-red-400/40">
-                  2.0s
+            {/* Button Text & Status Indicator */}
+            {variant === 'compact' ? (
+              <div className="flex items-center gap-1 leading-none whitespace-nowrap">
+                <span className="font-black uppercase tracking-wider text-[10px] text-white">
+                  {activeDistress ? 'SOS ACTIVE' : isPressing ? `HOLD ${(triggerHoldProgress * 100).toFixed(0)}%` : 'SOS'}
                 </span>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col text-left pr-1 leading-tight min-w-[105px]">
-              <span className="font-black uppercase tracking-wider text-[11px] sm:text-xs text-white drop-shadow-sm flex items-center gap-1">
-                <span>{activeDistress ? 'SOS ACTIVE' : isPressing ? 'HOLDING SOS...' : 'PANIC / SOS'}</span>
                 {!activeDistress && !isPressing && (
-                  <span className="text-[9px] bg-red-900/80 px-1 py-0.2 rounded text-red-200 border border-red-400/40">
+                  <span className="text-[9px] font-mono bg-red-950/90 px-1 py-0.5 rounded text-red-200 border border-red-400/40">
                     2.0s
                   </span>
                 )}
-              </span>
-              <span className="text-[9px] text-red-200/90 font-mono">
-                {activeDistress
-                  ? 'Dispatch Notified'
-                  : isPressing
-                  ? `Hold: ${(holdProgress * 100).toFixed(0)}%`
-                  : 'Hold 2s to activate'}
-              </span>
-            </div>
-          )}
+              </div>
+            ) : (
+              <div className="flex flex-col text-left pr-1 leading-tight min-w-[105px]">
+                <span className="font-black uppercase tracking-wider text-[11px] sm:text-xs text-white drop-shadow-sm flex items-center gap-1">
+                  <span>{activeDistress ? 'SOS ACTIVE' : isPressing ? 'HOLDING SOS...' : 'PANIC / SOS'}</span>
+                  {!activeDistress && !isPressing && (
+                    <span className="text-[9px] bg-red-900/80 px-1 py-0.2 rounded text-red-200 border border-red-400/40">
+                      2.0s
+                    </span>
+                  )}
+                </span>
+                <span className="text-[9px] text-red-200/90 font-mono">
+                  {activeDistress
+                    ? 'Dispatch Notified'
+                    : isPressing
+                    ? `Hold: ${(triggerHoldProgress * 100).toFixed(0)}%`
+                    : 'Hold 2s to activate'}
+                </span>
+              </div>
+            )}
 
-          {/* Pulsing indicator when active */}
-          {activeDistress && (
-            <span className="w-2 h-2 rounded-full bg-white animate-ping" />
-          )}
-        </button>
-      </div>
+            {/* Pulsing indicator when active */}
+            {activeDistress && (
+              <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+            )}
+          </button>
+        </div>
+      )}
 
       {/* 3. CONFIRMATION MODAL: CANCEL FALSE ALARM */}
       {isCancelModalOpen && (
@@ -632,9 +723,13 @@ export const GuardPanicButton: React.FC<GuardPanicButtonProps> = ({
                 </label>
                 <select
                   value={cancelReason}
-                  onChange={(e) => setCancelReason(e.target.value)}
+                  onChange={(e) => {
+                    resetCancelHold();
+                    setCancelReason(e.target.value);
+                  }}
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-slate-200 text-xs focus:ring-2 focus:ring-red-500 outline-none"
                 >
+                  <option value="">-- Select reason for clearing SOS --</option>
                   <option value="Accidental pocket activation">Accidental pocket activation / pocket press</option>
                   <option value="Training / Drill test">Training / System operational check</option>
                   <option value="Threat de-escalated / Guard safe">Threat de-escalated — Officer is safe</option>
@@ -659,19 +754,54 @@ export const GuardPanicButton: React.FC<GuardPanicButtonProps> = ({
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
               <button
                 type="button"
-                onClick={() => setIsCancelModalOpen(false)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-lg text-xs transition-colors"
+                onClick={() => {
+                  resetCancelHold();
+                  setIsCancelModalOpen(false);
+                }}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-lg text-xs transition-colors shrink-0"
               >
                 Keep SOS Active
               </button>
               <button
                 id="confirm-cancel-false-alarm-btn"
                 type="button"
-                onClick={handleConfirmCancelFalseAlarm}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-lg text-xs transition-colors shadow-lg flex items-center gap-1.5 cursor-pointer"
+                disabled={!cancelReason || isSafeConfirmed}
+                onMouseDown={handleStartCancelHold}
+                onMouseUp={resetCancelHold}
+                onMouseLeave={resetCancelHold}
+                onTouchStart={handleStartCancelHold}
+                onTouchEnd={resetCancelHold}
+                onTouchCancel={resetCancelHold}
+                onContextMenu={(e) => e.preventDefault()}
+                style={{ touchAction: 'none' }}
+                className={`relative overflow-hidden flex-1 px-4 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all select-none touch-none flex items-center justify-center gap-1.5 border ${
+                  isSafeConfirmed
+                    ? 'bg-emerald-500 border-emerald-300 text-slate-950 shadow-lg shadow-emerald-500/40 animate-pulse'
+                    : !cancelReason
+                    ? 'bg-slate-900 border-slate-700 text-slate-500 opacity-60 cursor-not-allowed'
+                    : isHolding
+                    ? 'bg-slate-900 border-emerald-400 text-white shadow-lg shadow-emerald-950/60 cursor-pointer'
+                    : 'bg-slate-900/90 hover:bg-slate-800/90 border-emerald-500/70 text-emerald-300 shadow-lg cursor-pointer'
+                }`}
               >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Confirm I Am Safe (Clear Alert)</span>
+                {/* Left-to-right high-contrast emerald-500 fill progress bar */}
+                {!isSafeConfirmed && (
+                  <div
+                    className="absolute inset-y-0 left-0 bg-emerald-500 transition-none pointer-events-none"
+                    style={{ width: `${holdProgress}%` }}
+                  />
+                )}
+
+                <span className="relative z-10 flex items-center justify-center gap-1.5 drop-shadow-xs">
+                  <CheckCircle2 className={`w-4 h-4 shrink-0 ${isSafeConfirmed ? 'text-slate-950' : isHolding ? 'text-white' : ''}`} />
+                  <span>
+                    {isSafeConfirmed
+                      ? 'SAFE CONFIRMED — STANDING DOWN'
+                      : isHolding
+                      ? `HOLD TO CONFIRM (${Math.ceil((3000 - elapsed) / 1000)}s)...`
+                      : 'PRESS & HOLD TO CONFIRM SAFE (3.0s)'}
+                  </span>
+                </span>
               </button>
             </div>
           </div>

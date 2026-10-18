@@ -90,6 +90,8 @@ export const ActiveCallsPanel: React.FC = () => {
   const { 
     callsForService, 
     activeGuard, 
+    activeClockedInShift,
+    sitesList,
     acknowledgeCall, 
     markCallOnScene,
     updateCallStatus, 
@@ -104,19 +106,148 @@ export const ActiveCallsPanel: React.FC = () => {
   const [selectedDisposition, setSelectedDisposition] = useState<CallDisposition>('Resolved');
   const [resolutionNote, setResolutionNote] = useState('');
 
-  // Filter Active Calls
-  const activeCalls = useMemo(() => {
-    return callsForService.filter(c => c.status !== 'cleared' && c.status !== 'cancelled');
-  }, [callsForService]);
+  // Resolve siteId & siteCode from siteName / sitesList
+  const resolveSiteMeta = (siteName?: string, siteId?: string, siteCode?: string) => {
+    const norm = (siteName || '').trim().toLowerCase();
+    const matchedSite = sitesList.find(
+      (s) =>
+        (siteId && s.id === siteId) ||
+        (siteCode && s.code === siteCode) ||
+        (norm &&
+          (s.name.toLowerCase() === norm ||
+            norm.startsWith(s.name.toLowerCase()) ||
+            s.name.toLowerCase().startsWith(norm)))
+    );
+    return {
+      siteId: siteId || matchedSite?.id || siteName || '',
+      siteCode: siteCode || matchedSite?.code || siteName || '',
+      serviceType: matchedSite?.serviceType
+    };
+  };
 
-  // Cleared Calls History
+  const currentUser = useMemo(() => {
+    if (!activeGuard) return null;
+    return {
+      ...activeGuard,
+      role:
+        activeGuard.role === 'lead' ||
+        activeGuard.role === 'supervisor' ||
+        activeGuard.role === 'FIELD_LEAD'
+          ? 'FIELD_LEAD'
+          : activeGuard.role
+    };
+  }, [activeGuard]);
+
+  const currentShift = useMemo(() => {
+    if (!activeClockedInShift) return null;
+    const siteMeta = resolveSiteMeta(
+      activeClockedInShift.siteName,
+      activeClockedInShift.siteId,
+      activeClockedInShift.siteCode
+    );
+    const derivedMobile = Boolean(
+      activeClockedInShift.isMobileUnit ||
+        activeClockedInShift.isRovingShift ||
+        activeClockedInShift.rovingGroup ||
+        activeClockedInShift.assignedRoverId ||
+        activeClockedInShift.assignedRoverUnit ||
+        activeGuard?.isRovingGuard ||
+        siteMeta.serviceType === 'roving'
+    );
+    return {
+      ...activeClockedInShift,
+      isOnDuty:
+        activeClockedInShift.isOnDuty ??
+        (activeClockedInShift.status === 'on_duty' || activeClockedInShift.status === 'on_break'),
+      postType: activeClockedInShift.postType || (derivedMobile ? 'ROVING' : 'DEDICATED'),
+      isMobileUnit: activeClockedInShift.isMobileUnit ?? derivedMobile,
+      siteId: siteMeta.siteId,
+      siteCode: siteMeta.siteCode
+    };
+  }, [activeClockedInShift, activeGuard, sitesList]);
+
+  // Enrich active calls with resolved siteId, siteCode, title, and type
+  const allCalls = useMemo(() => {
+    return callsForService
+      .filter(c => c.status !== 'cleared' && c.status !== 'cancelled')
+      .map(c => {
+        const siteMeta = resolveSiteMeta(c.siteName, c.siteId, c.siteCode);
+        const isPanicText =
+          c.summary?.toLowerCase().includes('panic') ||
+          c.customTypeLabel?.toLowerCase().includes('panic') ||
+          c.title?.toLowerCase().includes('panic') ||
+          c.type === 'PANIC';
+        return {
+          ...c,
+          siteId: siteMeta.siteId,
+          siteCode: siteMeta.siteCode,
+          title: c.title || c.summary,
+          type: c.type || (isPanicText ? 'PANIC' : c.callType),
+          priority: isPanicText && c.priority === 'urgent_bolo' ? ('EMERGENCY' as CallPriority) : c.priority
+        };
+      });
+  }, [callsForService, sitesList]);
+
+  const isMobileUnitOfficer = Boolean(
+    currentShift &&
+      (currentShift.postType === 'PATROL' ||
+        currentShift.postType === 'ROVING' ||
+        currentShift.isMobileUnit === true ||
+        currentUser?.role === 'FIELD_LEAD')
+  );
+
+  const visibleCalls = useMemo(() => {
+    // Gate 1: Off-Duty Lockout
+    if (!currentShift || !currentShift.isOnDuty) {
+      return [];
+    }
+
+    const isMobileUnit = 
+      currentShift.postType === 'PATROL' || 
+      currentShift.postType === 'ROVING' || 
+      currentShift.isMobileUnit === true ||
+      currentUser?.role === 'FIELD_LEAD';
+
+    return allCalls.filter(call => {
+      // Priority Override: Active SOS Panic alerts always surface system-wide
+      if (call.priority === 'EMERGENCY' && (call.title?.toLowerCase().includes('panic') || call.type === 'PANIC')) {
+        return true;
+      }
+
+      // Gate 2: Roving / Mobile Patrol Units monitor all sector calls
+      if (isMobileUnit) {
+        return true;
+      }
+
+      // Gate 3: Stationary Dedicated posts only see calls matching their active site
+      return call.siteCode === currentShift.siteCode || call.siteId === currentShift.siteId;
+    });
+  }, [allCalls, currentShift, currentUser]);
+
+  // Cleared Calls History (filtered with the same shift/post context)
   const clearedCalls = useMemo(() => {
-    return callsForService.filter(c => c.status === 'cleared');
-  }, [callsForService]);
+    if (!currentShift || !currentShift.isOnDuty) {
+      return [];
+    }
+    return callsForService
+      .filter(c => c.status === 'cleared')
+      .map(c => {
+        const siteMeta = resolveSiteMeta(c.siteName, c.siteId, c.siteCode);
+        return {
+          ...c,
+          siteId: siteMeta.siteId,
+          siteCode: siteMeta.siteCode
+        };
+      })
+      .filter(call => {
+        if (isMobileUnitOfficer) return true;
+        return call.siteCode === currentShift.siteCode || call.siteId === currentShift.siteId;
+      });
+  }, [callsForService, currentShift, isMobileUnitOfficer, sitesList]);
 
   // Current Display List
   const displayedCalls = useMemo(() => {
-    const list = activeTab === 'queue' ? activeCalls : clearedCalls;
+    const list = activeTab === 'queue' ? visibleCalls : clearedCalls;
     if (!searchQuery.trim()) return list;
 
     const q = searchQuery.toLowerCase();
@@ -133,7 +264,7 @@ export const ActiveCallsPanel: React.FC = () => {
 
       return matchId || matchSite || matchLoc || matchSum || matchDet || matchBolo;
     });
-  }, [activeTab, activeCalls, clearedCalls, searchQuery]);
+  }, [activeTab, visibleCalls, clearedCalls, searchQuery]);
 
   const handleOpenClearModal = (call: CallForService) => {
     setClearingCall(call);
@@ -169,9 +300,9 @@ export const ActiveCallsPanel: React.FC = () => {
               <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
                 Calls for Service & BOLOs
               </h2>
-              {activeCalls.length > 0 && (
+              {visibleCalls.length > 0 && (
                 <span className="bg-blue-600 text-white text-xs font-black px-2 py-0.5 rounded-full animate-pulse">
-                  {activeCalls.length} Active
+                  {visibleCalls.length} Active
                 </span>
               )}
             </div>
@@ -182,140 +313,174 @@ export const ActiveCallsPanel: React.FC = () => {
         </div>
 
         {/* Tab Selector */}
-        <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
-          <button
-            id="guard-calls-tab-queue"
-            onClick={() => setActiveTab('queue')}
-            className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'queue'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <Radio className="w-3.5 h-3.5" />
-            <span>Active Queue</span>
-            <span className="bg-blue-900/60 text-white text-[10px] font-mono px-1.5 py-0.2 rounded-full">
-              {activeCalls.length}
-            </span>
-          </button>
+        {currentShift?.isOnDuty && (
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
+            <button
+              id="guard-calls-tab-queue"
+              onClick={() => setActiveTab('queue')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'queue'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Radio className="w-3.5 h-3.5" />
+              <span>Active Queue</span>
+              <span className="bg-blue-900/60 text-white text-[10px] font-mono px-1.5 py-0.2 rounded-full">
+                {visibleCalls.length}
+              </span>
+            </button>
 
-          <button
-            id="guard-calls-tab-history"
-            onClick={() => setActiveTab('history')}
-            className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'history'
-                ? 'bg-emerald-600 text-white shadow-xs'
-                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-            }`}
-          >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Resolved History</span>
-            <span className="bg-emerald-900/60 text-white text-[10px] font-mono px-1.5 py-0.2 rounded-full">
-              {clearedCalls.length}
-            </span>
-          </button>
-        </div>
-      </div>
-
-      {/* Search Filter */}
-      <div className="relative">
-        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input
-          type="text"
-          placeholder="Search active calls, location, BOLO subject details, or notes..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-9 pr-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 shadow-xs focus:ring-1 focus:ring-blue-500"
-        />
-        {searchQuery && (
-          <button
-            onClick={() => setSearchQuery('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+            <button
+              id="guard-calls-tab-history"
+              onClick={() => setActiveTab('history')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'history'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Resolved History</span>
+              <span className="bg-emerald-900/60 text-white text-[10px] font-mono px-1.5 py-0.2 rounded-full">
+                {clearedCalls.length}
+              </span>
+            </button>
+          </div>
         )}
       </div>
 
-      {/* List of Calls */}
-      {displayedCalls.length === 0 ? (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 text-center shadow-xs">
-          <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto mb-3">
-            <CheckCircle2 className="w-6 h-6" />
+      {/* Off-Duty Viewport State vs On-Duty Calls Queue */}
+      {!currentShift?.isOnDuty ? (
+        <div
+          id="guard-calls-off-duty-lockout"
+          className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center shadow-lg space-y-3"
+        >
+          <div className="w-12 h-12 rounded-full bg-slate-800 border border-slate-700 text-amber-400 flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-6 h-6" />
           </div>
-          <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
-            {activeTab === 'queue' ? 'Active Calls Queue is Clear' : 'No Resolved Calls in History'}
+          <h3 className="text-sm font-black uppercase tracking-wider text-slate-100">
+            OFF DUTY RESTRICTION
           </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto mt-1">
-            {activeTab === 'queue'
-              ? 'No pending calls for service or active BOLOs currently assigned to your post.'
-              : 'Cleared calls with dispositions and notes will appear here.'}
+          <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
+            You must be actively clocked into a scheduled shift to monitor live dispatch calls and property BOLOs.
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {displayedCalls.map(call => {
-            const isBolo = call.isBolo || call.priority === 'urgent_bolo';
-            const isCleared = call.status === 'cleared';
-            const isEnRoute = call.status === 'en_route';
-            const isOnScene = call.status === 'on_scene';
-
-            return (
-              <div
-                key={call.id}
-                id={`guard-call-item-${call.id}`}
-                className={`bg-white dark:bg-slate-900 rounded-2xl border shadow-xs transition-all overflow-hidden ${
-                  isBolo && !isCleared
-                    ? 'border-rose-400 dark:border-rose-800 ring-2 ring-rose-400/20'
-                    : call.priority === 'priority' && !isCleared
-                    ? 'border-amber-400 dark:border-amber-800 ring-1 ring-amber-400/20'
-                    : 'border-slate-200 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-700'
-                }`}
+        <>
+          {/* Search Filter */}
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search active calls, location, BOLO subject details, or notes..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-slate-100 shadow-xs focus:ring-1 focus:ring-blue-500"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
-                {/* Header Strip */}
-                <div className={`px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 border-b text-xs ${
-                  isBolo && !isCleared
-                    ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900/60'
-                    : call.priority === 'priority' && !isCleared
-                    ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900/60'
-                    : isCleared
-                    ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-900/40'
-                    : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-800'
-                }`}>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono font-black text-slate-900 dark:text-white">
-                      {call.id}
-                    </span>
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
 
-                    {/* Priority Badge */}
-                    <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
-                      call.priority === 'urgent_bolo'
-                        ? 'bg-rose-600 text-white animate-pulse'
-                        : call.priority === 'priority'
-                        ? 'bg-amber-500 text-slate-950'
-                        : 'bg-blue-600 text-white'
+          {/* List of Calls */}
+          {displayedCalls.length === 0 ? (
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 text-center shadow-xs">
+              <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto mb-3">
+                <CheckCircle2 className="w-6 h-6" />
+              </div>
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                {activeTab === 'queue' ? 'Active Calls Queue is Clear' : 'No Resolved Calls in History'}
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto mt-1">
+                {activeTab === 'queue'
+                  ? 'No pending calls for service or active BOLOs currently assigned to your post.'
+                  : 'Cleared calls with dispositions and notes will appear here.'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {displayedCalls.map(call => {
+                const isBolo = call.isBolo || call.priority === 'urgent_bolo' || call.priority === 'EMERGENCY';
+                const isCleared = call.status === 'cleared';
+                const isEnRoute = call.status === 'en_route';
+                const isPrimarySiteCall =
+                  call.siteCode === currentShift.siteCode || call.siteId === currentShift.siteId;
+
+                return (
+                  <div
+                    key={call.id}
+                    id={`guard-call-item-${call.id}`}
+                    className={`bg-white dark:bg-slate-900 rounded-2xl border shadow-xs transition-all overflow-hidden ${
+                      isBolo && !isCleared
+                        ? 'border-rose-400 dark:border-rose-800 ring-2 ring-rose-400/20'
+                        : call.priority === 'priority' && !isCleared
+                        ? 'border-amber-400 dark:border-amber-800 ring-1 ring-amber-400/20'
+                        : 'border-slate-200 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-700'
+                    }`}
+                  >
+                    {/* Header Strip */}
+                    <div className={`px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 border-b text-xs ${
+                      isBolo && !isCleared
+                        ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900/60'
+                        : call.priority === 'priority' && !isCleared
+                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900/60'
+                        : isCleared
+                        ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-900/40'
+                        : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-800'
                     }`}>
-                      {call.priority === 'urgent_bolo' ? '🚨 URGENT' : call.priority.toUpperCase()}
-                    </span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono font-black text-slate-900 dark:text-white">
+                          {call.id}
+                        </span>
 
-                    {/* Type Label */}
-                    <span className="bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold px-2 py-0.5 rounded-md">
-                      {call.customTypeLabel || call.callType.replace(/_/g, ' ').toUpperCase()}
-                    </span>
+                        {/* Priority Badge */}
+                        <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                          call.priority === 'urgent_bolo' || call.priority === 'EMERGENCY'
+                            ? 'bg-rose-600 text-white animate-pulse'
+                            : call.priority === 'priority'
+                            ? 'bg-amber-500 text-slate-950'
+                            : 'bg-blue-600 text-white'
+                        }`}>
+                          {call.priority === 'urgent_bolo' || call.priority === 'EMERGENCY'
+                            ? '🚨 URGENT'
+                            : call.priority.toUpperCase()}
+                        </span>
 
-                    {/* Status Badge */}
-                    <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md ${
-                      call.status === 'dispatched'
-                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 ring-1 ring-blue-400'
-                        : call.status === 'en_route'
-                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 ring-1 ring-amber-400 animate-pulse'
-                        : call.status === 'on_scene'
-                        ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 ring-1 ring-purple-400'
-                        : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 ring-1 ring-emerald-400'
-                    }`}>
-                      {call.status.replace(/_/g, ' ')}
-                    </span>
-                  </div>
+                        {/* Context Badging: Mobile Patrol vs Dedicated On-Site */}
+                        {isMobileUnitOfficer && !isPrimarySiteCall ? (
+                          <span className="bg-cyan-500/10 text-cyan-600 dark:bg-cyan-950/70 dark:text-cyan-300 border border-cyan-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                            Mutual Aid / Sector
+                          </span>
+                        ) : isPrimarySiteCall ? (
+                          <span className="bg-emerald-500/10 text-emerald-600 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                            On-Site Dispatch
+                          </span>
+                        ) : null}
+
+                        {/* Type Label */}
+                        <span className="bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-bold px-2 py-0.5 rounded-md">
+                          {call.customTypeLabel || call.callType.replace(/_/g, ' ').toUpperCase()}
+                        </span>
+
+                        {/* Status Badge */}
+                        <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md ${
+                          call.status === 'dispatched'
+                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 ring-1 ring-blue-400'
+                            : call.status === 'en_route'
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 ring-1 ring-amber-400 animate-pulse'
+                            : call.status === 'on_scene'
+                            ? 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 ring-1 ring-purple-400'
+                            : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 ring-1 ring-emerald-400'
+                        }`}>
+                          {call.status.replace(/_/g, ' ')}
+                        </span>
+                      </div>
 
                   <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400 flex items-center gap-1">
                     <Clock className="w-3 h-3" />
@@ -495,6 +660,8 @@ export const ActiveCallsPanel: React.FC = () => {
             );
           })}
         </div>
+          )}
+        </>
       )}
 
       {/* CLEAR CALL DISPOSITION MODAL */}

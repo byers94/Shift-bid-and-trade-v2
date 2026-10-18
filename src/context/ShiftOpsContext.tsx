@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   Shift, 
   Trade, 
@@ -4370,15 +4370,15 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setGuardsList((prev) =>
       prev.map((g) => {
         if (g.id === id) {
-          const updated = { ...g, ...data };
-          if (activeGuard.id === id) {
-            setActiveGuard(updated);
-          }
-          return updated;
+          return { ...g, ...data };
         }
         return g;
       })
     );
+
+    if (activeGuard.id === id) {
+      setActiveGuard((prev) => ({ ...prev, ...data }));
+    }
 
     const guard = guardsList.find((g) => g.id === id);
     const guardName = guard?.name || 'Guard';
@@ -6594,92 +6594,102 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Real-time Automated Guard Break Monitor:
   // Evaluates every 2 seconds for shifts in 'on_break' status.
   // Alerts Admin if a guard is MORE THAN 5 MINUTES LATE returning to shift!
+  const scheduledShiftsRef = useRef(scheduledShifts);
+  useEffect(() => {
+    scheduledShiftsRef.current = scheduledShifts;
+  }, [scheduledShifts]);
+
   useEffect(() => {
     const timer = setInterval(() => {
       const nowMs = Date.now();
+      const currentShifts = scheduledShiftsRef.current;
+      const generatedAlerts: LateBreakAlert[] = [];
+      const alertedBreakIds = new Set<string>();
 
-      setScheduledShifts((prevShifts) => {
-        let shiftsModified = false;
-        const generatedAlerts: LateBreakAlert[] = [];
+      currentShifts.forEach((shift) => {
+        if (shift.status === 'on_break') {
+          const activeBreak = shift.breaks?.slice(-1)[0];
+          if (activeBreak && !activeBreak.endedAt && !activeBreak.overdueAlertSentToAdmin) {
+            const allocatedMins = activeBreak.allocatedMinutes || (activeBreak.type === 'rest' ? 10 : mealBreakDurationMinutes);
+            const elapsedSecs = Math.max(0, Math.floor((nowMs - new Date(activeBreak.startedAt).getTime()) / 1000));
+            const allocatedSecs = allocatedMins * 60;
+            const overdueSecs = elapsedSecs - allocatedSecs;
 
-        prevShifts.forEach((shift) => {
-          if (shift.status === 'on_break') {
-            const activeBreak = shift.breaks?.slice(-1)[0];
-            if (activeBreak && !activeBreak.endedAt) {
-              const allocatedMins = activeBreak.allocatedMinutes || (activeBreak.type === 'rest' ? 10 : mealBreakDurationMinutes);
-              const elapsedSecs = Math.max(0, Math.floor((nowMs - new Date(activeBreak.startedAt).getTime()) / 1000));
-              const allocatedSecs = allocatedMins * 60;
-              const overdueSecs = elapsedSecs - allocatedSecs;
+            // Check if officer is MORE THAN 5 MINUTES (300 seconds) late returning
+            if (overdueSecs >= 300) {
+              const minutesLate = Math.floor(overdueSecs / 60);
+              alertedBreakIds.add(activeBreak.id);
 
-              // Check if officer is MORE THAN 5 MINUTES (300 seconds) late returning
-              if (overdueSecs >= 300) {
-                const minutesLate = Math.floor(overdueSecs / 60);
+              const alertId = `late-brk-${shift.id}-${activeBreak.id}`;
+              generatedAlerts.push({
+                id: alertId,
+                shiftId: shift.id,
+                guardId: shift.guardId,
+                guardName: shift.guardName,
+                guardBadge: shift.guardBadge,
+                guardPhone: shift.guardPhone,
+                siteId: shift.siteId,
+                siteName: shift.siteName,
+                postRole: shift.postRole,
+                breakType: activeBreak.type,
+                startedAt: activeBreak.startedAt,
+                allocatedMinutes: allocatedMins,
+                minutesLate,
+                alertTriggeredAt: new Date().toISOString(),
+                acknowledged: false
+              });
 
-                if (!activeBreak.overdueAlertSentToAdmin) {
-                  activeBreak.overdueAlertSentToAdmin = true;
-                  shiftsModified = true;
+              playLateBreakAdminAlertSound();
 
-                  const alertId = `late-brk-${shift.id}-${activeBreak.id}`;
-                  generatedAlerts.push({
-                    id: alertId,
-                    shiftId: shift.id,
-                    guardId: shift.guardId,
-                    guardName: shift.guardName,
-                    guardBadge: shift.guardBadge,
-                    guardPhone: shift.guardPhone,
-                    siteId: shift.siteId,
-                    siteName: shift.siteName,
-                    postRole: shift.postRole,
-                    breakType: activeBreak.type,
-                    startedAt: activeBreak.startedAt,
-                    allocatedMinutes: allocatedMins,
-                    minutesLate,
-                    alertTriggeredAt: new Date().toISOString(),
-                    acknowledged: false
-                  });
-
-                  // Trigger audible dispatch tone
-                  playLateBreakAdminAlertSound();
-
-                  // Dispatch Admin Action
-                  logAdminAction({
-                    type: 'guard_late_break',
-                    title: `🚨 Officer >5m Late Returning From Break: ${shift.guardName}`,
-                    description: `Officer ${shift.guardName} (${shift.guardBadge}) at ${shift.siteName} is +${minutesLate}m overdue returning from ${activeBreak.type === 'meal' ? 'meal' : '10-min rest'} break.`,
-                    adminName: 'Dispatch CAD Sentinel',
-                    adminBadge: 'CAD-AUTO',
-                    badgeVariant: 'rose',
-                    metadata: {
-                      shiftId: shift.id,
-                      guardId: shift.guardId,
-                      breakType: activeBreak.type,
-                      minutesLate,
-                      allocatedMinutes: allocatedMins
-                    }
-                  });
-
-                  // Show urgent notification
-                  showToast(
-                    `🚨 Officer Late Returning From Break (+${minutesLate}m)`,
-                    `${shift.guardName} at ${shift.siteName} is >5 minutes late returning to active post.`,
-                    'danger'
-                  );
+              logAdminAction({
+                type: 'guard_late_break',
+                title: `🚨 Officer >5m Late Returning From Break: ${shift.guardName}`,
+                description: `Officer ${shift.guardName} (${shift.guardBadge}) at ${shift.siteName} is +${minutesLate}m overdue returning from ${activeBreak.type === 'meal' ? 'meal' : '10-min rest'} break.`,
+                adminName: 'Dispatch CAD Sentinel',
+                adminBadge: 'CAD-AUTO',
+                badgeVariant: 'rose',
+                metadata: {
+                  shiftId: shift.id,
+                  guardId: shift.guardId,
+                  breakType: activeBreak.type,
+                  minutesLate,
+                  allocatedMinutes: allocatedMins
                 }
-              }
+              });
+
+              showToast(
+                `🚨 Officer Late Returning From Break (+${minutesLate}m)`,
+                `${shift.guardName} at ${shift.siteName} is >5 minutes late returning to active post.`,
+                'danger'
+              );
             }
           }
-        });
-
-        if (generatedAlerts.length > 0) {
-          setLateBreakAlerts((prevAlerts) => {
-            const existingIds = new Set(prevAlerts.map((a) => a.id));
-            const fresh = generatedAlerts.filter((a) => !existingIds.has(a.id));
-            return [...fresh, ...prevAlerts];
-          });
         }
-
-        return shiftsModified ? [...prevShifts] : prevShifts;
       });
+
+      if (alertedBreakIds.size > 0) {
+        setScheduledShifts((prevShifts) =>
+          prevShifts.map((shift) => {
+            if (shift.status !== 'on_break' || !shift.breaks) return shift;
+            const hasTargetBreak = shift.breaks.some((b) => alertedBreakIds.has(b.id));
+            if (!hasTargetBreak) return shift;
+            return {
+              ...shift,
+              breaks: shift.breaks.map((b) =>
+                alertedBreakIds.has(b.id) ? { ...b, overdueAlertSentToAdmin: true } : b
+              )
+            };
+          })
+        );
+      }
+
+      if (generatedAlerts.length > 0) {
+        setLateBreakAlerts((prevAlerts) => {
+          const existingIds = new Set(prevAlerts.map((a) => a.id));
+          const fresh = generatedAlerts.filter((a) => !existingIds.has(a.id));
+          return [...fresh, ...prevAlerts];
+        });
+      }
     }, 2000);
 
     return () => clearInterval(timer);
@@ -7213,6 +7223,55 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       currentGps?: { latitude: number; longitude: number };
     }
   ) => {
+    const targetShift = scheduledShifts.find((s) => s.id === shiftId);
+    if (targetShift) {
+      const currentStatus = targetShift.offSiteBreachStatus || 'normal';
+      if (data.inGeofence) {
+        const wasOutOfZone = currentStatus === 'debounce_pending' || currentStatus === 'breached_unacknowledged';
+        if (wasOutOfZone) {
+          addAuditLog(
+            'GEOFENCE_REENTERED',
+            targetShift.guardId,
+            `Officer ${targetShift.guardName} (${targetShift.guardBadge}) returned inside ${targetShift.siteName} boundary perimeter (${data.distanceMeters || 0}m). Breach resolved.`,
+            targetShift.guardName,
+            'success'
+          );
+          logAdminAction({
+            type: 'shift_scheduled',
+            adminName: targetShift.guardName,
+            adminBadge: targetShift.guardBadge,
+            badgeVariant: 'emerald',
+            title: `Guard Returned On-Site: ${targetShift.guardName}`,
+            description: `Returned inside ${targetShift.siteName} perimeter boundary (${data.matchedParcelName || 'Main Zone'}).`
+          });
+          showToast('Returned Inside Perimeter', `Officer ${targetShift.guardName} has returned inside ${targetShift.siteName} boundary.`, 'success');
+        }
+      } else if (currentStatus === 'normal' || currentStatus === 'resolved') {
+        playGeofenceDepartureWarningSound();
+        const debounceSec = (sitesList.find(s => s.name === targetShift.siteName)?.departureDebounceMinutes || 3) * 60;
+        addAuditLog(
+          'GEOFENCE_DEPARTURE_DETECTED',
+          targetShift.guardId,
+          `Perimeter departure detected for ${targetShift.guardName} at ${targetShift.siteName} (${data.distanceMeters || 0}m outside boundary). 3-minute dwell buffer active.`,
+          'System Geofence Engine',
+          'warning'
+        );
+        logAdminAction({
+          type: 'geofence_departure_warning',
+          adminName: "System Engine",
+          adminBadge: 'GEOFENCE-AI',
+          badgeVariant: 'amber',
+          title: `Site Departure: ${targetShift.guardName}`,
+          description: `Officer moved ~${data.distanceMeters || 75}m outside ${targetShift.siteName}. Awaiting guard departure reason or return (${Math.round(debounceSec / 60)}m debounce).`
+        });
+        showToast(
+          'Geofence Departure Detected',
+          `${targetShift.guardName} is outside ${targetShift.siteName} boundary (${data.distanceMeters || 0}m). 3m dwell buffer started.`,
+          'warning'
+        );
+      }
+    }
+
     setScheduledShifts((prev) =>
       prev.map((shift) => {
         if (shift.id !== shiftId) return shift;
@@ -7220,27 +7279,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const currentStatus = shift.offSiteBreachStatus || 'normal';
 
         if (data.inGeofence) {
-          // Guard is back inside boundary!
           const wasOutOfZone = currentStatus === 'debounce_pending' || currentStatus === 'breached_unacknowledged';
-
-          if (wasOutOfZone) {
-            addAuditLog(
-              'GEOFENCE_REENTERED',
-              shift.guardId,
-              `Officer ${shift.guardName} (${shift.guardBadge}) returned inside ${shift.siteName} boundary perimeter (${data.distanceMeters || 0}m). Breach resolved.`,
-              shift.guardName,
-              'success'
-            );
-            logAdminAction({
-              type: 'shift_scheduled',
-              adminName: shift.guardName,
-              adminBadge: shift.guardBadge,
-              badgeVariant: 'emerald',
-              title: `Guard Returned On-Site: ${shift.guardName}`,
-              description: `Returned inside ${shift.siteName} perimeter boundary (${data.matchedParcelName || 'Main Zone'}).`
-            });
-            showToast('Returned Inside Perimeter', `Officer ${shift.guardName} has returned inside ${shift.siteName} boundary.`, 'success');
-          }
 
           return {
             ...shift,
@@ -7254,35 +7293,8 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             gpsCoordinates: data.currentGps ? { ...data.currentGps, accuracy: 5 } : shift.gpsCoordinates
           };
         } else {
-          // Guard is outside boundary!
           if (currentStatus === 'normal' || currentStatus === 'resolved') {
-            // First out of bounds reading: trigger 3-minute debounce countdown!
-            playGeofenceDepartureWarningSound();
-
             const debounceSec = (sitesList.find(s => s.name === shift.siteName)?.departureDebounceMinutes || 3) * 60;
-
-            addAuditLog(
-              'GEOFENCE_DEPARTURE_DETECTED',
-              shift.guardId,
-              `Perimeter departure detected for ${shift.guardName} at ${shift.siteName} (${data.distanceMeters || 0}m outside boundary). 3-minute dwell buffer active.`,
-              'System Geofence Engine',
-              'warning'
-            );
-
-            logAdminAction({
-              type: 'geofence_departure_warning',
-              adminName: "System Engine",
-              adminBadge: 'GEOFENCE-AI',
-              badgeVariant: 'amber',
-              title: `Site Departure: ${shift.guardName}`,
-              description: `Officer moved ~${data.distanceMeters || 75}m outside ${shift.siteName}. Awaiting guard departure reason or return (${Math.round(debounceSec / 60)}m debounce).`
-            });
-
-            showToast(
-              'Geofence Departure Detected',
-              `${shift.guardName} is outside ${shift.siteName} boundary (${data.distanceMeters || 0}m). 3m dwell buffer started.`,
-              'warning'
-            );
 
             return {
               ...shift,
@@ -7296,7 +7308,6 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               gpsCoordinates: data.currentGps ? { ...data.currentGps, accuracy: 5 } : shift.gpsCoordinates
             };
           } else {
-            // Already debounce_pending, breached_unacknowledged, or excused
             return {
               ...shift,
               currentInsideGeofence: false,

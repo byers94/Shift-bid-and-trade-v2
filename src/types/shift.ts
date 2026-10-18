@@ -43,7 +43,7 @@ export interface GuardProfile {
   name: string;
   phone: string;
   badgeNumber: string;
-  role: 'guard' | 'lead' | 'supervisor';
+  role: 'guard' | 'lead' | 'supervisor' | 'FIELD_LEAD';
   ojtSites: string[]; // sites guard is fully qualified/trained on
   trainedSites?: string[]; // trained site IDs per qualification spec
   email?: string;
@@ -912,7 +912,7 @@ export interface TimeSpecificTaskAlert {
   acknowledgedAt?: string;
 }
 
-export type CallPriority = 'routine' | 'priority' | 'urgent_bolo';
+export type CallPriority = 'routine' | 'priority' | 'urgent_bolo' | 'EMERGENCY';
 
 export type CallStatus = 'dispatched' | 'en_route' | 'on_scene' | 'cleared' | 'cancelled';
 
@@ -1014,9 +1014,13 @@ export interface CallForService {
   callType: CallType;
   customTypeLabel?: string;
   priority: CallPriority;
+  siteId?: string;
+  siteCode?: string;
   siteName: string; // Specific facility or "ALL SITES"
   locationDetails: string; // Specific post/area e.g. "Gate 3 Loading Dock, Berth 4"
   summary: string;
+  title?: string;
+  type?: string;
   details?: string;
   
   // BOLO specifics
@@ -1104,6 +1108,7 @@ export interface ScheduledShift {
   guardBadge: string;
   guardPhone?: string;
   siteId?: string;
+  siteCode?: string;
   siteName: string;
   siteAddress?: string;
   date: string; // YYYY-MM-DD
@@ -1111,6 +1116,9 @@ export interface ScheduledShift {
   endTime: string; // HH:mm (24h) e.g. "16:00"
   hours: number;
   postRole: string; // e.g. "Access Control & Lobby", "Perimeter Patrol", "Gate 4 Checkpoint"
+  postType?: 'PATROL' | 'ROVING' | 'DEDICATED' | string;
+  isMobileUnit?: boolean;
+  isOnDuty?: boolean;
   postInstructions?: string;
   requiredCertifications?: string[];
   status: ShiftDutyStatus;

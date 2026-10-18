@@ -168,16 +168,41 @@ export function useGuardContinuousTelemetry({
     };
   }, [activeShift?.id, activeShift?.status, updatePermissions]);
 
+  const onAddBreadcrumbRef = useRef(onAddBreadcrumb);
+  useEffect(() => {
+    onAddBreadcrumbRef.current = onAddBreadcrumb;
+  }, [onAddBreadcrumb]);
+
+  const activeShiftRef = useRef(activeShift);
+  useEffect(() => {
+    activeShiftRef.current = activeShift;
+  }, [activeShift]);
+
+  const siteRef = useRef(site);
+  useEffect(() => {
+    siteRef.current = site;
+  }, [site]);
+
+  const batteryLevelRef = useRef(permissions.batteryStatus?.level ?? 92);
+  useEffect(() => {
+    batteryLevelRef.current = permissions.batteryStatus?.level ?? 92;
+  }, [permissions.batteryStatus?.level]);
+
   // Continuous 30-Second Interval Breadcrumb Logger
   useEffect(() => {
-    if (!activeShift || (activeShift.status !== 'on_duty' && activeShift.status !== 'on_break')) {
+    const currentShift = activeShiftRef.current;
+    if (!currentShift || (currentShift.status !== 'on_duty' && currentShift.status !== 'on_break')) {
       return;
     }
 
-    const shiftId = activeShift.id;
-    const baseSite = site;
+    const shiftId = currentShift.id;
 
     const logBreadcrumbSample = () => {
+      const shiftNow = activeShiftRef.current;
+      if (!shiftNow || (shiftNow.status !== 'on_duty' && shiftNow.status !== 'on_break')) {
+        return;
+      }
+      const baseSite = siteRef.current;
       const isBackground = typeof document !== 'undefined' && document.hidden;
       const nowIso = new Date().toISOString();
 
@@ -190,9 +215,9 @@ export function useGuardContinuousTelemetry({
 
       // If device GPS is unavailable or mock in testing, fall back to activeShift coordinates or site coordinates with subtle drift
       if (!lat || !lng) {
-        if (activeShift.gpsCoordinates?.latitude && activeShift.gpsCoordinates?.longitude) {
-          lat = activeShift.gpsCoordinates.latitude;
-          lng = activeShift.gpsCoordinates.longitude;
+        if (shiftNow.gpsCoordinates?.latitude && shiftNow.gpsCoordinates?.longitude) {
+          lat = shiftNow.gpsCoordinates.latitude;
+          lng = shiftNow.gpsCoordinates.longitude;
         } else if (baseSite?.latitude && baseSite?.longitude) {
           lat = baseSite.latitude;
           lng = baseSite.longitude;
@@ -221,8 +246,8 @@ export function useGuardContinuousTelemetry({
       }
 
       const status: GpsBreadcrumb['status'] = inGeofence 
-        ? activeShift.status 
-        : (activeShift.offSiteBreachStatus === 'breached_unacknowledged' ? 'breached' : 'debounce_pending');
+        ? shiftNow.status 
+        : (shiftNow.offSiteBreachStatus === 'breached_unacknowledged' ? 'breached' : 'debounce_pending');
 
       const crumbData: Omit<GpsBreadcrumb, 'id'> = {
         latitude: lat,
@@ -234,22 +259,29 @@ export function useGuardContinuousTelemetry({
         inGeofence,
         distanceMeters,
         status,
-        batteryLevel: permissions.batteryStatus?.level ?? 92,
+        batteryLevel: batteryLevelRef.current,
         isBackground,
         recordedIntervalSec: 30,
         source: 'interval_timer'
       };
 
-      onAddBreadcrumb(shiftId, crumbData);
+      onAddBreadcrumbRef.current(shiftId, crumbData);
 
-      updatePermissions({
-        lastPingTimestamp: nowIso,
-        totalBreadcrumbsLoggedToday: (permissions.totalBreadcrumbsLoggedToday || 0) + 1
+      setPermissions((prev) => {
+        const next = {
+          ...prev,
+          lastPingTimestamp: nowIso,
+          totalBreadcrumbsLoggedToday: (prev.totalBreadcrumbsLoggedToday || 0) + 1
+        };
+        try {
+          localStorage.setItem(STORAGE_KEY_TELEMETRY_PERMS, JSON.stringify(next));
+        } catch {}
+        return next;
       });
     };
 
     // Log immediately on start if none recorded yet
-    if (!activeShift.breadcrumbs || activeShift.breadcrumbs.length === 0) {
+    if (!currentShift.breadcrumbs || currentShift.breadcrumbs.length === 0) {
       logBreadcrumbSample();
     }
 
@@ -259,15 +291,7 @@ export function useGuardContinuousTelemetry({
     return () => {
       clearInterval(intervalTimer);
     };
-  }, [
-    activeShift?.id,
-    activeShift?.status,
-    site,
-    onAddBreadcrumb,
-    permissions.batteryStatus?.level,
-    permissions.totalBreadcrumbsLoggedToday,
-    updatePermissions
-  ]);
+  }, [activeShift?.id, activeShift?.status]);
 
   const isTracking = Boolean(activeShift && (activeShift.status === 'on_duty' || activeShift.status === 'on_break'));
   const isBackgroundEnabled = Boolean(permissions.backgroundExecutionAllowed);

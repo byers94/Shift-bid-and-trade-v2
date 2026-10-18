@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
 import { formatElapsedTimer, getShiftElapsedSeconds } from '../../utils/time';
 import { 
@@ -110,6 +110,13 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
     getShiftBreadcrumbs
   } = useShiftOps();
 
+  const handleAddBreadcrumb = useCallback(
+    (shiftId: string, crumb: Parameters<typeof addGpsBreadcrumb>[1]) => {
+      addGpsBreadcrumb(shiftId, crumb);
+    },
+    [addGpsBreadcrumb]
+  );
+
   // Continuous 30-Second Background GPS Telemetry Hook
   const {
     isTracking,
@@ -132,9 +139,7 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
   } = useGuardContinuousTelemetry({
     activeShift: activeClockedInShift || null,
     site: sitesList.find((s) => s.name === activeClockedInShift?.siteName || s.id === activeClockedInShift?.siteId),
-    onAddBreadcrumb: (shiftId, crumb) => {
-      addGpsBreadcrumb(shiftId, crumb);
-    }
+    onAddBreadcrumb: handleAddBreadcrumb
   });
 
   const [isShiftTrailModalOpen, setIsShiftTrailModalOpen] = useState<boolean>(false);
@@ -221,11 +226,13 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
 
   const [breakElapsedSec, setBreakElapsedSec] = useState<number>(0);
   const [hasAlertedBreakOver, setHasAlertedBreakOver] = useState<boolean>(false);
+  const hasAlertedBreakOverRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (activeClockedInShift?.status !== 'on_break' || !currentActiveBreak || currentActiveBreak.endedAt) {
       setBreakElapsedSec(0);
       setHasAlertedBreakOver(false);
+      hasAlertedBreakOverRef.current = false;
       return;
     }
 
@@ -238,15 +245,15 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
       const allocatedMins = currentActiveBreak.allocatedMinutes || (currentActiveBreak.type === 'rest' ? 10 : mealBreakDurationMinutes);
       const allocatedSec = allocatedMins * 60;
 
-      if (elapsed >= allocatedSec) {
-        setHasAlertedBreakOver((prev) => {
-          if (!prev) {
-            playBreakOverAlertSound();
-            showToast('Break Time Expired', `Your ${currentActiveBreak.type === 'rest' ? '10-minute rest' : `${allocatedMins}-minute meal`} break has ended. Please resume duty immediately.`, 'warning');
-            return true;
-          }
-          return prev;
-        });
+      if (elapsed >= allocatedSec && !hasAlertedBreakOverRef.current) {
+        hasAlertedBreakOverRef.current = true;
+        setHasAlertedBreakOver(true);
+        playBreakOverAlertSound();
+        showToast(
+          'Break Time Expired',
+          `Your ${currentActiveBreak.type === 'rest' ? '10-minute rest' : `${allocatedMins}-minute meal`} break has ended. Please resume duty immediately.`,
+          'warning'
+        );
       }
     };
 

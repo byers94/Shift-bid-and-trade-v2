@@ -316,7 +316,7 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
       >
         {/* Active SOS Distress Flashing Banner (Only rendered when SOS is triggered) */}
         {activeDistress && (
-          <GuardPanicButton variant="compact" showActiveBanner={true} className="hidden" />
+          <GuardPanicButton variant="compact" showActiveBanner={true} hideTriggerButton={true} className="hidden" />
         )}
 
         {/* Secondary Static Card: Officer Bio, Profile Switcher & Alert Channel Controls (Scrolls away naturally) */}
