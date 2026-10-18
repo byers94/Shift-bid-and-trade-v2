@@ -16,6 +16,8 @@ import { UpcomingShiftReminderBanner } from './UpcomingShiftReminderBanner';
 import { GuardLeaderboardView } from './GuardLeaderboardView';
 import { GuardCoachingAlertBanner } from './GuardCoachingAlertBanner';
 import { GuardPanicButton, usePanicSosAlert } from './GuardPanicButton';
+import { calculateLicenseStatus } from '../../utils/complianceEngine';
+import { LicenseStatus } from '../../types/scheduling';
 import { 
   ChevronDown, 
   PhoneCall,
@@ -78,6 +80,44 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
     'City Airport Gate 4';
 
   const isOnBreak = activeClockedInShift?.status === 'on_break';
+
+  // Resolve currentUser Denver Security License (DSL) compliance state
+  const currentUserDsl = React.useMemo(() => {
+    const rawGuard = activeGuard as any;
+    if (rawGuard.licenseStatus) {
+      return {
+        licenseStatus: rawGuard.licenseStatus as LicenseStatus,
+        daysUntilExpiration: rawGuard.daysUntilExpiration ?? 14,
+        daysExpired: rawGuard.daysExpired ?? 0,
+      };
+    }
+    if (rawGuard.dslExpirationDate !== undefined) {
+      const calc = calculateLicenseStatus(rawGuard.dslExpirationDate);
+      return {
+        licenseStatus: calc.status,
+        daysUntilExpiration: calc.daysUntilExpiration,
+        daysExpired: calc.daysExpired,
+      };
+    }
+    // Deterministic fallback by guard profile so officers can preview compliance states
+    if (activeGuard.id === 'g-2' || activeGuard.badgeNumber === 'SEC-108') {
+      return { licenseStatus: 'EXPIRING_SOON' as LicenseStatus, daysUntilExpiration: 14, daysExpired: 0 };
+    }
+    if (activeGuard.id === 'g-3' || activeGuard.badgeNumber === 'SEC-115') {
+      return { licenseStatus: 'EXPIRED_GRACE' as LicenseStatus, daysUntilExpiration: 0, daysExpired: 22 };
+    }
+    if (activeGuard.id === 'g-4' || activeGuard.badgeNumber === 'SEC-122') {
+      return { licenseStatus: 'REVOKED' as LicenseStatus, daysUntilExpiration: 0, daysExpired: 115 };
+    }
+    return { licenseStatus: 'COMPLIANT' as LicenseStatus, daysUntilExpiration: 180, daysExpired: 0 };
+  }, [activeGuard]);
+
+  const currentUser = {
+    ...activeGuard,
+    licenseStatus: currentUserDsl.licenseStatus,
+    daysUntilExpiration: currentUserDsl.daysUntilExpiration,
+    daysExpired: currentUserDsl.daysExpired,
+  };
 
   return (
     <aside 
@@ -171,6 +211,44 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
           <GuardPanicButton variant="compact" showActiveBanner={false} />
         </div>
       </header>
+
+      {/* Persistent Denver Security License (DSL) Compliance Banner */}
+      {currentUser.licenseStatus !== 'COMPLIANT' && (
+        <>
+          {currentUser.licenseStatus === 'EXPIRING_SOON' && (
+            <div
+              id="guard-dsl-expiring-soon-banner"
+              className="bg-amber-950/80 border-b border-amber-500/50 text-amber-200 text-xs px-3 py-2 flex items-center justify-between"
+            >
+              <span>
+                ⚠️ Denver Security License expires in {currentUser.daysUntilExpiration} days. Renew to maintain Denver County post eligibility.
+              </span>
+            </div>
+          )}
+
+          {currentUser.licenseStatus === 'EXPIRED_GRACE' && (
+            <div
+              id="guard-dsl-expired-grace-banner"
+              className="bg-rose-950/90 border-b border-rose-500/60 text-rose-200 text-xs px-3 py-2 flex items-center justify-between animate-pulse"
+            >
+              <span>
+                🚨 Denver License Expired ({currentUser.daysExpired}d ago): Restricted from Denver County posts ({90 - currentUser.daysExpired}d left in renewal grace period). Regional Colorado posts remain active.
+              </span>
+            </div>
+          )}
+
+          {currentUser.licenseStatus === 'REVOKED' && (
+            <div
+              id="guard-dsl-revoked-banner"
+              className="bg-red-950 border-b border-red-600 text-red-200 text-xs px-3 py-2 flex items-center justify-between"
+            >
+              <span>
+                ⛔ Denver License Lapsed (&gt;90d): Renewal window expired. Restricted from Denver posts. Eligible for regional non-Denver sites.
+              </span>
+            </div>
+          )}
+        </>
+      )}
 
       {/* 2. Secondary Nav Strip (sticky top-[54px], z-20, compact low-profile pills) */}
       <nav

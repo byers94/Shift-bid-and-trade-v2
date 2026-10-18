@@ -1,5 +1,10 @@
 import { Shift, GuardProfile, BidRecord, SiteProfile, SetSchedule, TimeOffRequest, SetScheduleAiSuggestion, DayOfWeek } from '../types/shift';
 import { INITIAL_SITES } from '../data/mockData';
+import { autoFillShifts } from './autoFillEngine';
+import { SchedulingConstraints, DEFAULT_SCHEDULING_CONSTRAINTS, ShiftSchedule } from '../types/scheduling';
+
+export { autoFillShifts, DEFAULT_SCHEDULING_CONSTRAINTS };
+export type { SchedulingConstraints };
 
 export interface GuardCandidateEvaluation {
   guard: GuardProfile;
@@ -574,62 +579,53 @@ export function generateSetScheduleAiSuggestions(
 
 /**
  * Generates an optimized batch auto-fill proposal across multiple open shifts,
- * resolving facility profiles and required clearances from Site Directory.
+ * enforcing weekly overtime ceilings, 12h rest turnaround, consecutive day limits, and load balancing.
  */
 export function generateBatchAutoFillPlan(
   openShifts: Shift[],
   guardsList: GuardProfile[],
   allShifts: Shift[],
   allBids: BidRecord[] = [],
-  sitesList: SiteProfile[] = INITIAL_SITES
+  sitesList: SiteProfile[] = INITIAL_SITES,
+  scheduledShifts: ShiftSchedule[] = [],
+  constraints: SchedulingConstraints = DEFAULT_SCHEDULING_CONSTRAINTS
 ): BatchAutoFillItem[] {
-  // Track dynamically assigned guards per date to prevent duplicate assignments during batching
-  const assignedByDate: Record<string, Set<string>> = {};
+  const existingAssignments: ShiftSchedule[] = [
+    ...scheduledShifts,
+    ...allShifts.filter((s) => s.status === 'filled' && (s.assignedGuardId || s.assignedGuardName)),
+  ];
 
-  // Initialize with already filled shifts in the system
-  allShifts
-    .filter((s) => s.status === 'filled' && (s.assignedGuardId || s.assignedGuardName))
-    .forEach((s) => {
-      if (!assignedByDate[s.date]) {
-        assignedByDate[s.date] = new Set();
-      }
-      if (s.assignedGuardId) assignedByDate[s.date].add(s.assignedGuardId);
-      if (s.assignedGuardName) assignedByDate[s.date].add(s.assignedGuardName.toLowerCase());
-    });
+  // Run the stateful constraint-satisfaction engine
+  const engineResult = autoFillShifts(openShifts, guardsList, existingAssignments, constraints);
+  const assignmentByShiftId = new Map(engineResult.assignments.map((a) => [a.shiftId, a]));
 
-  // Sort open shifts: Emergency first, then chronologically soonest
-  const prioritizedShifts = [...openShifts].sort((a, b) => {
-    if (a.urgency === 'emergency' && b.urgency !== 'emergency') return -1;
-    if (a.urgency !== 'emergency' && b.urgency === 'emergency') return 1;
-    return a.date.localeCompare(b.date);
+  // Sort open shifts chronologically by startTime to match engine processing order
+  const sortedShifts = [...openShifts].sort((a, b) => {
+    const cmp = a.date.localeCompare(b.date);
+    if (cmp !== 0) return cmp;
+    return (a.startTime || '').localeCompare(b.startTime || '');
   });
 
   const planItems: BatchAutoFillItem[] = [];
 
-  prioritizedShifts.forEach((shift) => {
+  sortedShifts.forEach((shift) => {
     const siteProfile = findSiteProfile(shift.siteName, sitesList);
-    // Generate candidates with Site Directory context
     const allCandidates = suggestGuardsForShift(shift, guardsList, allShifts, allBids, sitesList);
-    
-    // Pick the highest scoring candidate that is not already assigned on this date
-    const dateAssignments = assignedByDate[shift.date] || new Set<string>();
-    
-    const viableCandidate = allCandidates.find((cand) => {
-      if (cand.hasScheduleConflict) return false;
-      const isAlreadyAssignedInBatch = 
-        dateAssignments.has(cand.guard.id) || 
-        dateAssignments.has(cand.guard.name.toLowerCase());
-      return !isAlreadyAssignedInBatch;
-    });
+    const assigned = assignmentByShiftId.get(shift.id);
 
-    const chosen = viableCandidate || allCandidates[0] || null;
-
-    if (chosen && !chosen.hasScheduleConflict) {
-      if (!assignedByDate[shift.date]) {
-        assignedByDate[shift.date] = new Set();
+    let chosen: GuardCandidateEvaluation | null = null;
+    if (assigned) {
+      const existingEval = allCandidates.find((c) => c.guard.id === assigned.guardId);
+      if (existingEval) {
+        chosen = {
+          ...existingEval,
+          hasScheduleConflict: false,
+          reasons: [
+            `✅ ${assigned.reason}`,
+            ...existingEval.reasons.filter((r) => !r.includes('Conflict')),
+          ],
+        };
       }
-      assignedByDate[shift.date].add(chosen.guard.id);
-      assignedByDate[shift.date].add(chosen.guard.name.toLowerCase());
     }
 
     planItems.push({
@@ -637,10 +633,11 @@ export function generateBatchAutoFillPlan(
       selectedGuardId: chosen ? chosen.guard.id : null,
       topCandidate: chosen,
       allCandidates,
-      isAssigned: !!chosen && !chosen.hasScheduleConflict,
-      siteProfile
+      isAssigned: Boolean(assigned && chosen),
+      siteProfile,
     });
   });
 
   return planItems;
 }
+

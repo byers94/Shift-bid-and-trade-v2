@@ -167,8 +167,16 @@ export const PriorityExceptionTray: React.FC<PriorityExceptionTrayProps> = ({
       });
     });
 
-  const criticalCount = exceptions.filter(e => e.urgency === 'critical').length;
-  const highCount = exceptions.filter(e => e.urgency === 'high').length;
+  // Ensure all exception IDs are strictly unique
+  const seenExceptionIds = new Set<string>();
+  const uniqueExceptions = exceptions.filter(exc => {
+    if (seenExceptionIds.has(exc.id)) return false;
+    seenExceptionIds.add(exc.id);
+    return true;
+  });
+
+  const criticalCount = uniqueExceptions.filter(e => e.urgency === 'critical').length;
+  const highCount = uniqueExceptions.filter(e => e.urgency === 'high').length;
 
   return (
     <div className="space-y-3">
@@ -192,7 +200,7 @@ export const PriorityExceptionTray: React.FC<PriorityExceptionTrayProps> = ({
                 Priority Exception Tray
               </h2>
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-rose-600 text-white shadow-xs">
-                {exceptions.length} Active
+                {uniqueExceptions.length} Active
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -217,7 +225,7 @@ export const PriorityExceptionTray: React.FC<PriorityExceptionTrayProps> = ({
 
       {/* Exception Items List */}
       <div className="divide-y divide-slate-100 dark:divide-slate-800/80 max-h-[380px] overflow-y-auto">
-        {exceptions.length === 0 ? (
+        {uniqueExceptions.length === 0 ? (
           <div className="p-8 text-center bg-slate-50/50 dark:bg-slate-900/50">
             <CheckCircle2 className="w-10 h-10 mx-auto text-emerald-500 mb-2" />
             <p className="text-sm font-bold text-slate-800 dark:text-slate-200">
@@ -228,7 +236,7 @@ export const PriorityExceptionTray: React.FC<PriorityExceptionTrayProps> = ({
             </p>
           </div>
         ) : (
-          exceptions.map(exc => (
+          uniqueExceptions.map(exc => (
             <div 
               key={exc.id}
               className={`p-3.5 sm:p-4 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${

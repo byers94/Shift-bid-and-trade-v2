@@ -27,6 +27,7 @@ import { CoachingPerformanceDashboard } from './CoachingPerformanceDashboard';
 import { MpuPerformance } from './MpuPerformance';
 import { GuardMapDashboard } from './GuardMapDashboard';
 import { DispatchCommandDashboard } from './DispatchCommandDashboard';
+import { RosterMatrixView } from '../admin/RosterMatrixView';
 import { 
   ShieldCheck, 
   Activity, 
@@ -63,7 +64,12 @@ import {
   Gauge,
   Compass,
   Coffee,
-  LayoutDashboard
+  LayoutDashboard,
+  Sun as SunIcon,
+  Moon as MoonIcon,
+  Lock as LockIcon,
+  RefreshCw,
+  X
 } from 'lucide-react';
 
 interface OpsAdminViewProps {
@@ -103,8 +109,14 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
     timeOffRequests,
     availabilityChangeRequests,
     callOffRecords,
-    siteOrientations
+    siteOrientations,
+    activeView,
+    setActiveView,
+    theme,
+    toggleTheme
   } = useShiftOps();
+
+  const isDarkMode = theme === 'dark';
 
   const [activeMainTab, setActiveMainTabState] = useState<
     'command_dashboard' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'audit_terminal'
@@ -153,6 +165,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
   const [isMealBreakSettingsOpen, setIsMealBreakSettingsOpen] = useState(false);
   const [calendarTargetGuardId, setCalendarTargetGuardId] = useState<string | null>(null);
+  const [showSessionModal, setShowSessionModal] = useState(false);
 
   const activeShiftsCount = shifts.filter((s) => s.status === 'open').length;
   const pendingClaimsCount = (shiftClaims || []).filter((c) => c.status === 'pending_approval').length;
@@ -182,19 +195,97 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   return (
     <main 
       id="ops-admin-container"
-      className="flex-1 flex flex-col bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 h-full overflow-y-auto min-h-0 transition-colors"
+      className="h-screen max-h-screen flex flex-col overflow-hidden bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex-1 transition-colors"
     >
-      {/* Header matching High Density theme */}
-      <header className="bg-[#1e3a8a] dark:bg-slate-950 text-white p-3 sm:p-4 lg:p-5 flex flex-col gap-3 shadow-md shrink-0 border-b dark:border-slate-800">
-        {/* Top row: Title and Admin Profile / Lock */}
-        <div className="flex items-center justify-between gap-2 flex-wrap">
+      {/* Dedicated Mobile Top Bar (< 768px) — Strictly 54px */}
+      <div
+        id="ops-mobile-cad-topbar"
+        className="md:hidden h-[54px] min-h-[54px] max-h-[54px] px-2.5 flex items-center justify-between bg-slate-900 border-b border-slate-800 shrink-0 z-30"
+      >
+        {/* Left Brand Section */}
+        <div className="flex items-center gap-1.5 min-w-0">
+          <div className="p-1.5 bg-blue-600 rounded-lg border border-blue-400/40 shrink-0">
+            <ShieldCheck className="w-4 h-4 text-white" />
+          </div>
+          <span className="hidden sm:inline font-extrabold text-xs tracking-wider uppercase text-slate-300 truncate">
+            SECURESHIFT
+          </span>
+          <span className="font-bold text-sm tracking-wider text-slate-100">
+            CAD
+          </span>
+        </div>
+
+        {/* Center-Left Alert Pill */}
+        <button
+          type="button"
+          onClick={() => setActiveMainTab('live_map')}
+          className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/40 shrink-0 cursor-pointer"
+          title="Inspect Active Geofence Breaches on Tactical Radar"
+        >
+          [{breachGuardsCount || 1} BREACH]
+        </button>
+
+        {/* Center-Right View Switcher */}
+        <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-xs font-bold shrink-0">
+          <button
+            type="button"
+            onClick={() => setActiveView('ops')}
+            className={`px-2 py-1 rounded-md transition-colors cursor-pointer ${
+              activeView === 'ops'
+                ? 'bg-blue-600 text-white font-black'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            CAD
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveView('guard')}
+            className={`px-2 py-1 rounded-md transition-colors cursor-pointer ${
+              activeView === 'guard'
+                ? 'bg-blue-600 text-white font-black'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Guard
+          </button>
+        </div>
+
+        {/* Far-Right Utility Cluster */}
+        <div className="flex gap-1 items-center shrink-0">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="p-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-amber-400 hover:border-slate-600 active:scale-95 transition-all cursor-pointer"
+            title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            aria-label="Toggle Dark Mode"
+          >
+            {isDarkMode ? <SunIcon className="w-4 h-4 text-amber-400" /> : <MoonIcon className="w-4 h-4 text-slate-300" />}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowSessionModal(true)}
+            className="p-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-white hover:border-amber-500/50 active:scale-95 transition-all cursor-pointer"
+            title="Session & Lock Controls"
+            aria-label="Open Session Controls"
+          >
+            <LockIcon className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Header matching High Density theme (Desktop title/breadcrumbs hidden on < 768px) */}
+      <header className="bg-[#1e3a8a] dark:bg-slate-950 text-white p-0 md:p-4 lg:p-5 flex flex-col gap-0 md:gap-3 shadow-md shrink-0 border-b border-slate-800">
+        {/* Top row: Title and Admin Profile / Lock (Desktop Only) */}
+        <div className="hidden md:flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2.5">
             <div className="p-1.5 sm:p-2 bg-blue-900/80 dark:bg-slate-900 rounded-lg border border-blue-700 dark:border-slate-700">
               <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5 text-blue-300" />
             </div>
-            <div>
+            <div className="hidden md:block">
               {/* Route Breadcrumb */}
-              <nav className="flex items-center gap-1 text-[10px] text-blue-200/90 font-mono tracking-wide mb-0.5" aria-label="Breadcrumb">
+              <nav className="hidden md:flex items-center gap-1 text-[10px] text-blue-200/90 font-mono tracking-wide mb-0.5" aria-label="Breadcrumb">
                 <span className="text-blue-300">SecureShift</span>
                 <span className="text-blue-400/60">/</span>
                 <span className="text-white font-bold">Dispatch & Command</span>
@@ -219,16 +310,18 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
                    activeMainTab === 'audit_terminal' ? 'Audit Terminal' : 'Overview'}
                 </span>
               </nav>
-              <h1 className="text-sm sm:text-base lg:text-lg font-extrabold tracking-tight uppercase">
-                Dispatch & Command Dashboard
-              </h1>
-              <p className="text-[9px] sm:text-[10px] lg:text-xs text-blue-200 dark:text-blue-300 uppercase tracking-widest font-semibold">
-                Shift & Security Operations Command Center
-              </p>
+              <div className="hidden md:block">
+                <h1 className="text-sm sm:text-base lg:text-lg font-extrabold tracking-tight uppercase">
+                  Dispatch & Command Dashboard
+                </h1>
+                <p className="text-[9px] sm:text-[10px] lg:text-xs text-blue-200 dark:text-blue-300 uppercase tracking-widest font-semibold">
+                  Shift & Security Operations Command Center
+                </p>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="hidden md:flex items-center gap-2">
             {/* User & Access Management Button */}
             <button
               id="open-user-management-btn"
@@ -244,7 +337,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
             </button>
 
             {/* Authenticated Dispatcher Badge & Lock Button */}
-            <div className="flex items-center gap-2 bg-blue-950/80 dark:bg-slate-900 border border-blue-700/80 dark:border-slate-800 px-2.5 py-1 rounded-xl">
+            <div className="hidden md:flex items-center gap-2 bg-blue-950/80 dark:bg-slate-900 border border-blue-700/80 dark:border-slate-800 px-2.5 py-1 rounded-xl">
               <div className="text-right">
                 <div className="text-[10px] sm:text-[11px] font-bold text-white flex items-center justify-end gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -269,15 +362,15 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
           </div>
         </div>
 
-        {/* Real-time Metric Indicators & Quick Actions Toolbar */}
-        <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1 no-scrollbar border-t border-blue-800/60 dark:border-slate-800/80 pt-2.5">
+        {/* Real-time Metric Indicators & Quick Actions Toolbar (Slim horizontal scroll strip on mobile) */}
+        <div className="flex overflow-x-auto no-scrollbar gap-2 py-1.5 px-3 whitespace-nowrap bg-slate-950/60 border-b border-slate-800/80 md:bg-transparent md:px-0 md:py-0 md:pb-1 md:pt-2.5 md:border-b-0 md:border-t md:border-blue-800/60 dark:md:border-slate-800/80 items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             {/* Command Dashboard & Orientations Quick Indicator */}
             <button
               id="header-command-dashboard-btn"
               type="button"
               onClick={() => setActiveMainTab('command_dashboard')}
-              className={`hover:opacity-95 transition-all cursor-pointer group px-2.5 py-1 rounded-lg border text-left ${
+              className={`hover:opacity-95 transition-all cursor-pointer group px-2.5 py-1 text-xs rounded-lg border text-left shrink-0 ${
                 activeMainTab === 'command_dashboard'
                   ? 'bg-blue-600 border-blue-300 ring-2 ring-blue-400/50'
                   : 'bg-blue-900/80 dark:bg-slate-900/90 hover:bg-blue-800 border-blue-400/50 dark:border-blue-700'
@@ -932,261 +1025,268 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         </div>
       )}
 
-      {/* Main Content Area Based on Active Tab */}
-      {activeMainTab === 'command_dashboard' && (
-        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
-          <DispatchCommandDashboard
-            onNavigateTab={(tab) => setActiveMainTab(tab)}
-            adminName={adminName}
-            adminBadge={adminBadge}
-          />
-        </div>
-      )}
-
-      {activeMainTab === 'operations' && (
-        <div className="flex-1 p-3 sm:p-4 lg:p-6 flex flex-col min-h-0 overflow-y-auto">
-          {/* Mobile/Tablet Operational Section Switcher (Visible on screens smaller than xl) */}
-          <div className="xl:hidden mb-3 bg-white dark:bg-slate-900 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs grid grid-cols-3 gap-1.5 shrink-0">
-            <button
-              type="button"
-              id="mobile-subtab-shifts-btn"
-              onClick={() => setOperationsSubTab('shifts')}
-              className={`py-2 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                operationsSubTab === 'shifts'
-                  ? 'bg-[#1e3a8a] dark:bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-              }`}
-            >
-              <Calendar className="w-3.5 h-3.5" />
-              <span>Post & Shifts</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
-                operationsSubTab === 'shifts' ? 'bg-blue-900 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-              }`}>
-                {activeShiftsCount}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              id="mobile-subtab-approvals-btn"
-              onClick={() => setOperationsSubTab('approvals')}
-              className={`py-2 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                operationsSubTab === 'approvals'
-                  ? 'bg-[#1e3a8a] dark:bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-              }`}
-            >
-              <ArrowRightLeft className="w-3.5 h-3.5" />
-              <span>Approvals</span>
-              {totalPendingApprovals > 0 && (
-                <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full font-mono">
-                  {totalPendingApprovals}
-                </span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              id="mobile-subtab-actions-btn"
-              onClick={() => setOperationsSubTab('actions')}
-              className={`py-2 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                operationsSubTab === 'actions'
-                  ? 'bg-[#1e3a8a] dark:bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-              }`}
-            >
-              <History className="w-3.5 h-3.5" />
-              <span>Admin Feed</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
-                operationsSubTab === 'actions' ? 'bg-blue-900 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-              }`}>
-                {recentAdminActions.length}
-              </span>
-            </button>
+      {/* Scrollable Body Container (takes all remaining height) */}
+      <div
+        id="ops-cad-scrollable-body"
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-24"
+      >
+        {/* Main Content Area Based on Active Tab */}
+        {activeMainTab === 'command_dashboard' && (
+          <div className="p-3 sm:p-4 lg:p-6 max-w-7xl mx-auto w-full">
+            <DispatchCommandDashboard
+              onNavigateTab={(tab) => setActiveMainTab(tab)}
+              adminName={adminName}
+              adminBadge={adminBadge}
+            />
           </div>
+        )}
 
-          {/* Desktop Multi-Column Grid or Mobile Single-Tab View */}
-          <div className="flex-1 grid grid-cols-1 xl:grid-cols-12 gap-5 lg:gap-6 min-h-0 items-start">
-            {/* Shift Creation & Active Shifts Feed (Posting Tools) */}
-            <section className={`flex flex-col gap-4 min-h-0 ${
-              operationsSubTab !== 'shifts' ? 'hidden xl:flex' : 'flex'
-            } ${showSidePanel ? 'xl:col-span-5' : 'xl:col-span-6'}`}>
-              <ShiftManager />
-            </section>
+        {activeMainTab === 'operations' && (
+          <div className="p-3 sm:p-4 lg:p-6 flex flex-col">
+            {/* Mobile/Tablet Operational Section Switcher (Visible on screens smaller than xl) */}
+            <div className="xl:hidden mb-3 bg-white dark:bg-slate-900 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs grid grid-cols-3 gap-1.5 shrink-0">
+              <button
+                type="button"
+                id="mobile-subtab-shifts-btn"
+                onClick={() => setOperationsSubTab('shifts')}
+                className={`py-2 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  operationsSubTab === 'shifts'
+                    ? 'bg-[#1e3a8a] dark:bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                <span>Post & Shifts</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                  operationsSubTab === 'shifts' ? 'bg-blue-900 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                }`}>
+                  {activeShiftsCount}
+                </span>
+              </button>
 
-            {/* Pending Swaps/Trades Review */}
-            <section className={`flex flex-col gap-4 min-h-0 ${
-              operationsSubTab !== 'approvals' ? 'hidden xl:flex' : 'flex'
-            } ${showSidePanel ? 'xl:col-span-4' : 'xl:col-span-6'}`}>
-              <TradeApprovals 
-                onOpenGuardDirectory={(guardId) => {
-                  setActiveMainTab('guard_directory');
-                }}
-              />
-            </section>
+              <button
+                type="button"
+                id="mobile-subtab-approvals-btn"
+                onClick={() => setOperationsSubTab('approvals')}
+                className={`py-2 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  operationsSubTab === 'approvals'
+                    ? 'bg-[#1e3a8a] dark:bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5" />
+                <span>Approvals</span>
+                {totalPendingApprovals > 0 && (
+                  <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-1.5 py-0.2 rounded-full font-mono">
+                    {totalPendingApprovals}
+                  </span>
+                )}
+              </button>
 
-            {/* Recent Admin Actions Side-Panel */}
-            {showSidePanel && (
+              <button
+                type="button"
+                id="mobile-subtab-actions-btn"
+                onClick={() => setOperationsSubTab('actions')}
+                className={`py-2 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  operationsSubTab === 'actions'
+                    ? 'bg-[#1e3a8a] dark:bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <History className="w-3.5 h-3.5" />
+                <span>Admin Feed</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                  operationsSubTab === 'actions' ? 'bg-blue-900 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                }`}>
+                  {recentAdminActions.length}
+                </span>
+              </button>
+            </div>
+
+            {/* Desktop Multi-Column Grid or Mobile Single-Tab View */}
+            <div className="flex-1 grid grid-cols-1 xl:grid-cols-12 gap-5 lg:gap-6 min-h-0 items-start">
+              {/* Shift Creation & Active Shifts Feed (Posting Tools) */}
               <section className={`flex flex-col gap-4 min-h-0 ${
-                operationsSubTab !== 'actions' ? 'hidden xl:flex' : 'flex'
-              } xl:col-span-3`}>
-                <RecentAdminActionsPanel 
-                  isCollapsed={false}
-                  onToggleCollapse={() => setShowSidePanel(false)}
+                operationsSubTab !== 'shifts' ? 'hidden xl:flex' : 'flex'
+              } ${showSidePanel ? 'xl:col-span-5' : 'xl:col-span-6'}`}>
+                <ShiftManager />
+              </section>
+
+              {/* Pending Swaps/Trades Review */}
+              <section className={`flex flex-col gap-4 min-h-0 ${
+                operationsSubTab !== 'approvals' ? 'hidden xl:flex' : 'flex'
+              } ${showSidePanel ? 'xl:col-span-4' : 'xl:col-span-6'}`}>
+                <TradeApprovals 
+                  onOpenGuardDirectory={(guardId) => {
+                    setActiveMainTab('guard_directory');
+                  }}
                 />
               </section>
-            )}
+
+              {/* Recent Admin Actions Side-Panel */}
+              {showSidePanel && (
+                <section className={`flex flex-col gap-4 min-h-0 ${
+                  operationsSubTab !== 'actions' ? 'hidden xl:flex' : 'flex'
+                } xl:col-span-3`}>
+                  <RecentAdminActionsPanel 
+                    isCollapsed={false}
+                    onToggleCollapse={() => setShowSidePanel(false)}
+                  />
+                </section>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {activeMainTab === 'live_tracking' && (
-        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
-          <LiveGuardRosterBoard 
-            onOpenCalendar={(guardId) => {
-              setCalendarTargetGuardId(guardId || null);
-              setActiveMainTab('calendar_schedule');
-            }}
-          />
-        </div>
-      )}
+        {activeMainTab === 'live_tracking' && (
+          <div className="p-3 sm:p-4 lg:p-6 max-w-7xl mx-auto w-full">
+            <LiveGuardRosterBoard 
+              onOpenCalendar={(guardId) => {
+                setCalendarTargetGuardId(guardId || null);
+                setActiveMainTab('calendar_schedule');
+              }}
+            />
+          </div>
+        )}
 
-      {activeMainTab === 'live_map' && (
-        <div className="flex-1 min-h-0 flex flex-col w-full h-full overflow-hidden">
-          <GuardMapDashboard 
-            onScheduleShift={(guardId) => {
-              setActiveMainTab('operations');
-            }}
-            onSelectSite={(siteName) => {
-              setActiveMainTab('site_directory');
-            }}
-          />
-        </div>
-      )}
+        {activeMainTab === 'live_map' && (
+          <div className="flex flex-col w-full md:h-full">
+            <GuardMapDashboard 
+              onScheduleShift={(guardId) => {
+                setActiveMainTab('operations');
+              }}
+              onSelectSite={(siteName) => {
+                setActiveMainTab('site_directory');
+              }}
+            />
+          </div>
+        )}
 
-      {activeMainTab === 'rover_routing' && (
-        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
-          <RoverRouteOptimizationPanel 
-            onSelectSite={(siteId) => {
-              setActiveMainTab('site_directory');
-            }}
-            onNavigateToMpuPerformance={() => {
-              setActiveMainTab('mpu_performance');
-            }}
-          />
-        </div>
-      )}
+        {activeMainTab === 'rover_routing' && (
+          <div className="p-3 sm:p-4 lg:p-6 max-w-7xl mx-auto w-full">
+            <RoverRouteOptimizationPanel 
+              onSelectSite={(siteId) => {
+                setActiveMainTab('site_directory');
+              }}
+              onNavigateToMpuPerformance={() => {
+                setActiveMainTab('mpu_performance');
+              }}
+            />
+          </div>
+        )}
 
-      {activeMainTab === 'mpu_performance' && (
-        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
-          <MpuPerformance 
-            onNavigateToSchedule={(sector) => {
-              setActiveMainTab('calendar_schedule');
-            }}
-            onNavigateToRouting={(roverId) => {
-              setActiveMainTab('rover_routing');
-            }}
-            onNavigateToSiteDirectory={(sector) => {
-              setActiveMainTab('site_directory');
-            }}
-          />
-        </div>
-      )}
+        {activeMainTab === 'mpu_performance' && (
+          <div className="p-3 sm:p-4 lg:p-6 max-w-7xl mx-auto w-full">
+            <MpuPerformance 
+              onNavigateToSchedule={(sector) => {
+                setActiveMainTab('calendar_schedule');
+              }}
+              onNavigateToRouting={(roverId) => {
+                setActiveMainTab('rover_routing');
+              }}
+              onNavigateToSiteDirectory={(sector) => {
+                setActiveMainTab('site_directory');
+              }}
+            />
+          </div>
+        )}
 
-      {activeMainTab === 'calendar_schedule' && (
-        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
-          <ShiftSchedulingCalendar 
-            initialGuardId={calendarTargetGuardId || undefined}
-          />
-        </div>
-      )}
+        {activeMainTab === 'calendar_schedule' && (
+          <div className="p-3 sm:p-4 lg:p-6 max-w-7xl mx-auto w-full space-y-6">
+            <RosterMatrixView defaultSupervisorName={`${adminName} (${adminBadge})`} />
+            <ShiftSchedulingCalendar 
+              initialGuardId={calendarTargetGuardId || undefined}
+            />
+          </div>
+        )}
 
-      {activeMainTab === 'set_schedules' && (
-        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
-          <SetSchedulesManager 
-            onOpenCalendar={() => setActiveMainTab('calendar_schedule')}
-          />
-        </div>
-      )}
+        {activeMainTab === 'set_schedules' && (
+          <div className="p-3 sm:p-4 lg:p-6 max-w-7xl mx-auto w-full">
+            <SetSchedulesManager 
+              onOpenCalendar={() => setActiveMainTab('calendar_schedule')}
+            />
+          </div>
+        )}
 
-      {activeMainTab === 'guard_availability' && (
-        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
-          <GuardAvailabilityTracker />
-        </div>
-      )}
+        {activeMainTab === 'guard_availability' && (
+          <div className="p-3 sm:p-4 lg:p-6 max-w-7xl mx-auto w-full">
+            <GuardAvailabilityTracker />
+          </div>
+        )}
 
-      {activeMainTab === 'call_off_queue' && (
-        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
-          <CallOffQueuePanel />
-        </div>
-      )}
+        {activeMainTab === 'call_off_queue' && (
+          <div className="p-3 sm:p-4 lg:p-6 max-w-7xl mx-auto w-full">
+            <CallOffQueuePanel />
+          </div>
+        )}
 
-      {activeMainTab === 'calls_for_service' && (
-        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
-          <CallsForServicePanel />
-        </div>
-      )}
+        {activeMainTab === 'calls_for_service' && (
+          <div className="p-3 sm:p-4 lg:p-6 max-w-7xl mx-auto w-full">
+            <CallsForServicePanel />
+          </div>
+        )}
 
-      {activeMainTab === 'site_tasks' && (
-        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
-          <SiteTaskOverview 
-            onNavigateToSiteDirectory={(siteId) => {
-              setActiveMainTab('site_directory');
-            }}
-            onNavigateToSchedule={(siteId) => {
-              setActiveMainTab('calendar_schedule');
-            }}
-          />
-        </div>
-      )}
+        {activeMainTab === 'site_tasks' && (
+          <div className="p-3 sm:p-4 lg:p-6 max-w-7xl mx-auto w-full">
+            <SiteTaskOverview 
+              onNavigateToSiteDirectory={(siteId) => {
+                setActiveMainTab('site_directory');
+              }}
+              onNavigateToSchedule={(siteId) => {
+                setActiveMainTab('calendar_schedule');
+              }}
+            />
+          </div>
+        )}
 
-      {activeMainTab === 'standard_reports' && (
-        <div className="flex-1 p-3 sm:p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
-          <StandardReportsHub />
-        </div>
-      )}
+        {activeMainTab === 'standard_reports' && (
+          <div className="p-3 sm:p-4 lg:p-6 max-w-7xl mx-auto w-full">
+            <StandardReportsHub />
+          </div>
+        )}
 
-      {activeMainTab === 'site_directory' && (
-        <div className="flex-1 p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
-          <SiteDirectory 
-            onNavigateToShifts={() => setActiveMainTab('operations')}
-            onNavigateToGuards={() => setActiveMainTab('guard_directory')}
-          />
-        </div>
-      )}
+        {activeMainTab === 'site_directory' && (
+          <div className="p-4 lg:p-6 max-w-7xl mx-auto w-full">
+            <SiteDirectory 
+              onNavigateToShifts={() => setActiveMainTab('operations')}
+              onNavigateToGuards={() => setActiveMainTab('guard_directory')}
+            />
+          </div>
+        )}
 
-      {activeMainTab === 'guard_directory' && (
-        <div className="flex-1 p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
-          <GuardDirectory 
-            onNavigateToTrades={() => setActiveMainTab('operations')}
-            onNavigateToLeaderboard={() => setActiveMainTab('top_performers')}
-          />
-        </div>
-      )}
+        {activeMainTab === 'guard_directory' && (
+          <div className="p-4 lg:p-6 max-w-7xl mx-auto w-full">
+            <GuardDirectory 
+              onNavigateToTrades={() => setActiveMainTab('operations')}
+              onNavigateToLeaderboard={() => setActiveMainTab('top_performers')}
+            />
+          </div>
+        )}
 
-      {activeMainTab === 'top_performers' && (
-        <div className="flex-1 p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
-          <TopPerformersWidget 
-            onNavigateToGuardDirectory={() => setActiveMainTab('guard_directory')}
-          />
-        </div>
-      )}
+        {activeMainTab === 'top_performers' && (
+          <div className="p-4 lg:p-6 max-w-7xl mx-auto w-full">
+            <TopPerformersWidget 
+              onNavigateToGuardDirectory={() => setActiveMainTab('guard_directory')}
+            />
+          </div>
+        )}
 
-      {activeMainTab === 'coaching_analytics' && (
-        <div className="flex-1 p-4 lg:p-6 min-h-0 overflow-y-auto max-w-7xl mx-auto w-full">
-          <CoachingPerformanceDashboard 
-            onScheduleCoachingClick={() => {
-              setActiveMainTab('top_performers');
-            }}
-          />
-        </div>
-      )}
+        {activeMainTab === 'coaching_analytics' && (
+          <div className="p-4 lg:p-6 max-w-7xl mx-auto w-full">
+            <CoachingPerformanceDashboard 
+              onScheduleCoachingClick={() => {
+                setActiveMainTab('top_performers');
+              }}
+            />
+          </div>
+        )}
 
-      {activeMainTab === 'audit_terminal' && (
-        <div className="flex-1 p-4 lg:p-6 min-h-0 overflow-y-auto max-w-6xl mx-auto w-full">
-          <LiveAuditTerminal />
-        </div>
-      )}
+        {activeMainTab === 'audit_terminal' && (
+          <div className="p-4 lg:p-6 max-w-6xl mx-auto w-full">
+            <LiveAuditTerminal />
+          </div>
+        )}
+      </div>
 
       {/* User & Access Management Modal */}
       <UserManagementModal
@@ -1238,6 +1338,81 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         isOpen={isMealBreakSettingsOpen}
         onClose={() => setIsMealBreakSettingsOpen(false)}
       />
+
+      {/* MobileAdminSessionModal Drawer */}
+      {showSessionModal && (
+        <div
+          id="mobile-admin-session-modal-backdrop"
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150"
+          onClick={() => setShowSessionModal(false)}
+        >
+          <div
+            id="mobile-admin-session-modal"
+            className="w-full sm:max-w-sm bg-slate-900 border-t sm:border border-slate-800 rounded-t-2xl sm:rounded-2xl p-4 text-slate-100 shadow-2xl space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-blue-950 border border-blue-700/60 text-blue-400">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-white">
+                    {adminName}
+                  </h3>
+                  <p className="text-[10px] font-mono text-slate-400">
+                    {adminBadge} • Active CAD Session
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSessionModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSessionModal(false);
+                  if (onLock) onLock();
+                }}
+                className="w-full py-2.5 px-3 rounded-xl bg-amber-950/60 hover:bg-amber-900/70 border border-amber-500/50 text-amber-300 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <span>[ 🔒 Lock CAD Console ]</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSessionModal(false);
+                  setUserManagementTab('admins');
+                  setIsUserManagementOpen(true);
+                }}
+                className="w-full py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <span>[ 🔄 Switch Role / Profile ]</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSessionModal(false);
+                  if (onLock) onLock();
+                  setActiveView('guard');
+                }}
+                className="w-full py-2.5 px-3 rounded-xl bg-rose-950/60 hover:bg-rose-900/70 border border-rose-500/50 text-rose-300 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <span>[ 🚪 Sign Out / Terminate Session ]</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 };

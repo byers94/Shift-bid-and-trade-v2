@@ -226,9 +226,9 @@ export const DispatchCommandDashboard: React.FC<DispatchCommandDashboardProps> =
   return (
     <div className={`space-y-5 ${isFullscreen ? 'p-6 bg-slate-100 dark:bg-slate-950 min-h-screen' : ''}`}>
       {/* Dashboard Top Header & Preset Bar */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 p-4 sm:p-5 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        {/* Left: Title & Dispatcher Info */}
-        <div className="flex items-center space-x-3.5">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 p-3 sm:p-5 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4">
+        {/* Left: Title & Dispatcher Info (Hidden on < 768px where 54px CAD bar is shown) */}
+        <div className="hidden md:flex items-center space-x-3.5">
           <div className="p-2.5 bg-blue-600 text-white rounded-2xl shadow-xs">
             <LayoutDashboard className="w-6 h-6" />
           </div>
@@ -248,7 +248,7 @@ export const DispatchCommandDashboard: React.FC<DispatchCommandDashboardProps> =
         </div>
 
         {/* Center: Quick Presets Bar */}
-        <div className="flex items-center space-x-1.5 bg-slate-100/80 dark:bg-slate-800/80 p-1.5 rounded-xl self-start lg:self-center overflow-x-auto">
+        <div className="flex items-center space-x-1.5 bg-slate-100/80 dark:bg-slate-800/80 p-1.5 rounded-xl self-start lg:self-center overflow-x-auto max-w-full no-scrollbar">
           <button
             type="button"
             onClick={() => setDashboardPreset('WATCH_DESK')}
@@ -311,49 +311,49 @@ export const DispatchCommandDashboard: React.FC<DispatchCommandDashboardProps> =
         </div>
       </div>
 
-      {/* Live Operational Metric Ticker */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
+      {/* Live Operational Metric Ticker (Slim horizontal scroll on mobile, 4-col grid on md+) */}
+      <div className="flex md:grid md:grid-cols-4 overflow-x-auto no-scrollbar gap-2 md:gap-3.5 py-1.5 px-3 md:p-0 whitespace-nowrap bg-slate-950/60 md:bg-transparent border-b border-slate-800/80 md:border-0 rounded-xl md:rounded-none">
+        <div className="px-2.5 py-1 text-xs md:p-4 rounded-xl md:rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between gap-2 shrink-0">
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">On-Duty Officers</span>
-            <p className="text-2xl font-black text-slate-900 dark:text-white mt-0.5">{activeGuardsCount}</p>
-            <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">Active Posts</span>
+            <span className="text-[10px] md:text-[11px] font-bold uppercase tracking-wider text-slate-400 block">On-Duty Officers</span>
+            <p className="text-sm md:text-2xl font-black text-slate-900 dark:text-white mt-0.5">{activeGuardsCount}</p>
+            <span className="text-[10px] md:text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold hidden sm:inline">Active Posts</span>
           </div>
-          <div className="p-2.5 bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-400 rounded-xl">
-            <Radio className="w-5 h-5 animate-pulse" />
+          <div className="p-1.5 md:p-2.5 bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-400 rounded-lg md:rounded-xl">
+            <Radio className="w-4 h-4 md:w-5 md:h-5 animate-pulse" />
           </div>
         </div>
 
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
+        <div className="px-2.5 py-1 text-xs md:p-4 rounded-xl md:rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between gap-2 shrink-0">
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Site Orientations</span>
-            <p className="text-2xl font-black text-slate-900 dark:text-white mt-0.5">{pendingOrientationsCount}</p>
-            <span className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold">90-Min Active Windows</span>
+            <span className="text-[10px] md:text-[11px] font-bold uppercase tracking-wider text-slate-400 block">Site Orientations</span>
+            <p className="text-sm md:text-2xl font-black text-slate-900 dark:text-white mt-0.5">{pendingOrientationsCount}</p>
+            <span className="text-[10px] md:text-[11px] text-amber-600 dark:text-amber-400 font-semibold hidden sm:inline">90-Min Active Windows</span>
           </div>
-          <div className="p-2.5 bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-400 rounded-xl">
-            <ShieldAlert className="w-5 h-5" />
+          <div className="p-1.5 md:p-2.5 bg-amber-100 dark:bg-amber-950/70 text-amber-700 dark:text-amber-400 rounded-lg md:rounded-xl">
+            <ShieldAlert className="w-4 h-4 md:w-5 md:h-5" />
           </div>
         </div>
 
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
+        <div className="px-2.5 py-1 text-xs md:p-4 rounded-xl md:rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between gap-2 shrink-0">
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Open Shifts CAD</span>
-            <p className="text-2xl font-black text-slate-900 dark:text-white mt-0.5">{openShiftsCount}</p>
-            <span className="text-[11px] text-blue-600 dark:text-blue-400 font-semibold">Ready for Dispatch</span>
+            <span className="text-[10px] md:text-[11px] font-bold uppercase tracking-wider text-slate-400 block">Open Shifts CAD</span>
+            <p className="text-sm md:text-2xl font-black text-slate-900 dark:text-white mt-0.5">{openShiftsCount}</p>
+            <span className="text-[10px] md:text-[11px] text-blue-600 dark:text-blue-400 font-semibold hidden sm:inline">Ready for Dispatch</span>
           </div>
-          <div className="p-2.5 bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-400 rounded-xl">
-            <Clock className="w-5 h-5" />
+          <div className="p-1.5 md:p-2.5 bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-400 rounded-lg md:rounded-xl">
+            <Clock className="w-4 h-4 md:w-5 md:h-5" />
           </div>
         </div>
 
-        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
+        <div className="px-2.5 py-1 text-xs md:p-4 rounded-xl md:rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between gap-2 shrink-0">
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Critical Incidents</span>
-            <p className="text-2xl font-black text-slate-900 dark:text-white mt-0.5">{urgentReportsCount}</p>
-            <span className="text-[11px] text-rose-600 dark:text-rose-400 font-semibold">Action Required</span>
+            <span className="text-[10px] md:text-[11px] font-bold uppercase tracking-wider text-slate-400 block">Critical Incidents</span>
+            <p className="text-sm md:text-2xl font-black text-slate-900 dark:text-white mt-0.5">{urgentReportsCount}</p>
+            <span className="text-[10px] md:text-[11px] text-rose-600 dark:text-rose-400 font-semibold hidden sm:inline">Action Required</span>
           </div>
-          <div className="p-2.5 bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-400 rounded-xl">
-            <AlertTriangle className="w-5 h-5" />
+          <div className="p-1.5 md:p-2.5 bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-400 rounded-lg md:rounded-xl">
+            <AlertTriangle className="w-4 h-4 md:w-5 md:h-5" />
           </div>
         </div>
       </div>

@@ -74,6 +74,7 @@ export const GuardMapDashboard: React.FC<GuardMapDashboardProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [mapStyle, setMapStyle] = useState<'tactical' | 'satellite' | 'high_contrast'>('tactical');
+  const [isMapPanActive, setIsMapPanActive] = useState<boolean>(false);
 
   // Emergency & Status Filters
   const [emergencyHighlightMode, setEmergencyHighlightMode] = useState<boolean>(false);
@@ -273,6 +274,43 @@ export const GuardMapDashboard: React.FC<GuardMapDashboardProps> = ({
     setIsDragging(false);
   };
 
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!isMapPanActive || e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    setIsDragging(true);
+    setDragStart({ x: touch.clientX - panOffset.x, y: touch.clientY - panOffset.y });
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isMapPanActive || !isDragging || e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    setPanOffset({
+      x: touch.clientX - dragStart.x,
+      y: touch.clientY - dragStart.y
+    });
+  };
+
+  const handleTouchEnd = () => {
+    setIsDragging(false);
+  };
+
+  // Lock map pan when tapping outside the map container
+  useEffect(() => {
+    if (!isMapPanActive) return;
+    const handleOutsideTap = (e: MouseEvent | TouchEvent) => {
+      if (mapContainerRef.current && !mapContainerRef.current.contains(e.target as Node)) {
+        setIsMapPanActive(false);
+        setIsDragging(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideTap);
+    document.addEventListener('touchstart', handleOutsideTap);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideTap);
+      document.removeEventListener('touchstart', handleOutsideTap);
+    };
+  }, [isMapPanActive]);
+
   const handleResetView = () => {
     setZoomLevel(1.2);
     setPanOffset({ x: 0, y: 0 });
@@ -399,7 +437,7 @@ export const GuardMapDashboard: React.FC<GuardMapDashboardProps> = ({
   };
 
   return (
-    <div id="guard-map-dashboard-container" className="flex flex-col h-full w-full bg-slate-950 text-slate-100 overflow-hidden relative font-sans select-none">
+    <div id="guard-map-dashboard-container" className="flex flex-col md:h-full w-full bg-slate-950 text-slate-100 md:overflow-hidden relative font-sans select-none">
       {/* TOP HEADER CONTROLS BAR */}
       <div className="bg-slate-900 border-b border-slate-800 px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2 shrink-0 z-20 shadow-md">
         {/* Title & Live Status */}
@@ -544,18 +582,35 @@ export const GuardMapDashboard: React.FC<GuardMapDashboardProps> = ({
       )}
 
       {/* MAIN WORKSPACE: MAP VIEW + TELEMETRY SIDEBAR */}
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex-1 flex flex-col md:flex-row md:overflow-hidden relative">
         {/* INTERACTIVE VECTOR SVG MAP CANVAS CONTAINER */}
         <div 
           ref={mapContainerRef}
-          className={`flex-1 relative overflow-hidden bg-slate-950 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+          style={{ touchAction: isMapPanActive ? 'none' : 'pan-y' }}
+          className={`h-[280px] sm:h-[340px] md:h-[450px] lg:h-full w-full md:flex-1 relative overflow-hidden bg-slate-950 touch-pan-y shrink-0 ${
+            isDragging ? 'cursor-grabbing' : 'cursor-grab'
+          }`}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
         >
+          {/* MOBILE TOUCH INTERCEPT SHIELD BANNER (When Map Pan is Active) */}
+          {isMapPanActive && (
+            <div
+              id="map-pan-active-banner"
+              onClick={() => setIsMapPanActive(false)}
+              className="absolute top-2.5 left-1/2 -translate-x-1/2 z-30 bg-amber-500/95 text-slate-950 px-3 py-1 rounded-full text-[10px] font-mono font-black uppercase tracking-wider shadow-lg border border-amber-300 cursor-pointer whitespace-nowrap"
+            >
+              Map Pan Active — Tap outside to lock scroll
+            </div>
+          )}
+
           {/* FLOATING MAP VIEW CONTROLS (Zoom, Layers, Reset) */}
-          <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5 bg-slate-900/90 backdrop-blur-md p-1.5 rounded-xl border border-slate-800 shadow-xl">
+          <div className="absolute top-3 left-3 z-20 flex flex-col gap-1.5 bg-slate-900/90 backdrop-blur-md p-1.5 rounded-xl border border-slate-800 shadow-xl">
             <button
               id="map-zoom-in-btn"
               type="button"
@@ -595,27 +650,44 @@ export const GuardMapDashboard: React.FC<GuardMapDashboardProps> = ({
             </button>
           </div>
 
-          {/* MAP LAYER STYLE & LEGEND OVERLAY (Top Right of Canvas) */}
-          <div className="absolute top-3 right-3 z-10 flex items-center gap-1 bg-slate-900/90 backdrop-blur-md p-1 rounded-xl border border-slate-800 shadow-xl text-xs">
-            {(['tactical', 'satellite', 'high_contrast'] as const).map((style) => (
-              <button
-                key={style}
-                type="button"
-                onClick={() => setMapStyle(style)}
-                className={`px-2.5 py-1 rounded-lg text-[10px] font-mono uppercase font-bold transition-all cursor-pointer ${
-                  mapStyle === style
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}
-              >
-                {style.replace('_', ' ')}
-              </button>
-            ))}
+          {/* TOP-RIGHT MAP CONTROLS: TOUCH INTERCEPT SHIELD TOGGLE + MAP LAYER STYLE */}
+          <div className="absolute top-3 right-3 z-20 flex flex-col items-end gap-1.5">
+            {/* Touch Intercept Shield Toggle Button */}
+            <button
+              id="mobile-map-touch-shield-toggle-btn"
+              type="button"
+              onClick={() => setIsMapPanActive((prev) => !prev)}
+              className={`px-2.5 py-1.5 rounded-xl text-[11px] font-mono font-black tracking-wide backdrop-blur-md border shadow-xl transition-all cursor-pointer ${
+                isMapPanActive
+                  ? 'bg-emerald-600/90 border-emerald-400 text-white ring-2 ring-emerald-400/50'
+                  : 'bg-slate-900/80 hover:bg-slate-800/90 border-slate-700 text-slate-100'
+              }`}
+            >
+              [ 🖐️ Tap to Pan Map ]
+            </button>
+
+            {/* MAP LAYER STYLE & LEGEND OVERLAY */}
+            <div className="hidden sm:flex items-center gap-1 bg-slate-900/90 backdrop-blur-md p-1 rounded-xl border border-slate-800 shadow-xl text-xs">
+              {(['tactical', 'satellite', 'high_contrast'] as const).map((style) => (
+                <button
+                  key={style}
+                  type="button"
+                  onClick={() => setMapStyle(style)}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-mono uppercase font-bold transition-all cursor-pointer ${
+                    mapStyle === style
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  {style.replace('_', ' ')}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* SVG MAP CANVAS */}
+          {/* SVG MAP CANVAS (pointer-events-none on mobile unless Touch Shield toggled ON) */}
           <svg 
-            className="w-full h-full pointer-events-auto"
+            className={`w-full h-full ${isMapPanActive ? 'pointer-events-auto' : 'pointer-events-none md:pointer-events-auto'}`}
             viewBox={`0 0 ${containerDimensions.width} ${containerDimensions.height}`}
           >
             <defs>

@@ -1,34 +1,40 @@
 import React, { useState, useMemo } from 'react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
-import { Shift, GuardProfile } from '../../types/shift';
-import { 
-  suggestGuardsForShift, 
-  generateBatchAutoFillPlan, 
-  GuardCandidateEvaluation, 
-  BatchAutoFillItem 
+import { Shift } from '../../types/shift';
+import {
+  SchedulingConstraints,
+  DEFAULT_SCHEDULING_CONSTRAINTS,
+  AutoFillExecutionResult,
+  ShiftSchedule,
+} from '../../types/scheduling';
+import { autoFillShifts } from '../../utils/autoFillEngine';
+import {
+  suggestGuardsForShift,
+  generateBatchAutoFillPlan,
+  GuardCandidateEvaluation,
 } from '../../utils/autoFillHeuristics';
-import { formatDateLabel, calculateHours } from '../../utils/time';
-import { 
-  X, 
-  Sparkles, 
-  UserCheck, 
-  ShieldCheck, 
-  Clock, 
-  AlertTriangle, 
-  CheckCircle2, 
-  MapPin, 
-  Calendar, 
-  Award, 
-  Search, 
-  Filter, 
-  ChevronRight, 
-  Zap, 
-  Layers, 
-  Check, 
-  AlertCircle,
-  HelpCircle,
+import { formatDateLabel } from '../../utils/time';
+import {
+  X,
+  Sparkles,
+  UserCheck,
+  ShieldCheck,
+  Clock,
+  AlertTriangle,
+  CheckCircle2,
+  MapPin,
+  Calendar,
+  Award,
+  Search,
+  Filter,
+  ChevronRight,
+  Layers,
   TrendingUp,
-  RotateCcw
+  Radio,
+  ShieldAlert,
+  SlidersHorizontal,
+  FileText,
+  Send,
 } from 'lucide-react';
 
 interface AutoFillShiftsModalProps {
@@ -40,24 +46,34 @@ interface AutoFillShiftsModalProps {
 export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
   isOpen,
   onClose,
-  initialShiftId
+  initialShiftId,
 }) => {
-  const { 
-    shifts, 
-    guardsList, 
-    bids, 
+  const {
+    shifts,
+    scheduledShifts,
+    guardsList,
+    bids,
     sitesList,
-    markShiftFilled, 
+    markShiftFilled,
+    scheduleNewShift,
+    broadcastPriorityPushToGuards,
     showToast,
-    logAdminAction
+    logAdminAction,
   } = useShiftOps();
 
-  // Mode: 'single' (focused shift) or 'batch' (all open shifts)
+  // Mode: 'batch' (Auto-Fill Engine) or 'single' (focused shift)
   const [mode, setMode] = useState<'single' | 'batch'>(initialShiftId ? 'single' : 'batch');
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(initialShiftId || null);
 
+  // Stateful Constraint Configuration
+  const [constraints, setConstraints] = useState<SchedulingConstraints>(
+    DEFAULT_SCHEDULING_CONSTRAINTS
+  );
+
   // Filters for single shift candidate view
-  const [candidateFilter, setCandidateFilter] = useState<'all' | 'site_cleared' | 'site_trained' | 'high_rest' | 'has_bids'>('all');
+  const [candidateFilter, setCandidateFilter] = useState<
+    'all' | 'site_cleared' | 'site_trained' | 'high_rest' | 'has_bids'
+  >('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Batch assignments state: shiftId -> selected guardId
@@ -66,10 +82,34 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
   const [isApplyingBatch, setIsApplyingBatch] = useState(false);
   const [isAssigningSingleId, setIsAssigningSingleId] = useState<string | null>(null);
 
+  // Execution Summary Drawer state (populated when running Auto-Fill Engine)
+  const [executionSummary, setExecutionSummary] = useState<{
+    totalEvaluated: number;
+    filledCount: number;
+    overtimePrevented: number;
+    restViolationsPrevented: number;
+    unfilledShifts: Shift[];
+    auditLog: string[];
+    broadcastedShiftIds: Set<string>;
+  } | null>(null);
+
   // List of all open shifts
   const openShifts = useMemo(() => {
     return shifts.filter((s) => s.status === 'open');
   }, [shifts]);
+
+  // Existing assignments across calendar workweek
+  const existingAssignments = useMemo<ShiftSchedule[]>(() => {
+    return [
+      ...scheduledShifts.filter((s) => s.status !== 'cancelled'),
+      ...shifts.filter((s) => s.status === 'filled' && (s.assignedGuardId || s.assignedGuardName)),
+    ];
+  }, [scheduledShifts, shifts]);
+
+  // Run Stateful Constraint-Satisfaction Auto-Fill Engine on openShifts
+  const enginePreview = useMemo<AutoFillExecutionResult>(() => {
+    return autoFillShifts(openShifts, guardsList, existingAssignments, constraints);
+  }, [openShifts, guardsList, existingAssignments, constraints]);
 
   // If selectedShiftId is not set or invalid, default to the first open shift
   const activeShift = useMemo(() => {
@@ -89,13 +129,15 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
   // Filtered candidate list
   const filteredCandidates = useMemo(() => {
     return candidateEvaluations.filter((cand) => {
-      // Filter tab
       if (candidateFilter === 'site_cleared' && !cand.isSiteClearanceMet) return false;
       if (candidateFilter === 'site_trained' && !cand.isSiteTrained) return false;
-      if (candidateFilter === 'high_rest' && (cand.daysSinceLastWorked === null ? false : cand.daysSinceLastWorked < 2)) return false;
+      if (
+        candidateFilter === 'high_rest' &&
+        (cand.daysSinceLastWorked === null ? false : cand.daysSinceLastWorked < 2)
+      )
+        return false;
       if (candidateFilter === 'has_bids' && !cand.hasBid) return false;
 
-      // Text search
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         return (
@@ -109,20 +151,28 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
     });
   }, [candidateEvaluations, candidateFilter, searchQuery]);
 
-  // Batch Auto-Fill Plan generated on open shifts
+  // Batch Auto-Fill Plan synchronized with stateful constraint engine
   const batchPlan = useMemo(() => {
-    return generateBatchAutoFillPlan(openShifts, guardsList, shifts, bids, sitesList);
-  }, [openShifts, guardsList, shifts, bids, sitesList]);
+    return generateBatchAutoFillPlan(
+      openShifts,
+      guardsList,
+      shifts,
+      bids,
+      sitesList,
+      scheduledShifts,
+      constraints
+    );
+  }, [openShifts, guardsList, shifts, bids, sitesList, scheduledShifts, constraints]);
 
-  // Sync batch state when plan initializes or openShifts changes
+  // Sync batch state when plan initializes or constraints/openShifts change
   React.useEffect(() => {
     if (isOpen) {
       const initialSelections: Record<string, string> = {};
       const initialSelectedIds = new Set<string>();
 
       batchPlan.forEach((item) => {
-        if (item.topCandidate && !item.topCandidate.hasScheduleConflict) {
-          initialSelections[item.shift.id] = item.topCandidate.guard.id;
+        if (item.isAssigned && item.selectedGuardId) {
+          initialSelections[item.shift.id] = item.selectedGuardId;
           initialSelectedIds.add(item.shift.id);
         }
       });
@@ -131,6 +181,13 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
       setBatchSelectedShiftIds(initialSelectedIds);
     }
   }, [isOpen, batchPlan]);
+
+  // Reset execution summary drawer when modal re-opens
+  React.useEffect(() => {
+    if (!isOpen) {
+      setExecutionSummary(null);
+    }
+  }, [isOpen]);
 
   // Update selected shift when initialShiftId changes
   React.useEffect(() => {
@@ -145,15 +202,31 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
   // Single Guard Assignment Action
   const handleAssignGuard = (shift: Shift, candidate: GuardCandidateEvaluation) => {
     setIsAssigningSingleId(candidate.guard.id);
-    
-    // Fill the shift
+
     markShiftFilled(shift.id, candidate.guard.name);
+
+    scheduleNewShift({
+      guardId: candidate.guard.id,
+      guardName: candidate.guard.name,
+      guardBadge: candidate.guard.badgeNumber,
+      guardPhone: candidate.guard.phone,
+      siteName: shift.siteName,
+      siteAddress: shift.address || 'Site Address on File',
+      date: shift.date,
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+      hours: shift.hours || 8,
+      postRole: shift.location || 'Standard Security Post',
+      postInstructions: shift.notes || 'Maintain post security and complete hourly patrol logs.',
+      requiredCertifications: shift.requiredCertifications || [],
+      status: 'scheduled',
+    });
 
     logAdminAction({
       type: 'shift_filled',
       title: 'Auto-Filled via Heuristic',
       description: `Assigned ${candidate.guard.name} (${candidate.guard.badgeNumber}) to ${shift.siteName} • Heuristic Match: ${candidate.score}%`,
-      adminName: 'Lt. Mark O\'Connor',
+      adminName: "Lt. Mark O'Connor",
       adminBadge: 'OPS-CMD-01',
       badgeVariant: 'emerald',
       metadata: {
@@ -161,8 +234,8 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
         guardId: candidate.guard.id,
         guardName: candidate.guard.name,
         score: candidate.score,
-        reasons: candidate.reasons
-      }
+        reasons: candidate.reasons,
+      },
     });
 
     showToast(
@@ -173,7 +246,6 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
 
     setTimeout(() => {
       setIsAssigningSingleId(null);
-      // If there are more open shifts, switch to the next one; else close
       const remainingOpen = openShifts.filter((s) => s.id !== shift.id);
       if (remainingOpen.length > 0) {
         setSelectedShiftId(remainingOpen[0].id);
@@ -183,43 +255,133 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
     }, 400);
   };
 
-  // Batch Auto-Fill Execution
+  // Stateful Auto-Fill Engine Execution & CAD Execution Summary Drawer Trigger
   const handleApplyBatchAutoFill = () => {
-    const shiftsToFill = openShifts.filter((s) => batchSelectedShiftIds.has(s.id) && batchSelections[s.id]);
-    if (shiftsToFill.length === 0) return;
-
     setIsApplyingBatch(true);
 
+    // Run constraint-satisfaction engine across the target open shifts
+    const result = autoFillShifts(openShifts, guardsList, existingAssignments, constraints);
+
+    const totalEvaluated = openShifts.length;
     let filledCount = 0;
-    shiftsToFill.forEach((shift) => {
-      const guardId = batchSelections[shift.id];
-      const guard = guardsList.find((g) => g.id === guardId);
+
+    result.assignments.forEach((assignment) => {
+      // Respect user checkbox deselection if they manually unchecked a proposed assignment
+      if (!batchSelectedShiftIds.has(assignment.shiftId)) return;
+
+      const selectedGuardId = batchSelections[assignment.shiftId] || assignment.guardId;
+      const guard = guardsList.find((g) => g.id === selectedGuardId);
       if (guard) {
-        markShiftFilled(shift.id, guard.name);
+        markShiftFilled(assignment.shiftId, guard.name);
+        scheduleNewShift({
+          guardId: guard.id,
+          guardName: guard.name,
+          guardBadge: guard.badgeNumber,
+          guardPhone: guard.phone,
+          siteName: assignment.siteName,
+          siteAddress: assignment.shift.address || 'Site Address on File',
+          date: assignment.date,
+          startTime: assignment.startTime,
+          endTime: assignment.endTime,
+          hours: assignment.durationHours,
+          postRole: assignment.shift.location || 'Assigned Security Post',
+          postInstructions:
+            assignment.shift.notes ||
+            `Rostered via Stateful Auto-Fill Engine (${assignment.weeklyHoursBefore}h → ${assignment.weeklyHoursAfter}h/wk).`,
+          requiredCertifications: assignment.shift.requiredCertifications || [],
+          status: 'scheduled',
+        });
         filledCount++;
       }
     });
 
+    // Any shifts deselected by dispatcher or left unassigned by the 40h/12h constraints remain open
+    const manuallySkippedShifts = result.assignments
+      .filter((a) => !batchSelectedShiftIds.has(a.shiftId))
+      .map((a) => a.shift);
+    const allUnfilled = [...result.unassigned, ...manuallySkippedShifts];
+
     logAdminAction({
       type: 'shift_filled',
-      title: 'Batch Auto-Fill Executed',
-      description: `Automatically filled ${filledCount} open shifts using the training & recency heuristic engine.`,
-      adminName: 'Lt. Mark O\'Connor',
+      title: 'Stateful Auto-Fill Engine Executed',
+      description: `Rostered ${filledCount} of ${totalEvaluated} shifts. Prevented ${result.overtimePreventedCount} overtime (> ${constraints.maxWeeklyHours}h) assignments. ${allUnfilled.length} shift(s) flagged OPEN.`,
+      adminName: "Lt. Mark O'Connor",
       adminBadge: 'OPS-CMD-01',
-      badgeVariant: 'emerald',
-      metadata: { filledCount }
+      badgeVariant: allUnfilled.length > 0 ? 'amber' : 'emerald',
+      metadata: {
+        filledCount,
+        totalEvaluated,
+        overtimePrevented: result.overtimePreventedCount,
+        unfilledCount: allUnfilled.length,
+        auditLog: result.auditLog,
+      },
+    });
+
+    setExecutionSummary({
+      totalEvaluated,
+      filledCount,
+      overtimePrevented: result.overtimePreventedCount,
+      restViolationsPrevented: result.restTurnaroundPreventedCount,
+      unfilledShifts: allUnfilled,
+      auditLog: result.auditLog,
+      broadcastedShiftIds: new Set(),
     });
 
     showToast(
-      'Batch Auto-Fill Complete',
-      `Successfully filled ${filledCount} open shifts.`,
-      'success'
+      'Auto-Fill Engine Complete',
+      `${filledCount} of ${totalEvaluated} shifts rostered • ${result.overtimePreventedCount} overtime assignments prevented.`,
+      allUnfilled.length > 0 ? 'warning' : 'success'
     );
 
-    setTimeout(() => {
-      setIsApplyingBatch(false);
-      onClose();
-    }, 500);
+    setIsApplyingBatch(false);
+  };
+
+  // One-Tap Broadcast of Unfilled Shifts to Guard Terminal 'OPEN' Tab
+  const handleBroadcastUnfilledToOpenBids = (targetShiftIds?: string[]) => {
+    if (!executionSummary) return;
+
+    const shiftsToBroadcast = targetShiftIds
+      ? executionSummary.unfilledShifts.filter((s) => targetShiftIds.includes(s.id))
+      : executionSummary.unfilledShifts;
+
+    if (shiftsToBroadcast.length === 0) return;
+
+    let totalGuardsNotified = 0;
+    const nextBroadcasted = new Set(executionSummary.broadcastedShiftIds);
+
+    shiftsToBroadcast.forEach((shift) => {
+      const res = broadcastPriorityPushToGuards(shift.id);
+      totalGuardsNotified = Math.max(totalGuardsNotified, res.notifiedGuardsCount);
+      nextBroadcasted.add(shift.id);
+    });
+
+    setExecutionSummary((prev) =>
+      prev
+        ? {
+            ...prev,
+            broadcastedShiftIds: nextBroadcasted,
+          }
+        : null
+    );
+
+    logAdminAction({
+      type: 'priority_broadcast_sent',
+      title: 'Unfilled Shifts Broadcast to Open Bids',
+      description: `Pushed ${shiftsToBroadcast.length} capacity-exceeded open shift(s) directly to Guard Terminal 'OPEN' tab.`,
+      adminName: "Lt. Mark O'Connor",
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'amber',
+      metadata: {
+        shiftIds: shiftsToBroadcast.map((s) => s.id),
+        notifiedGuardsCount: totalGuardsNotified,
+      },
+    });
+
+    showToast(
+      'Broadcasted to Guard Open Bids',
+      `Pushed ${shiftsToBroadcast.length} unfilled shift(s) directly to Guard Terminal 'OPEN' tab (${totalGuardsNotified} eligible officers notified).`,
+      'success'
+    );
   };
 
   const toggleBatchShiftSelection = (shiftId: string) => {
@@ -235,13 +397,13 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
   };
 
   return (
-    <div 
+    <div
       id="autofill-shifts-modal-overlay"
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto"
     >
-      <div 
+      <div
         id="autofill-shifts-modal-container"
-        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150"
       >
         {/* Modal Header */}
         <div className="p-4 sm:p-5 bg-gradient-to-r from-blue-950 via-slate-900 to-[#1e3a8a] text-white flex items-center justify-between shrink-0 border-b border-blue-900/60">
@@ -250,16 +412,17 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
               <Sparkles className="w-5 h-5 text-amber-300 fill-amber-300/30" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-base sm:text-lg font-black tracking-tight flex items-center gap-2">
-                  Auto-Fill Shifts Heuristic Engine
+                  Auto-Fill Scheduling Engine
                 </h2>
                 <span className="bg-amber-400 text-slate-950 text-[10px] font-black uppercase px-2 py-0.5 rounded-full font-mono">
-                  Smart Match
+                  Constraint-Satisfaction
                 </span>
               </div>
               <p className="text-xs text-blue-200/80 mt-0.5">
-                Ranks guards by site training qualification, rest days since last worked shift, and certifications.
+                Enforces {constraints.maxWeeklyHours}h weekly overtime ceilings,{' '}
+                {constraints.minRestHours}h turnaround rest intervals, and multi-day load balancing.
               </p>
             </div>
           </div>
@@ -275,7 +438,7 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
           </button>
         </div>
 
-        {/* Mode Selector Tabs */}
+        {/* Mode Selector Tabs & Constraint Guardrails Bar */}
         <div className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs">
             <button
@@ -289,10 +452,14 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
               }`}
             >
               <Layers className="w-3.5 h-3.5" />
-              <span>Batch Auto-Fill All</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                mode === 'batch' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
-              }`}>
+              <span>Batch Auto-Fill Engine</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                  mode === 'batch'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                }`}
+              >
                 {openShifts.length}
               </span>
             </button>
@@ -312,15 +479,236 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
             </button>
           </div>
 
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-              {openShifts.length} Open Shift{openShifts.length === 1 ? '' : 's'}
+          {/* Constraint Controls */}
+          <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-700 dark:text-slate-300">
+            <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400">
+              <SlidersHorizontal className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              Guardrails:
             </span>
-            <span className="text-slate-300 dark:text-slate-600">•</span>
-            <span>{guardsList.length} Active Guards</span>
+            <label
+              className="flex items-center gap-1 bg-white dark:bg-slate-900 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 font-mono"
+              title="Maximum weekly regular hours ceiling"
+            >
+              <span className="text-slate-500">Max Wk:</span>
+              <select
+                value={constraints.maxWeeklyHours}
+                onChange={(e) =>
+                  setConstraints((prev) => ({
+                    ...prev,
+                    maxWeeklyHours: Number(e.target.value),
+                  }))
+                }
+                className="bg-transparent font-black text-blue-700 dark:text-blue-400 focus:outline-none cursor-pointer"
+              >
+                <option value={36}>36h</option>
+                <option value={40}>40h</option>
+                <option value={48}>48h</option>
+              </select>
+            </label>
+
+            <label
+              className="flex items-center gap-1 bg-white dark:bg-slate-900 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 font-mono"
+              title="Minimum turnaround rest hours between shifts"
+            >
+              <span className="text-slate-500">Min Rest:</span>
+              <select
+                value={constraints.minRestHours}
+                onChange={(e) =>
+                  setConstraints((prev) => ({
+                    ...prev,
+                    minRestHours: Number(e.target.value),
+                  }))
+                }
+                className="bg-transparent font-black text-blue-700 dark:text-blue-400 focus:outline-none cursor-pointer"
+              >
+                <option value={8}>8h</option>
+                <option value={10}>10h</option>
+                <option value={12}>12h</option>
+              </select>
+            </label>
+
+            <label
+              className="flex items-center gap-1 bg-white dark:bg-slate-900 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 font-mono"
+              title="Maximum consecutive days worked"
+            >
+              <span className="text-slate-500">Max Days:</span>
+              <select
+                value={constraints.maxConsecutiveDays}
+                onChange={(e) =>
+                  setConstraints((prev) => ({
+                    ...prev,
+                    maxConsecutiveDays: Number(e.target.value),
+                  }))
+                }
+                className="bg-transparent font-black text-blue-700 dark:text-blue-400 focus:outline-none cursor-pointer"
+              >
+                <option value={5}>5d</option>
+                <option value={6}>6d</option>
+              </select>
+            </label>
+
+            <label className="flex items-center gap-1.5 bg-white dark:bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={constraints.allowOvertimeOverride}
+                onChange={(e) =>
+                  setConstraints((prev) => ({
+                    ...prev,
+                    allowOvertimeOverride: e.target.checked,
+                  }))
+                }
+                className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-0 cursor-pointer"
+              />
+              <span>OT Override</span>
+            </label>
           </div>
         </div>
+
+        {/* ========================================================================= */}
+        {/* CAD EXECUTION SUMMARY DRAWER                                              */}
+        {/* ========================================================================= */}
+        {executionSummary && (
+          <div
+            id="cad-autofill-execution-summary-drawer"
+            className="mx-4 mt-4 p-4 rounded-xl bg-slate-900 text-white border border-slate-700 shadow-lg flex flex-col gap-3 shrink-0 animate-in slide-in-from-top-2 duration-200"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-white">
+                  Auto-Fill Engine Execution Summary Drawer
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExecutionSummary(null)}
+                className="text-[11px] font-bold text-slate-400 hover:text-white px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 cursor-pointer"
+              >
+                Dismiss Summary
+              </button>
+            </div>
+
+            {/* 3 Core Execution KPIs */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div className="p-3 rounded-lg bg-slate-800/90 border border-emerald-500/30 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                    Shifts Filled
+                  </span>
+                  <span className="text-sm sm:text-base font-black text-emerald-400 font-mono">
+                    {executionSummary.filledCount} of {executionSummary.totalEvaluated} shifts rostered
+                  </span>
+                </div>
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-800/90 border border-amber-500/30 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                    Overtime Prevented
+                  </span>
+                  <span className="text-sm sm:text-base font-black text-amber-300 font-mono">
+                    {executionSummary.overtimePrevented} blocked (&gt;{constraints.maxWeeklyHours}h cap)
+                  </span>
+                </div>
+                <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0" />
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-800/90 border border-rose-500/30 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                    Unfilled Shifts Remaining
+                  </span>
+                  <span className="text-sm sm:text-base font-black text-rose-400 font-mono">
+                    {executionSummary.unfilledShifts.length} Open Shift
+                    {executionSummary.unfilledShifts.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <Radio className="w-5 h-5 text-rose-400 shrink-0" />
+              </div>
+            </div>
+
+            {/* Unfilled Shifts List with One-Tap [ Broadcast to Open Bids ] Button */}
+            {executionSummary.unfilledShifts.length > 0 && (
+              <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-500/40 flex flex-col gap-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-rose-200 flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                      Unfilled Shifts Flagged OPEN ({executionSummary.unfilledShifts.length})
+                    </h4>
+                    <p className="text-[11px] text-rose-200/80">
+                      All qualified officers reached the {constraints.maxWeeklyHours}h weekly ceiling or{' '}
+                      {constraints.minRestHours}h rest turnaround limit.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    id="broadcast-unfilled-to-open-bids-btn"
+                    onClick={() => handleBroadcastUnfilledToOpenBids()}
+                    className="px-3.5 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md cursor-pointer active:scale-95 transition-all shrink-0"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>[ Broadcast to Open Bids ]</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-36 overflow-y-auto pr-1">
+                  {executionSummary.unfilledShifts.map((unfilled) => {
+                    const isBroadcasted = executionSummary.broadcastedShiftIds.has(unfilled.id);
+                    return (
+                      <div
+                        key={unfilled.id}
+                        className="p-2 rounded-md bg-slate-900/90 border border-rose-500/30 flex items-center justify-between gap-2 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-bold text-white truncate">{unfilled.siteName}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">
+                            {unfilled.date} • {unfilled.startTime}-{unfilled.endTime} ({unfilled.hours}h)
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleBroadcastUnfilledToOpenBids([unfilled.id])}
+                          className={`px-2 py-1 rounded text-[10px] font-black uppercase font-mono shrink-0 cursor-pointer transition-colors ${
+                            isBroadcasted
+                              ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-600/40'
+                              : 'bg-amber-400/20 hover:bg-amber-400/30 text-amber-300 border border-amber-400/40'
+                          }`}
+                        >
+                          {isBroadcasted ? '✓ Broadcasted' : 'Broadcast'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Audit Log Stream */}
+            {executionSummary.auditLog.length > 0 && (
+              <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-2.5 max-h-28 overflow-y-auto font-mono text-[10px] space-y-1">
+                <div className="text-slate-400 font-bold uppercase flex items-center gap-1 mb-1">
+                  <FileText className="w-3 h-3 text-blue-400" />
+                  Constraint Engine Audit Log ({executionSummary.auditLog.length} entries)
+                </div>
+                {executionSummary.auditLog.map((entry, idx) => (
+                  <div
+                    key={idx}
+                    className={
+                      entry.includes('[CAPACITY EXCEEDED]')
+                        ? 'text-rose-400 font-bold'
+                        : 'text-emerald-400'
+                    }
+                  >
+                    {entry}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Modal Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-5 flex flex-col gap-4">
@@ -329,9 +717,12 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
               <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-3">
                 <CheckCircle2 className="w-6 h-6" />
               </div>
-              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">All Shifts Filled</h3>
+              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">
+                All Shifts Filled
+              </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mt-1">
-                There are currently no open shifts on the roster. When new shifts are posted or trades are opened, the heuristic engine will suggest qualified candidates here.
+                There are currently no open shifts on the roster. When new shifts are posted or trades
+                are opened, the constraint-satisfaction engine will roster qualified candidates here.
               </p>
             </div>
           ) : mode === 'batch' ? (
@@ -339,45 +730,96 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
             /* BATCH AUTO-FILL MODE                                                      */
             /* ========================================================================= */
             <div className="flex flex-col gap-4">
-              {/* Info Callout */}
-              <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 p-3.5 rounded-xl flex items-start justify-between gap-3">
+              {/* Live Pre-Execution Constraint Preview Banner */}
+              <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 p-3.5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-start gap-2.5">
                   <TrendingUp className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
                   <div>
-                    <h4 className="text-xs font-bold text-blue-900 dark:text-blue-200">
-                      Heuristic Dispatch Optimization
-                    </h4>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-xs font-bold text-blue-900 dark:text-blue-200">
+                        Stateful Constraint-Satisfaction Preview:{' '}
+                        <span className="font-mono font-black text-emerald-700 dark:text-emerald-400">
+                          {enginePreview.assignments.length} of {openShifts.length} shifts rostered
+                        </span>
+                      </h4>
+                      {enginePreview.overtimePreventedCount > 0 && (
+                        <span className="text-[10px] font-mono font-bold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-800">
+                          🛡️ {enginePreview.overtimePreventedCount} Overtime Assignment
+                          {enginePreview.overtimePreventedCount === 1 ? '' : 's'} Prevented
+                        </span>
+                      )}
+                      {enginePreview.unassigned.length > 0 && (
+                        <span className="text-[10px] font-mono font-bold bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 px-2 py-0.5 rounded-full border border-rose-300 dark:border-rose-800">
+                          ⚠️ {enginePreview.unassigned.length} Capacity-Exceeded Open
+                        </span>
+                      )}
+                    </div>
                     <p className="text-[11px] text-blue-800/80 dark:text-blue-300/80 leading-relaxed mt-0.5">
-                      The engine evaluated <strong>{guardsList.length} guards</strong> against <strong>{openShifts.length} open shifts</strong>. It prioritizes site qualification, resolves same-day shift conflicts, and balances fatigue based on the guard's last worked shift date.
+                      Evaluates <strong>{guardsList.length} active officers</strong> chronologically across
+                      the Sunday–Saturday workweek. Selects the qualified officer with the{' '}
+                      <strong>lowest weekly hours</strong> while enforcing a strict{' '}
+                      <strong>{constraints.maxWeeklyHours}h ceiling</strong> and{' '}
+                      <strong>{constraints.minRestHours}h rest turnaround</strong>.
                     </p>
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    const allIds = new Set(openShifts.map((s) => s.id));
-                    setBatchSelectedShiftIds(allIds);
-                  }}
-                  className="text-[11px] font-bold text-blue-700 dark:text-blue-400 hover:underline shrink-0 cursor-pointer"
-                >
-                  Select All
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  {enginePreview.unassigned.length > 0 && !executionSummary && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExecutionSummary({
+                          totalEvaluated: openShifts.length,
+                          filledCount: enginePreview.assignments.length,
+                          overtimePrevented: enginePreview.overtimePreventedCount,
+                          restViolationsPrevented: enginePreview.restTurnaroundPreventedCount,
+                          unfilledShifts: enginePreview.unassigned,
+                          auditLog: enginePreview.auditLog,
+                          broadcastedShiftIds: new Set(),
+                        });
+                      }}
+                      className="text-[11px] font-bold bg-amber-500/20 text-amber-900 dark:text-amber-300 border border-amber-400/50 px-2.5 py-1 rounded-lg hover:bg-amber-500/30 cursor-pointer"
+                    >
+                      View Summary Drawer
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const assignableIds = new Set(
+                        enginePreview.assignments.map((a) => a.shiftId)
+                      );
+                      setBatchSelectedShiftIds(assignableIds);
+                    }}
+                    className="text-[11px] font-bold text-blue-700 dark:text-blue-400 hover:underline shrink-0 cursor-pointer"
+                  >
+                    Select Rosterable ({enginePreview.assignments.length})
+                  </button>
+                </div>
               </div>
 
               {/* Batch Shifts List */}
               <div className="flex flex-col gap-3">
-                {batchPlan.map((item, index) => {
+                {batchPlan.map((item) => {
                   const shift = item.shift;
                   const isSelected = batchSelectedShiftIds.has(shift.id);
                   const chosenGuardId = batchSelections[shift.id];
-                  const chosenCandidate = item.allCandidates.find((c) => c.guard.id === chosenGuardId) || item.topCandidate;
+                  const engineAssignment = enginePreview.assignments.find(
+                    (a) => a.shiftId === shift.id
+                  );
+                  const chosenCandidate =
+                    item.allCandidates.find((c) => c.guard.id === chosenGuardId) ||
+                    item.topCandidate;
+                  const isUnassignedCapacity = !engineAssignment;
 
                   return (
                     <div
                       key={shift.id}
                       className={`p-3.5 rounded-xl border transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
-                        isSelected
+                        isUnassignedCapacity
+                          ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-300 dark:border-rose-800/70'
+                          : isSelected
                           ? 'bg-white dark:bg-slate-800 border-blue-300 dark:border-blue-600 shadow-2xs'
                           : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 opacity-70'
                       }`}
@@ -387,9 +829,10 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
                         <input
                           type="checkbox"
                           id={`batch-check-${shift.id}`}
+                          disabled={isUnassignedCapacity && !chosenGuardId}
                           checked={isSelected}
                           onChange={() => toggleBatchShiftSelection(shift.id)}
-                          className="w-4 h-4 mt-1 rounded border-slate-300 text-[#1e3a8a] focus:ring-blue-500 cursor-pointer"
+                          className="w-4 h-4 mt-1 rounded border-slate-300 text-[#1e3a8a] focus:ring-blue-500 cursor-pointer disabled:opacity-40"
                         />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -407,67 +850,70 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
                             </span>
                           </div>
 
-                          <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-600 dark:text-slate-300">
+                          <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-600 dark:text-slate-300 flex-wrap">
                             <span className="flex items-center gap-1 font-mono font-bold text-[#1e3a8a] dark:text-blue-400">
                               <Clock className="w-3 h-3" />
                               {shift.hours}h
                             </span>
-                            {shift.requiredCertifications && shift.requiredCertifications.length > 0 && (
-                              <span className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-1.5 py-0.2 rounded font-mono truncate">
-                                Reqs: {shift.requiredCertifications.join(', ')}
+                            {shift.requiredCertifications &&
+                              shift.requiredCertifications.length > 0 && (
+                                <span className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-1.5 py-0.2 rounded font-mono truncate">
+                                  Reqs: {shift.requiredCertifications.join(', ')}
+                                </span>
+                              )}
+                            {engineAssignment && (
+                              <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 px-2 py-0.2 rounded font-mono font-bold">
+                                Wk Hours: {engineAssignment.weeklyHoursBefore}h →{' '}
+                                {engineAssignment.weeklyHoursAfter}h / {constraints.maxWeeklyHours}h
                               </span>
                             )}
                           </div>
                         </div>
                       </div>
 
-                      {/* Right: Suggested Guard Dropdown & Heuristic Score */}
+                      {/* Right: Suggested Guard Dropdown & Constraint Status */}
                       <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end shrink-0 pl-7 sm:pl-0">
-                        {chosenCandidate ? (
+                        {engineAssignment && chosenCandidate ? (
                           <div className="flex flex-col sm:items-end">
                             <div className="flex items-center gap-2">
-                              {/* Match Score Badge */}
-                              <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
-                                chosenCandidate.score >= 80 
-                                  ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300' 
-                                  : chosenCandidate.score >= 60 
-                                  ? 'bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300' 
-                                  : 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300'
-                              }`}>
+                              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-1 bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
                                 <Sparkles className="w-2.5 h-2.5" />
-                                {chosenCandidate.score}% Match
+                                Load-Balanced
                               </span>
 
-                              {/* Guard Selector Dropdown */}
                               <select
                                 value={chosenGuardId || ''}
                                 onChange={(e) => {
                                   setBatchSelections((prev) => ({
                                     ...prev,
-                                    [shift.id]: e.target.value
+                                    [shift.id]: e.target.value,
                                   }));
                                 }}
-                                className="text-xs font-bold text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer max-w-[180px] truncate"
+                                className="text-xs font-bold text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer max-w-[200px] truncate"
                               >
                                 {item.allCandidates.map((cand) => (
                                   <option key={cand.guard.id} value={cand.guard.id}>
-                                    {cand.guard.name} ({cand.score}% • {cand.isSiteTrained ? 'Trained' : 'OJT'})
+                                    {cand.guard.name} ({cand.score}% •{' '}
+                                    {cand.isSiteTrained ? 'Trained' : 'OJT'})
                                   </option>
                                 ))}
                               </select>
                             </div>
 
-                            {/* Heuristic Details Summary */}
                             <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 sm:text-right">
-                              {chosenCandidate.isSiteTrained ? '✓ Site Trained' : '⚠️ Needs Site OJT'} • {
-                                chosenCandidate.daysSinceLastWorked === null 
-                                  ? 'Fully Rested' 
-                                  : `Last worked ${chosenCandidate.daysSinceLastWorked}d ago`
-                              }
+                              {engineAssignment.reason}
                             </p>
                           </div>
                         ) : (
-                          <span className="text-xs text-red-500 font-bold">No viable candidate</span>
+                          <div className="flex flex-col sm:items-end">
+                            <span className="text-[10px] font-mono font-black uppercase px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
+                              [CAPACITY EXCEEDED] Flagged OPEN
+                            </span>
+                            <span className="text-[10px] text-rose-600 dark:text-rose-400 mt-0.5 sm:text-right">
+                              All qualified guards at or near {constraints.maxWeeklyHours}h threshold
+                              or &lt;{constraints.minRestHours}h rest
+                            </span>
+                          </div>
                         )}
 
                         <button
@@ -493,7 +939,6 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
             /* SINGLE SHIFT FOCUSED RECOMMENDATION MODE                                  */
             /* ========================================================================= */
             <div className="flex flex-col gap-4">
-              {/* Shift Selector Dropdown & Header Card */}
               <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div className="flex items-start gap-3">
                   <div className="p-2 bg-blue-100 dark:bg-blue-900 text-[#1e3a8a] dark:text-blue-300 rounded-xl">
@@ -501,7 +946,9 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold uppercase text-slate-400">Target Open Shift</span>
+                      <span className="text-[10px] font-bold uppercase text-slate-400">
+                        Target Open Shift
+                      </span>
                       {activeShift?.urgency === 'emergency' && (
                         <span className="bg-red-600 text-white text-[9px] font-black uppercase px-1.5 py-0.2 rounded">
                           Emergency
@@ -514,7 +961,8 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
                     <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 mt-0.5">
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
-                        {activeShift && formatDateLabel(activeShift.date)} ({activeShift?.startTime} - {activeShift?.endTime})
+                        {activeShift && formatDateLabel(activeShift.date)} ({activeShift?.startTime}{' '}
+                        - {activeShift?.endTime})
                       </span>
                       <span>•</span>
                       <span className="font-mono font-bold">{activeShift?.hours} Hours</span>
@@ -522,7 +970,6 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
                   </div>
                 </div>
 
-                {/* Shift Picker Dropdown */}
                 <div className="flex items-center gap-2 w-full sm:w-auto">
                   <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase shrink-0">
                     Switch Shift:
@@ -626,13 +1073,20 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
               <div className="flex flex-col gap-3">
                 {filteredCandidates.length === 0 ? (
                   <div className="text-center py-8 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                    <p className="text-xs font-bold text-slate-600 dark:text-slate-300">No matching guards found</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">Try relaxing candidate filters</p>
+                    <p className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                      No matching guards found
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Try relaxing candidate filters
+                    </p>
                   </div>
                 ) : (
                   filteredCandidates.map((cand, idx) => {
-                    const isTopPick = idx === 0 && cand.score >= 80 && !cand.hasScheduleConflict;
+                    const isTopPick =
+                      idx === 0 && cand.score >= 80 && !cand.hasScheduleConflict;
                     const isAssigning = isAssigningSingleId === cand.guard.id;
+                    const guardTracker = enginePreview.guardTrackers[cand.guard.id];
+                    const currentWkHours = guardTracker ? guardTracker.weeklyHours : 0;
 
                     return (
                       <div
@@ -645,16 +1099,17 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
                             : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-700'
                         }`}
                       >
-                        {/* Top Row: Guard Name, Match Score & Assign Button */}
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex items-start gap-3">
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-mono font-black text-sm shrink-0 shadow-2xs ${
-                              cand.score >= 80
-                                ? 'bg-emerald-600 text-white'
-                                : cand.score >= 60
-                                ? 'bg-blue-700 text-white'
-                                : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
-                            }`}>
+                            <div
+                              className={`w-10 h-10 rounded-xl flex items-center justify-center font-mono font-black text-sm shrink-0 shadow-2xs ${
+                                cand.score >= 80
+                                  ? 'bg-emerald-600 text-white'
+                                  : cand.score >= 60
+                                  ? 'bg-blue-700 text-white'
+                                  : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
+                              }`}
+                            >
                               #{idx + 1}
                             </div>
 
@@ -666,11 +1121,9 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
                                 <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 rounded font-bold">
                                   {cand.guard.badgeNumber}
                                 </span>
-                                {cand.guard.role !== 'guard' && (
-                                  <span className="text-[9px] font-black uppercase tracking-wider bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 px-1.5 py-0.2 rounded">
-                                    {cand.guard.role}
-                                  </span>
-                                )}
+                                <span className="text-[10px] font-mono font-bold px-2 py-0.2 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                                  Wk Load: {currentWkHours}h / {constraints.maxWeeklyHours}h
+                                </span>
                                 {isTopPick && (
                                   <span className="text-[9px] font-black uppercase tracking-wider bg-emerald-500 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs">
                                     <Sparkles className="w-2.5 h-2.5" />
@@ -687,17 +1140,22 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
                             </div>
                           </div>
 
-                          {/* Right Score & Action */}
                           <div className="flex items-center gap-3 shrink-0">
                             <div className="text-right">
-                              <div className="flex items-center justify-end gap-1.5">
-                                <span className={`text-base font-black font-mono ${
-                                  cand.score >= 80 ? 'text-emerald-600 dark:text-emerald-400' : cand.score >= 60 ? 'text-blue-600 dark:text-blue-400' : 'text-amber-600 dark:text-amber-400'
-                                }`}>
-                                  {cand.score}%
-                                </span>
-                              </div>
-                              <span className="text-[10px] text-slate-400 uppercase font-bold">Match Score</span>
+                              <span
+                                className={`text-base font-black font-mono ${
+                                  cand.score >= 80
+                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                    : cand.score >= 60
+                                    ? 'text-blue-600 dark:text-blue-400'
+                                    : 'text-amber-600 dark:text-amber-400'
+                                }`}
+                              >
+                                {cand.score}%
+                              </span>
+                              <span className="block text-[10px] text-slate-400 uppercase font-bold">
+                                Match Score
+                              </span>
                             </div>
 
                             <button
@@ -719,49 +1177,57 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
                           </div>
                         </div>
 
-                        {/* Mid Row: Key Qualification Badges */}
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80 text-[11px]">
-                          {/* Training Status Badge */}
-                          <div className={`p-2 rounded-lg border flex items-center gap-2 ${
-                            cand.isSiteTrained
-                              ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-300'
-                              : 'bg-amber-50/80 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-300'
-                          }`}>
+                          <div
+                            className={`p-2 rounded-lg border flex items-center gap-2 ${
+                              cand.isSiteTrained
+                                ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-300'
+                                : 'bg-amber-50/80 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-300'
+                            }`}
+                          >
                             {cand.isSiteTrained ? (
                               <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                             ) : (
                               <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
                             )}
                             <div className="truncate">
-                              <span className="font-bold block text-[10px] uppercase">Site Qualification</span>
-                              <span className="truncate">{cand.isSiteTrained ? 'OJT Site Qualified' : 'Needs Site OJT'}</span>
-                            </div>
-                          </div>
-
-                          {/* Last Worked Shift & Recency Badge */}
-                          <div className="p-2 rounded-lg border bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                            <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                            <div className="truncate">
-                              <span className="font-bold block text-[10px] uppercase text-slate-400">Last Worked Shift</span>
-                              <span className="truncate font-medium">
-                                {cand.lastWorkedShift ? (
-                                  cand.daysSinceLastWorked === 0 ? 'Today' : `${cand.daysSinceLastWorked}d ago (${cand.lastWorkedShift.siteName.split('-')[0].trim()})`
-                                ) : (
-                                  'Full Rest (No Prior Shifts)'
-                                )}
+                              <span className="font-bold block text-[10px] uppercase">
+                                Site Qualification
+                              </span>
+                              <span className="truncate">
+                                {cand.isSiteTrained ? 'OJT Site Qualified' : 'Needs Site OJT'}
                               </span>
                             </div>
                           </div>
 
-                          {/* Bid & Clearances Status */}
-                          <div className={`p-2 rounded-lg border flex items-center gap-2 ${
-                            cand.isSiteClearanceMet
-                              ? 'bg-purple-50/70 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800/60 text-purple-900 dark:text-purple-300'
-                              : 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/60 text-rose-900 dark:text-rose-300'
-                          }`}>
+                          <div className="p-2 rounded-lg border bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                            <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                            <div className="truncate">
+                              <span className="font-bold block text-[10px] uppercase text-slate-400">
+                                Last Worked Shift
+                              </span>
+                              <span className="truncate font-medium">
+                                {cand.lastWorkedShift
+                                  ? cand.daysSinceLastWorked === 0
+                                    ? 'Today'
+                                    : `${cand.daysSinceLastWorked}d ago (${cand.lastWorkedShift.siteName.split('-')[0].trim()})`
+                                  : 'Full Rest (No Prior Shifts)'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div
+                            className={`p-2 rounded-lg border flex items-center gap-2 ${
+                              cand.isSiteClearanceMet
+                                ? 'bg-purple-50/70 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800/60 text-purple-900 dark:text-purple-300'
+                                : 'bg-rose-50/70 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/60 text-rose-900 dark:text-rose-300'
+                            }`}
+                          >
                             <Award className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
                             <div className="truncate">
-                              <span className="font-bold block text-[10px] uppercase text-slate-400">Site Clearances</span>
+                              <span className="font-bold block text-[10px] uppercase text-slate-400">
+                                Site Clearances
+                              </span>
                               <span className="truncate font-semibold">
                                 {cand.siteRequiredClearances.length === 0
                                   ? 'Standard Clearance'
@@ -771,24 +1237,6 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
                               </span>
                             </div>
                           </div>
-                        </div>
-
-                        {/* Bottom Row: Heuristic Bullet Points */}
-                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                          {cand.reasons.map((reason, rIdx) => (
-                            <span
-                              key={rIdx}
-                              className={`text-[10px] font-medium px-2 py-0.5 rounded-md flex items-center gap-1 ${
-                                reason.includes('Conflict')
-                                  ? 'bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300 border border-red-200'
-                                  : reason.includes('Qualified') || reason.includes('100%') || reason.includes('Lead-Certified')
-                                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300'
-                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-                              }`}
-                            >
-                              {reason}
-                            </span>
-                          ))}
                         </div>
                       </div>
                     );
@@ -800,15 +1248,20 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="p-3.5 sm:p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
+        <div className="p-3.5 sm:p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div className="text-xs text-slate-500 dark:text-slate-400">
             {mode === 'batch' ? (
               <span>
-                <strong>{batchSelectedShiftIds.size}</strong> of {openShifts.length} open shifts selected for auto-assignment
+                <strong>{batchSelectedShiftIds.size}</strong> of {openShifts.length} open shifts
+                compliant & ready for auto-assignment •{' '}
+                <strong className="text-amber-600 dark:text-amber-400">
+                  {enginePreview.overtimePreventedCount} overtime blocked
+                </strong>
               </span>
             ) : (
               <span>
-                Evaluating <strong>{candidateEvaluations.length} guards</strong> for <strong>{activeShift?.siteName}</strong>
+                Evaluating <strong>{candidateEvaluations.length} guards</strong> for{' '}
+                <strong>{activeShift?.siteName}</strong>
               </span>
             )}
           </div>
@@ -826,15 +1279,15 @@ export const AutoFillShiftsModal: React.FC<AutoFillShiftsModalProps> = ({
               <button
                 type="button"
                 id="execute-batch-autofill-btn"
-                disabled={batchSelectedShiftIds.size === 0 || isApplyingBatch}
+                disabled={isApplyingBatch}
                 onClick={handleApplyBatchAutoFill}
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-sm flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
               >
                 <Sparkles className="w-3.5 h-3.5 text-amber-300 fill-amber-300/30" />
                 <span>
                   {isApplyingBatch
-                    ? 'Applying Auto-Fill...'
-                    : `Apply Auto-Fill (${batchSelectedShiftIds.size} Shifts)`}
+                    ? 'Running Auto-Fill Engine...'
+                    : `Run Auto-Fill Engine (${batchSelectedShiftIds.size} of ${openShifts.length} Shifts)`}
                 </span>
               </button>
             )}

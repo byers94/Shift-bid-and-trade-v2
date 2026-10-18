@@ -294,8 +294,8 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full w-full bg-slate-100 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 overflow-hidden transition-colors duration-200">
-      {/* Top Application Bar with View Mode Switcher */}
-      <header className="bg-[#14234b] dark:bg-slate-950 text-white px-4 py-2.5 flex flex-wrap justify-between items-center border-b border-blue-900/80 dark:border-slate-800 z-30 shrink-0 gap-2 shadow-sm">
+      {/* Top Application Bar with View Mode Switcher (Collapsed on mobile when in CAD Ops view) */}
+      <header className={`bg-[#14234b] dark:bg-slate-950 text-white px-4 py-2.5 ${activeView === 'ops' ? 'hidden md:flex' : 'flex'} flex-wrap justify-between items-center border-b border-blue-900/80 dark:border-slate-800 z-30 shrink-0 gap-2 shadow-sm`}>
         <div className="flex items-center gap-2.5">
           <div className="p-1.5 bg-blue-600 rounded-lg shadow-xs">
             <Shield className="w-4 h-4 text-white" />

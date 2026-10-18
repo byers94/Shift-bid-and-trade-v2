@@ -769,6 +769,66 @@ const STORAGE_KEY_MEAL_BREAK_DURATION = 'secureshift_meal_break_duration_minutes
 const STORAGE_KEY_ORIENTATIONS = 'secureshift_site_orientations_v1';
 const STORAGE_KEY_DASHBOARD_CONFIG = 'secureshift_dashboard_config_v1';
 
+let uniqueEntityCounter = 0;
+const generateUniqueSuffix = () => {
+  uniqueEntityCounter += 1;
+  return `${Date.now().toString().slice(-4)}-${uniqueEntityCounter.toString(36)}-${Math.random().toString(36).substring(2, 5)}`;
+};
+
+const sanitizeScheduledShifts = (shifts: ScheduledShift[]): ScheduledShift[] => {
+  const seenIds = new Set<string>();
+  const seenSignatures = new Set<string>();
+  const result: ScheduledShift[] = [];
+
+  shifts.forEach((shift, idx) => {
+    const signature = `${shift.id}|${shift.guardId}|${shift.siteName}|${shift.date}|${shift.startTime}|${shift.endTime}`;
+    if (seenSignatures.has(signature)) {
+      return;
+    }
+    seenSignatures.add(signature);
+
+    let safeId = shift.id;
+    if (seenIds.has(safeId)) {
+      safeId = `${shift.id}-${idx + 1}`;
+      while (seenIds.has(safeId)) {
+        uniqueEntityCounter += 1;
+        safeId = `${shift.id}-${idx + 1}-${uniqueEntityCounter}`;
+      }
+    }
+    seenIds.add(safeId);
+    result.push(safeId === shift.id ? shift : { ...shift, id: safeId });
+  });
+
+  return result;
+};
+
+const sanitizeSiteOrientations = (orientations: SiteOrientation[]): SiteOrientation[] => {
+  const seenIds = new Set<string>();
+  const seenGuardSitePairs = new Set<string>();
+  const result: SiteOrientation[] = [];
+
+  orientations.forEach((orient, idx) => {
+    const pairKey = `${orient.guardId}|${orient.siteId || orient.siteName}|${orient.status}`;
+    if (orient.status === 'PENDING_SUPERVISOR' && seenGuardSitePairs.has(pairKey) && seenIds.has(orient.orientationId)) {
+      return;
+    }
+    seenGuardSitePairs.add(pairKey);
+
+    let safeId = orient.orientationId;
+    if (seenIds.has(safeId)) {
+      safeId = `${orient.orientationId}-${idx + 1}`;
+      while (seenIds.has(safeId)) {
+        uniqueEntityCounter += 1;
+        safeId = `${orient.orientationId}-${idx + 1}-${uniqueEntityCounter}`;
+      }
+    }
+    seenIds.add(safeId);
+    result.push(safeId === orient.orientationId ? orient : { ...orient, orientationId: safeId });
+  });
+
+  return result;
+};
+
 export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Admin-Configured Meal Break Duration Policy (Default 30 minutes)
   const [mealBreakDurationMinutes, setMealBreakDurationMinutesState] = useState<number>(() => {
@@ -785,7 +845,8 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [scheduledShifts, setScheduledShifts] = useState<ScheduledShift[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_SCHEDULED_SHIFTS);
-      const loaded: ScheduledShift[] = saved ? JSON.parse(saved) : INITIAL_SCHEDULED_SHIFTS;
+      const rawLoaded: ScheduledShift[] = saved ? JSON.parse(saved) : INITIAL_SCHEDULED_SHIFTS;
+      const loaded = sanitizeScheduledShifts(rawLoaded);
       return loaded.map((shift) => {
         if (!shift.breadcrumbs || shift.breadcrumbs.length === 0) {
           if (shift.status === 'on_duty' || shift.status === 'on_break' || shift.status === 'completed') {
@@ -813,7 +874,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return shift;
       });
     } catch {
-      return INITIAL_SCHEDULED_SHIFTS;
+      return sanitizeScheduledShifts(INITIAL_SCHEDULED_SHIFTS);
     }
   });
 
@@ -1380,11 +1441,17 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [siteOrientations, setSiteOrientations] = useState<SiteOrientation[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_ORIENTATIONS);
-      return saved ? JSON.parse(saved) : INITIAL_ORIENTATIONS;
+      const raw: SiteOrientation[] = saved ? JSON.parse(saved) : INITIAL_ORIENTATIONS;
+      return sanitizeSiteOrientations(raw);
     } catch {
-      return INITIAL_ORIENTATIONS;
+      return sanitizeSiteOrientations(INITIAL_ORIENTATIONS);
     }
   });
+
+  const siteOrientationsRef = useRef<SiteOrientation[]>(siteOrientations);
+  useEffect(() => {
+    siteOrientationsRef.current = siteOrientations;
+  }, [siteOrientations]);
 
   useEffect(() => {
     try {
@@ -1449,7 +1516,8 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const createSiteOrientation = (data: Omit<SiteOrientation, 'orientationId' | 'createdAt'>): SiteOrientation => {
-    const orientationId = `orient-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
+    uniqueEntityCounter += 1;
+    const orientationId = `orient-${Date.now().toString().slice(-6)}-${uniqueEntityCounter}-${Math.floor(100 + Math.random() * 900)}`;
     const nowIso = new Date().toISOString();
     
     const guard = guardsList.find(g => g.id === data.guardId);
@@ -1470,7 +1538,13 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       createdAt: nowIso
     };
 
-    setSiteOrientations(prev => [newOrientation, ...prev]);
+    siteOrientationsRef.current = [newOrientation, ...siteOrientationsRef.current];
+    setSiteOrientations(prev => {
+      if (prev.some(o => o.orientationId === newOrientation.orientationId)) {
+        return prev;
+      }
+      return [newOrientation, ...prev];
+    });
 
     if (!newOrientation.supervisorId) {
       addAuditLog(
@@ -1725,8 +1799,8 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return null;
     }
 
-    const existing = siteOrientations.find(o => 
-      (o.shiftId === shift.id || (o.guardId === guardId && o.siteId === targetSiteId)) && 
+    const existing = siteOrientationsRef.current.find(o => 
+      (o.shiftId === shift.id || (o.guardId === guardId && (o.siteId === targetSiteId || o.siteName === targetSiteName))) && 
       o.status !== 'FAILED_ESCALATED'
     );
     if (existing) {
@@ -6174,8 +6248,10 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const lateShiftAlerts: LateShiftAlert[] = React.useMemo(() => {
     const todayStr = new Date().toISOString().split('T')[0];
     const alerts: LateShiftAlert[] = [];
+    const seenShiftIds = new Set<string>();
 
     scheduledShifts.forEach((shift) => {
+      if (seenShiftIds.has(shift.id)) return;
       if (shift.status === 'completed') return;
       if (shift.status === 'on_duty' || shift.status === 'on_break') return;
 
@@ -6183,6 +6259,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const isLateOverdue = (shift.status === 'late') || (shift.date === todayStr && lateStatus.isLate && lateStatus.minutesLate >= 15);
 
       if (isLateOverdue) {
+        seenShiftIds.add(shift.id);
         alerts.push({
           id: `LATE-ALERT-${shift.id}`,
           shiftId: shift.id,
@@ -6803,7 +6880,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     data: Omit<ScheduledShift, 'id' | 'createdAt' | 'status'> & { status?: ShiftDutyStatus }
   ): ScheduledShift => {
     const nowIso = new Date().toISOString();
-    const id = `SCHED-${data.date.replace(/-/g, '')}-${Date.now().toString().slice(-4)}`;
+    const id = `SCHED-${data.date.replace(/-/g, '')}-${generateUniqueSuffix()}`;
     
     // Check if this is a roving shift and find matching rover
     let assignedRover = rovers.find(r => r.rovingGroup === data.rovingGroup);
