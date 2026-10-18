@@ -140,6 +140,51 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
         phone: adminPhone.trim(),
         status: adminStatus
       });
+      try {
+        const rawActive = localStorage.getItem('secureshift_admin_user_v1');
+        if (rawActive) {
+          const parsedActive = JSON.parse(rawActive);
+          if (parsedActive?.id === selectedAdminId || parsedActive?.badgeId === adminBadge.trim().toUpperCase()) {
+            const roleMap: Record<string, { role: string; accessRole: string; roleId: string }> = {
+              commander: {
+                role: 'COMMANDER',
+                accessRole: 'Operations Commander (Full System Access)',
+                roleId: 'OPS-CMD'
+              },
+              supervisor: {
+                role: 'SUPERVISOR',
+                accessRole: 'Watch Supervisor (Shift & Swap Approvals)',
+                roleId: 'OPS-SUP'
+              },
+              dispatcher: {
+                role: 'DISPATCHER',
+                accessRole: 'Dispatcher (Daily Scheduling & Bids)',
+                roleId: 'OPS-DISP'
+              },
+              lead: {
+                role: 'SHIFT_LEAD',
+                accessRole: 'Shift Lead (On-Duty Management)',
+                roleId: 'OPS-LEAD'
+              }
+            };
+            const mapped = roleMap[adminRole] || roleMap.dispatcher;
+            localStorage.setItem(
+              'secureshift_admin_user_v1',
+              JSON.stringify({
+                ...parsedActive,
+                id: selectedAdminId,
+                name: adminName.trim(),
+                badgeId: adminBadge.trim().toUpperCase(),
+                pin: adminPin.trim(),
+                role: mapped.role,
+                accessRole: mapped.accessRole,
+                roleId: mapped.roleId
+              })
+            );
+            window.dispatchEvent(new Event('storage'));
+          }
+        }
+      } catch {}
     } else {
       addAdminUser({
         name: adminName.trim(),

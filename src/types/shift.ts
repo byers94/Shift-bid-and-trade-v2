@@ -66,6 +66,10 @@ export interface GuardProfile {
 
   // Guard Availability & Standing Schedule Preferences
   availability?: GuardWeeklyAvailability;
+
+  // Compensation & Payroll (Command Access Only)
+  hourlyPayRate?: number; // e.g., 24.50
+  overtimeRateMultiplier?: number; // default 1.5
 }
 
 export interface SwapProposal {
@@ -801,6 +805,8 @@ export interface SiteProfile {
   endDate?: string; // Optional YYYY-MM-DD (or future termination date)
   terminationNoticeDate?: string; // Date cancellation notice was received
   cancellationReason?: string; // Reason for termination if notice received
+  hourlyBillRate?: number; // e.g., 42.00
+  monthlyBillAmount?: number; // e.g., 7500.00
 
   // Multi-Contact Architecture (Guard, Dispatch & Reporting)
   contacts?: SiteContact[];

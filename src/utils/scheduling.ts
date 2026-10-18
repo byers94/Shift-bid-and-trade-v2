@@ -45,6 +45,33 @@ export function parseShiftTimeWindow(
 }
 
 /**
+ * Calculates shift labor cost broken down by regular hours and overtime hours.
+ */
+export function calculateShiftLaborCost(
+  hoursWorked: number,
+  hourlyPayRate: number,
+  overtimeMultiplier: number = 1.5,
+  overtimeThresholdHours: number = 40
+): { regularCost: number; overtimeCost: number; totalCost: number } {
+  const validHours = Math.max(0, Number(hoursWorked) || 0);
+  const validRate = Math.max(0, Number(hourlyPayRate) || 0);
+  const validMultiplier = Number(overtimeMultiplier) > 0 ? Number(overtimeMultiplier) : 1.5;
+
+  const regularHours = Math.min(overtimeThresholdHours, validHours);
+  const overtimeHours = Math.max(0, validHours - overtimeThresholdHours);
+
+  const regularCost = Number((regularHours * validRate).toFixed(2));
+  const overtimeCost = Number((overtimeHours * validRate * validMultiplier).toFixed(2));
+  const totalCost = Number((regularCost + overtimeCost).toFixed(2));
+
+  return {
+    regularCost,
+    overtimeCost,
+    totalCost
+  };
+}
+
+/**
  * Checks if a shift start time falls within the next 24 hours from the reference time
  */
 export function isShiftOccurringInNext24Hours(

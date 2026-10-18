@@ -439,7 +439,9 @@ const AppContent: React.FC = () => {
         {activeView === 'dual' && (
           <div className="flex w-full h-full overflow-hidden">
             {/* Guard Sidebar Frame (Never requires login) */}
-            <GuardView isSidebarMode={true} />
+            <div className="flex flex-col h-full w-full md:w-[380px] lg:w-[410px] shrink-0 overflow-hidden">
+              <GuardView isSidebarMode={true} />
+            </div>
             {/* Protected Ops Dashboard (Wraps OpsAdminView with auth gate) */}
             <AdminAuthGate
               isAdminAuthenticated={isAdminAuthenticated}
@@ -454,8 +456,8 @@ const AppContent: React.FC = () => {
 
         {/* FULL GUARD VIEW (Always accessible without login) */}
         {activeView === 'guard' && (
-          <div className="flex-1 bg-slate-200/80 dark:bg-slate-900 p-2 sm:p-6 overflow-y-auto flex items-center justify-center transition-colors">
-            <div className="w-full max-w-md h-[95%] max-h-[850px] shadow-2xl rounded-2xl overflow-hidden border-4 border-slate-700 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col">
+          <div className="flex-1 bg-slate-950 sm:bg-slate-200/80 sm:dark:bg-slate-900 p-0 sm:p-4 overflow-hidden flex items-center justify-center transition-colors">
+            <div className="w-full sm:max-w-md h-full sm:h-[95%] sm:max-h-[850px] shadow-2xl sm:rounded-2xl overflow-hidden sm:border-4 border-slate-700 dark:border-slate-800 bg-slate-950 flex flex-col">
               <GuardView isSidebarMode={false} />
             </div>
           </div>

@@ -489,20 +489,24 @@ export const GuardPanicButton: React.FC<GuardPanicButtonProps> = ({
           onTouchCancel={resetHold}
           onContextMenu={(e) => e.preventDefault()}
           disabled={Boolean(activeDistress)}
-          className={`relative overflow-hidden group flex items-center justify-between gap-2.5 px-3 py-1.5 rounded-xl border-2 font-black transition-all cursor-pointer touch-none select-none ${
+          className={`relative overflow-hidden group flex items-center justify-between font-black transition-all cursor-pointer touch-none select-none ${
             activeDistress
               ? 'bg-red-950/90 border-red-600 text-red-300 opacity-90 cursor-default ring-2 ring-red-500/40'
               : isPressing
-              ? 'bg-gradient-to-r from-red-600 via-rose-600 to-red-700 border-white text-white shadow-2xl shadow-red-600/70 scale-[0.98] ring-4 ring-red-500/60'
-              : 'bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-600 border-red-400 text-white shadow-lg shadow-red-950/50 hover:shadow-red-600/40 hover:scale-[1.01]'
+              ? 'bg-gradient-to-r from-red-600 via-rose-600 to-red-700 border-white text-white shadow-2xl shadow-red-600/70 scale-[0.98] ring-2 ring-red-500/60'
+              : 'bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-600 border-red-400 text-white shadow-md shadow-red-950/50 hover:shadow-red-600/40'
           } ${
-            variant === 'compact' ? 'text-xs h-9' : 'text-xs sm:text-sm h-11'
+            variant === 'compact'
+              ? 'text-[11px] h-8 px-2.5 py-1 gap-1.5 rounded-lg border'
+              : 'text-xs sm:text-sm h-11 px-3 py-1.5 gap-2.5 rounded-xl border-2'
           }`}
           style={{ touchAction: 'none' }}
           title={activeDistress ? 'Distress Signal Active' : 'Hold continuously for 2.0 seconds to emit Code-Red SOS Distress'}
         >
           {/* Radial progress ring SVG */}
-          <div className="relative w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center shrink-0">
+          <div className={`relative flex items-center justify-center shrink-0 ${
+            variant === 'compact' ? 'w-5 h-5' : 'w-7 h-7 sm:w-8 sm:h-8'
+          }`}>
             <svg className="w-full h-full -rotate-90 transform" viewBox="0 0 44 44">
               {/* Background circle track */}
               <circle
@@ -532,39 +536,52 @@ export const GuardPanicButton: React.FC<GuardPanicButtonProps> = ({
             {/* Center icon / countdown number */}
             <div className="absolute inset-0 flex items-center justify-center">
               {activeDistress ? (
-                <AlertOctagon className="w-4 h-4 text-white animate-spin" />
+                <AlertOctagon className={variant === 'compact' ? 'w-3 h-3 text-white animate-spin' : 'w-4 h-4 text-white animate-spin'} />
               ) : isPressing ? (
-                <span className="font-mono text-[10px] font-black text-white">
-                  {remainingSeconds}s
+                <span className="font-mono text-[8px] font-black text-white">
+                  {remainingSeconds}
                 </span>
               ) : (
-                <ShieldAlert className="w-4 h-4 text-white group-hover:scale-110 transition-transform" />
+                <ShieldAlert className={variant === 'compact' ? 'w-3 h-3 text-white' : 'w-4 h-4 text-white group-hover:scale-110 transition-transform'} />
               )}
             </div>
           </div>
 
           {/* Button Text & Status Indicator */}
-          <div className="flex flex-col text-left pr-1 leading-tight min-w-[105px]">
-            <span className="font-black uppercase tracking-wider text-[11px] sm:text-xs text-white drop-shadow-sm flex items-center gap-1">
-              <span>{activeDistress ? 'SOS ACTIVE' : isPressing ? 'HOLDING SOS...' : 'PANIC / SOS'}</span>
+          {variant === 'compact' ? (
+            <div className="flex items-center gap-1 leading-none whitespace-nowrap">
+              <span className="font-black uppercase tracking-wider text-[10px] text-white">
+                {activeDistress ? 'SOS ACTIVE' : isPressing ? `HOLD ${(holdProgress * 100).toFixed(0)}%` : 'SOS'}
+              </span>
               {!activeDistress && !isPressing && (
-                <span className="text-[9px] bg-red-900/80 px-1 py-0.2 rounded text-red-200 border border-red-400/40">
+                <span className="text-[9px] font-mono bg-red-950/90 px-1 py-0.5 rounded text-red-200 border border-red-400/40">
                   2.0s
                 </span>
               )}
-            </span>
-            <span className="text-[9px] text-red-200/90 font-mono">
-              {activeDistress
-                ? 'Dispatch Notified'
-                : isPressing
-                ? `Hold: ${(holdProgress * 100).toFixed(0)}%`
-                : 'Hold 2s to activate'}
-            </span>
-          </div>
+            </div>
+          ) : (
+            <div className="flex flex-col text-left pr-1 leading-tight min-w-[105px]">
+              <span className="font-black uppercase tracking-wider text-[11px] sm:text-xs text-white drop-shadow-sm flex items-center gap-1">
+                <span>{activeDistress ? 'SOS ACTIVE' : isPressing ? 'HOLDING SOS...' : 'PANIC / SOS'}</span>
+                {!activeDistress && !isPressing && (
+                  <span className="text-[9px] bg-red-900/80 px-1 py-0.2 rounded text-red-200 border border-red-400/40">
+                    2.0s
+                  </span>
+                )}
+              </span>
+              <span className="text-[9px] text-red-200/90 font-mono">
+                {activeDistress
+                  ? 'Dispatch Notified'
+                  : isPressing
+                  ? `Hold: ${(holdProgress * 100).toFixed(0)}%`
+                  : 'Hold 2s to activate'}
+              </span>
+            </div>
+          )}
 
           {/* Pulsing indicator when active */}
           {activeDistress && (
-            <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping mr-0.5" />
+            <span className="w-2 h-2 rounded-full bg-white animate-ping" />
           )}
         </button>
       </div>

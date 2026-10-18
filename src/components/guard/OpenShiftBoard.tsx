@@ -74,9 +74,9 @@ export const OpenShiftBoard: React.FC<OpenShiftBoardProps> = ({ onOpenAlertPrefs
   const emergencyShiftsCount = shifts.filter((s) => s.status === 'open' && s.urgency === 'emergency').length;
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-slate-900 transition-colors">
+    <div className="flex flex-col bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden transition-colors">
       {/* Top Filter and Search Bar */}
-      <div className="p-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2.5 shrink-0 shadow-2xs">
+      <div className="p-3 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2.5 shadow-2xs">
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-2.5 top-2.5" />
@@ -214,7 +214,7 @@ export const OpenShiftBoard: React.FC<OpenShiftBoardProps> = ({ onOpenAlertPrefs
       </div>
 
       {/* Feed Cards List */}
-      <div id="open-shifts-scroll-feed" className="flex-1 min-h-0 p-3.5 overflow-y-auto flex flex-col gap-3">
+      <div id="open-shifts-scroll-feed" className="p-3 flex flex-col gap-3">
         {sortedShifts.length === 0 ? (
           <div className="text-center py-12 px-4 bg-white dark:bg-slate-900 rounded-xl border border-dashed border-slate-300 dark:border-slate-800">
             <Shield className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />

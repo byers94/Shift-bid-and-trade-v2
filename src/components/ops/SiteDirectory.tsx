@@ -88,7 +88,8 @@ import {
   UserCheck,
   UserX,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  Download
 } from 'lucide-react';
 
 interface SiteDirectoryProps {
@@ -163,6 +164,8 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
   const [formTerminationNoticeDate, setFormTerminationNoticeDate] = useState<string>('');
   const [formCancellationReason, setFormCancellationReason] = useState<string>('');
   const [formContractStatus, setFormContractStatus] = useState<ContractLifecycleStatus>('ACTIVE');
+  const [formHourlyBillRate, setFormHourlyBillRate] = useState<string>('');
+  const [formMonthlyBillAmount, setFormMonthlyBillAmount] = useState<string>('');
   const [formPostInstructions, setFormPostInstructions] = useState('');
   const [formRequiredCertifications, setFormRequiredCertifications] = useState<string[]>([]);
   const [formActivePostsCount, setFormActivePostsCount] = useState<number>(2);
@@ -667,6 +670,8 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
     setFormTerminationNoticeDate('');
     setFormCancellationReason('');
     setFormContractStatus('ACTIVE');
+    setFormHourlyBillRate('');
+    setFormMonthlyBillAmount('');
 
     setFormPostInstructions('');
     setFormRequiredCertifications(['Guard Card', 'CPR/AED']);
@@ -719,6 +724,8 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
     setFormTerminationNoticeDate(site.terminationNoticeDate || '');
     setFormCancellationReason(site.cancellationReason || '');
     setFormContractStatus(computeSiteLifecycleStatus(site));
+    setFormHourlyBillRate(site.hourlyBillRate !== undefined ? String(site.hourlyBillRate) : '');
+    setFormMonthlyBillAmount(site.monthlyBillAmount !== undefined ? String(site.monthlyBillAmount) : '');
 
     setFormPostInstructions(site.postInstructions);
     setFormRequiredCertifications(site.requiredCertifications || []);
@@ -821,6 +828,8 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
       endDate: formEndDate || undefined,
       terminationNoticeDate: formTerminationNoticeDate || undefined,
       cancellationReason: formCancellationReason.trim() || undefined,
+      hourlyBillRate: formHourlyBillRate !== '' && !isNaN(Number(formHourlyBillRate)) ? Number(formHourlyBillRate) : undefined,
+      monthlyBillAmount: formMonthlyBillAmount !== '' && !isNaN(Number(formMonthlyBillAmount)) ? Number(formMonthlyBillAmount) : undefined,
       primaryContactName: primaryContact?.name || formPrimaryContactName.trim() || 'Facility Dispatcher',
       primaryContactPhone: primaryContact?.phone || formPrimaryContactPhone.trim() || '+1 (555) 019-9000',
       primaryContactEmail: primaryContact?.email || formPrimaryContactEmail.trim() || undefined,
@@ -910,6 +919,81 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
     } else {
       showToast('Validation Script Passed', '100% of facilities meet operational dispatch standards.', 'success');
     }
+  };
+
+  // Export Currently Filtered Sites to CSV
+  const handleExportCsv = () => {
+    const headers = [
+      'Site Code',
+      'Site Name',
+      'Category',
+      'Address',
+      'Contract Type',
+      'Start Date',
+      'Hourly Bill Rate',
+      'Monthly Value',
+      'Primary Contact Name',
+      'Primary Contact Phone',
+      'Primary Contact Email',
+      'Required Credentials',
+      'Compliance Status'
+    ];
+
+    const escapeCsvValue = (val: string | number | undefined | null) => {
+      const str = val === undefined || val === null ? '' : String(val);
+      return `"${str.replace(/"/g, '""')}"`;
+    };
+
+    const rows = filteredSites.map((site) => {
+      const validation = siteValidationsMap.get(site.id) || validateSite(site);
+      const siteContacts = (site.contacts && site.contacts.length > 0) ? site.contacts : ensureSiteContacts(site);
+      const primaryContact = siteContacts[0];
+      const catMeta = getCategoryMeta(site.category);
+
+      const hourlyFormatted =
+        site.hourlyBillRate !== undefined && site.hourlyBillRate !== null
+          ? `$${Number(site.hourlyBillRate).toFixed(2)}/hr`
+          : 'Unset / Custom SLA';
+
+      const monthlyFormatted =
+        site.monthlyBillAmount !== undefined && site.monthlyBillAmount !== null
+          ? `$${Number(site.monthlyBillAmount).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}/mo`
+          : 'Unset / Custom SLA';
+
+      const complianceLabel = validation.isValid
+        ? 'Ready'
+        : `Needs Attention (${validation.issues.length} issue${validation.issues.length === 1 ? '' : 's'})`;
+
+      return [
+        site.code,
+        site.name,
+        catMeta.label,
+        site.address,
+        site.contractType || 'ONGOING',
+        site.startDate || 'Indefinite',
+        hourlyFormatted,
+        monthlyFormatted,
+        primaryContact?.name || site.primaryContactName || '',
+        primaryContact?.phone || site.primaryContactPhone || '',
+        primaryContact?.email || site.primaryContactEmail || '',
+        (site.requiredCertifications || []).join('; '),
+        complianceLabel
+      ].map(escapeCsvValue).join(',');
+    });
+
+    const csvContent = [headers.map(escapeCsvValue).join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const dateStamp = new Date().toISOString().split('T')[0];
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `dispatch_site_directory_${dateStamp}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    showToast('CSV Export Complete', `Exported ${filteredSites.length} facilities to dispatch_site_directory_${dateStamp}.csv`, 'success');
   };
 
   // Copy Address
@@ -1073,6 +1157,15 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
           </div>
 
           <div className="flex items-center gap-2 self-start sm:self-auto">
+            <button
+              type="button"
+              id="btn-export-sites-csv"
+              onClick={handleExportCsv}
+              className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 border border-slate-700 rounded-lg text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+              title="Export currently filtered list of sites to CSV"
+            >
+              <Download className="w-4 h-4 text-slate-300" /> Export CSV
+            </button>
             <button
               type="button"
               id="btn-run-validation-audit"
@@ -2457,7 +2550,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200 dark:border-slate-700 text-xs">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3 pt-2 border-t border-slate-200 dark:border-slate-700 text-xs">
                         <div>
                           <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Service Term</span>
                           <span className="font-semibold text-slate-800 dark:text-slate-200">
@@ -2474,6 +2567,22 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                           <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Contract Target / End Date</span>
                           <span className="font-semibold text-slate-800 dark:text-slate-200">
                             {site.endDate ? new Date(site.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Open-Ended Ongoing SLA'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Hourly Bill Rate</span>
+                          <span className="font-semibold font-mono text-slate-800 dark:text-slate-200">
+                            {site.hourlyBillRate !== undefined && site.hourlyBillRate !== null
+                              ? `$${Number(site.hourlyBillRate).toFixed(2)}/hr`
+                              : 'Unset / Custom SLA'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Monthly Billed Value</span>
+                          <span className="font-semibold font-mono text-slate-800 dark:text-slate-200">
+                            {site.monthlyBillAmount !== undefined && site.monthlyBillAmount !== null
+                              ? `$${Number(site.monthlyBillAmount).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}/mo`
+                              : 'Unset / Custom SLA'}
                           </span>
                         </div>
                       </div>
@@ -3299,6 +3408,40 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                       onChange={(e) => setFormEndDate(e.target.value)}
                       placeholder="Leave blank for indefinite SLA"
                       className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-700 dark:text-slate-300 font-medium mb-1 text-xs">
+                      Hourly Bill Rate ($)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      id="form-hourly-bill-rate"
+                      value={formHourlyBillRate}
+                      onChange={(e) => setFormHourlyBillRate(e.target.value)}
+                      placeholder="e.g. 42.00"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 dark:text-slate-300 font-medium mb-1 text-xs">
+                      Monthly Contract Value ($)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      id="form-monthly-bill-amount"
+                      value={formMonthlyBillAmount}
+                      onChange={(e) => setFormMonthlyBillAmount(e.target.value)}
+                      placeholder="e.g. 7500.00"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                 </div>

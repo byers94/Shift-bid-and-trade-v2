@@ -20,27 +20,35 @@ export interface DispatcherIdentity {
   role: string;
   badgeId: string;
   pin: string;
+  accessRole?: string;
+  roleId?: string;
 }
 
 export const DISPATCHER_PRESETS: DispatcherIdentity[] = [
   {
     id: 'disp-1',
     name: "Lt. Mark O'Connor",
-    role: 'Operations Commander',
+    role: 'COMMANDER',
+    accessRole: 'Operations Commander (Full System Access)',
+    roleId: 'OPS-CMD',
     badgeId: 'OPS-CMD-01',
     pin: '1099'
   },
   {
     id: 'disp-2',
     name: 'Dispatcher Sarah Keller',
-    role: 'Senior Dispatch Supervisor',
+    role: 'DISPATCHER',
+    accessRole: 'Dispatcher (Daily Scheduling & Bids)',
+    roleId: 'OPS-DISP',
     badgeId: 'OPS-DISP-04',
     pin: '1099'
   },
   {
     id: 'disp-3',
     name: 'Captain Raymond Holt',
-    role: 'Watch Commander',
+    role: 'SUPERVISOR',
+    accessRole: 'Watch Supervisor (Shift & Swap Approvals)',
+    roleId: 'OPS-SUP',
     badgeId: 'OPS-LEAD-99',
     pin: '1099'
   }
@@ -63,15 +71,29 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
   const activeDispatchers: DispatcherIdentity[] = adminUsers
     .filter((u) => u.status === 'active')
     .map((u) => {
-      let roleLabel = 'Dispatcher';
-      if (u.role === 'commander') roleLabel = 'Operations Commander';
-      else if (u.role === 'supervisor') roleLabel = 'Watch Supervisor';
-      else if (u.role === 'lead') roleLabel = 'Shift Lead';
+      let roleLabel = 'DISPATCHER';
+      let accessRole = 'Dispatcher (Daily Scheduling & Bids)';
+      let roleId = 'OPS-DISP';
+      if (u.role === 'commander') {
+        roleLabel = 'COMMANDER';
+        accessRole = 'Operations Commander (Full System Access)';
+        roleId = 'OPS-CMD';
+      } else if (u.role === 'supervisor') {
+        roleLabel = 'SUPERVISOR';
+        accessRole = 'Watch Supervisor (Shift & Swap Approvals)';
+        roleId = 'OPS-SUP';
+      } else if (u.role === 'lead') {
+        roleLabel = 'SHIFT_LEAD';
+        accessRole = 'Shift Lead (On-Duty Management)';
+        roleId = 'OPS-LEAD';
+      }
 
       return {
         id: u.id,
         name: u.name,
         role: roleLabel,
+        accessRole,
+        roleId,
         badgeId: u.badgeId,
         pin: u.pin
       };
@@ -81,7 +103,9 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
     activeDispatchers[0] || {
       id: 'disp-1',
       name: "Lt. Mark O'Connor",
-      role: 'Operations Commander',
+      role: 'COMMANDER',
+      accessRole: 'Operations Commander (Full System Access)',
+      roleId: 'OPS-CMD',
       badgeId: 'OPS-CMD-01',
       pin: '1099'
     }

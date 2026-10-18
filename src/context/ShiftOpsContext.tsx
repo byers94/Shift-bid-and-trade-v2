@@ -406,6 +406,8 @@ interface ShiftOpsContextType {
     password?: string;
     pin?: string;
     biometricsEnabled?: boolean;
+    hourlyPayRate?: number;
+    overtimeRateMultiplier?: number;
   }) => GuardProfile;
   updateGuard: (id: string, data: Partial<GuardProfile>) => void;
   deleteGuard: (id: string) => void;
@@ -904,7 +906,18 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [guardsList, setGuardsList] = useState<GuardProfile[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_GUARDS);
-      return saved ? JSON.parse(saved) : GUARDS_LIST;
+      if (saved) {
+        const parsed: GuardProfile[] = JSON.parse(saved);
+        return parsed.map((g) => {
+          const initial = GUARDS_LIST.find((ig) => ig.id === g.id || ig.badgeNumber === g.badgeNumber);
+          return {
+            ...g,
+            hourlyPayRate: g.hourlyPayRate ?? initial?.hourlyPayRate ?? 24.00,
+            overtimeRateMultiplier: g.overtimeRateMultiplier ?? initial?.overtimeRateMultiplier ?? 1.5
+          };
+        });
+      }
+      return GUARDS_LIST;
     } catch {
       return GUARDS_LIST;
     }
@@ -4174,6 +4187,8 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     password?: string;
     pin?: string;
     biometricsEnabled?: boolean;
+    hourlyPayRate?: number;
+    overtimeRateMultiplier?: number;
   }): GuardProfile => {
     const cleanName = data.name.trim();
     const defaultUsername = cleanName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || `guard${Date.now().toString().slice(-4)}`;
@@ -4194,6 +4209,8 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       password: data.password || 'guard2026!',
       pin: data.pin || String(Math.floor(1000 + Math.random() * 9000)),
       biometricsEnabled: data.biometricsEnabled ?? false,
+      hourlyPayRate: data.hourlyPayRate,
+      overtimeRateMultiplier: data.overtimeRateMultiplier ?? 1.5,
       lastLogin: undefined
     };
 

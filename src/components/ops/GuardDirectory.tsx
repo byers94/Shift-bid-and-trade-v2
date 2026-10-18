@@ -1,7 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
 import { GuardProfile, TrainingStatus } from '../../types/shift';
+import { calculateShiftLaborCost } from '../../utils/scheduling';
 import { SiteQualificationCircle } from './SiteQualificationCircle';
+
+export { calculateShiftLaborCost };
 import { 
   Users, 
   UserPlus, 
@@ -43,6 +46,8 @@ import {
   Fingerprint,
   Key,
   Lock,
+  Unlock,
+  DollarSign,
   Smartphone,
   Eye,
   EyeOff
@@ -61,6 +66,7 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
 }) => {
   const { 
     guardsList, 
+    adminUsers,
     shifts, 
     trades, 
     bids, 
@@ -105,6 +111,96 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
   const [formPin, setFormPin] = useState('1234');
   const [formBiometricsEnabled, setFormBiometricsEnabled] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
+
+  // Compensation & Payroll Form State (Command Access Only)
+  const [formHourlyPayRate, setFormHourlyPayRate] = useState<string>('');
+  const [formOvertimeMultiplier, setFormOvertimeMultiplier] = useState<string>('1.5');
+  const [adminAuthTick, setAdminAuthTick] = useState<number>(0);
+
+  useEffect(() => {
+    const handleAuthCheck = () => setAdminAuthTick((t) => t + 1);
+    const handleDocumentClick = () => {
+      setTimeout(handleAuthCheck, 50);
+    };
+    window.addEventListener('storage', handleAuthCheck);
+    document.addEventListener('click', handleDocumentClick);
+    return () => {
+      window.removeEventListener('storage', handleAuthCheck);
+      document.removeEventListener('click', handleDocumentClick);
+    };
+  }, []);
+
+  const currentUser = useMemo(() => {
+    try {
+      const isAuthenticated = localStorage.getItem('secureshift_admin_session_v1') === 'true';
+      if (!isAuthenticated) return null;
+
+      const rawUser = localStorage.getItem('secureshift_admin_user_v1');
+      const parsed = rawUser ? JSON.parse(rawUser) : null;
+
+      const matchedAdmin = parsed
+        ? adminUsers.find(
+            (u) =>
+              (parsed.id && u.id === parsed.id) ||
+              (parsed.badgeId && u.badgeId === parsed.badgeId) ||
+              (parsed.name && u.name === parsed.name)
+          )
+        : adminUsers[0];
+
+      const rawRole = String(matchedAdmin?.role || parsed?.role || parsed?.accessRole || '').trim();
+      const upperRole = rawRole.toUpperCase();
+
+      if (
+        rawRole === 'commander' ||
+        upperRole === 'COMMANDER' ||
+        upperRole === 'OPERATIONS COMMANDER' ||
+        rawRole === 'Operations Commander (Full System Access)' ||
+        parsed?.roleId === 'OPS-CMD'
+      ) {
+        // Verify matchedAdmin was not demoted to a non-commander role in User Management
+        if (!matchedAdmin || matchedAdmin.role === 'commander') {
+          return {
+            ...parsed,
+            accessRole: 'Operations Commander (Full System Access)',
+            role: 'COMMANDER',
+            roleId: 'OPS-CMD'
+          };
+        }
+      }
+
+      if (matchedAdmin?.role === 'supervisor' || upperRole.includes('SUPERVISOR') || upperRole === 'WATCH COMMANDER') {
+        return {
+          ...parsed,
+          accessRole: 'Watch Supervisor (Shift & Swap Approvals)',
+          role: 'SUPERVISOR',
+          roleId: 'OPS-SUP'
+        };
+      }
+
+      if (matchedAdmin?.role === 'lead' || upperRole === 'SHIFT_LEAD' || upperRole === 'SHIFT LEAD') {
+        return {
+          ...parsed,
+          accessRole: 'Shift Lead (On-Duty Management)',
+          role: 'SHIFT_LEAD',
+          roleId: 'OPS-LEAD'
+        };
+      }
+
+      return {
+        ...parsed,
+        accessRole: 'Dispatcher (Daily Scheduling & Bids)',
+        role: 'DISPATCHER',
+        roleId: 'OPS-DISP'
+      };
+    } catch {
+      return null;
+    }
+  }, [adminUsers, adminAuthTick]);
+
+  const canViewCompensation =
+    currentUser?.accessRole === 'Operations Commander (Full System Access)' ||
+    currentUser?.role === 'COMMANDER' ||
+    currentUser?.roleId === 'OPS-CMD';
 
   // Delete Confirmation state
   const [deleteConfirmGuard, setDeleteConfirmGuard] = useState<GuardProfile | null>(null);
@@ -224,6 +320,8 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
     setFormPin(String(Math.floor(1000 + Math.random() * 9000)));
     setFormBiometricsEnabled(true);
     setShowPassword(false);
+    setFormHourlyPayRate('24.00');
+    setFormOvertimeMultiplier('1.5');
     setIsEditModalOpen(true);
   };
 
@@ -247,6 +345,8 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
     setFormPin(guard.pin || '1234');
     setFormBiometricsEnabled(guard.biometricsEnabled ?? false);
     setShowPassword(false);
+    setFormHourlyPayRate(guard.hourlyPayRate !== undefined ? guard.hourlyPayRate.toFixed(2) : '');
+    setFormOvertimeMultiplier(guard.overtimeRateMultiplier !== undefined ? String(guard.overtimeRateMultiplier) : '1.5');
     setIsEditModalOpen(true);
   };
 
@@ -254,6 +354,15 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
   const handleSaveGuardForm = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim() || !formBadge.trim() || !formPhone.trim()) return;
+
+    const parsedPayRate = formHourlyPayRate.trim() !== '' ? parseFloat(formHourlyPayRate) : undefined;
+    const parsedOtMultiplier = formOvertimeMultiplier.trim() !== '' ? parseFloat(formOvertimeMultiplier) : 1.5;
+    const compensationUpdates = canViewCompensation
+      ? {
+          hourlyPayRate: parsedPayRate !== undefined && !isNaN(parsedPayRate) ? parsedPayRate : undefined,
+          overtimeRateMultiplier: parsedOtMultiplier !== undefined && !isNaN(parsedOtMultiplier) ? parsedOtMultiplier : 1.5
+        }
+      : {};
 
     if (editingGuardId) {
       updateGuard(editingGuardId, {
@@ -269,7 +378,8 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
         username: formUsername.trim(),
         password: formPassword,
         pin: formPin.trim(),
-        biometricsEnabled: formBiometricsEnabled
+        biometricsEnabled: formBiometricsEnabled,
+        ...compensationUpdates
       });
     } else {
       addGuard({
@@ -285,7 +395,8 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
         username: formUsername.trim(),
         password: formPassword,
         pin: formPin.trim(),
-        biometricsEnabled: formBiometricsEnabled
+        biometricsEnabled: formBiometricsEnabled,
+        ...compensationUpdates
       });
     }
 
@@ -787,8 +898,28 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
                         </h3>
                         {renderRoleBadge(guard.role)}
                       </div>
-                      <p className="text-[11px] font-mono text-slate-500 mt-0.5">
-                        Badge: <span className="font-bold text-slate-700">{guard.badgeNumber}</span>
+                      <p className="text-[11px] font-mono text-slate-500 mt-0.5 flex items-center gap-1 flex-wrap">
+                        <span>
+                          Badge: <span className="font-bold text-slate-700">{guard.badgeNumber}</span>
+                        </span>
+                        {canViewCompensation ? (
+                          <span
+                            id={`guard-card-pay-rate-${guard.id}`}
+                            className="text-emerald-700 font-bold"
+                            title={`Base Wage: $${(guard.hourlyPayRate ?? 0).toFixed(2)}/hr (OT: ${guard.overtimeRateMultiplier ?? 1.5}x)`}
+                          >
+                            • ${(guard.hourlyPayRate ?? 0).toFixed(2)}/hr
+                          </span>
+                        ) : (
+                          <span
+                            id={`guard-card-pay-rate-locked-${guard.id}`}
+                            className="inline-flex items-center gap-0.5 text-slate-400 font-semibold"
+                            title="Restricted: Operations Commander clearance required"
+                          >
+                            <span>• $••••/hr</span>
+                            <Lock className="w-2.5 h-2.5 text-slate-400 inline shrink-0" />
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>
@@ -1062,6 +1193,7 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
             <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
               <tr>
                 <th className="px-4 py-3">Security Officer</th>
+                {canViewCompensation && <th className="px-4 py-3">Pay Rate</th>}
                 <th className="px-4 py-3">Training Status & Site Qualification</th>
                 <th className="px-4 py-3">Contact Details</th>
                 <th className="px-4 py-3">Site Qualifications</th>
@@ -1102,6 +1234,20 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
                         </div>
                       </div>
                     </td>
+
+                    {/* Pay Rate Column (Strictly Operations Commander Only) */}
+                    {canViewCompensation && (
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <div className="flex flex-col">
+                          <span className="inline-flex items-center font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md text-[11px] w-fit">
+                            ${(guard.hourlyPayRate ?? 0).toFixed(2)}/hr
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-400 mt-0.5">
+                            OT: {guard.overtimeRateMultiplier ?? 1.5}x
+                          </span>
+                        </div>
+                      </td>
+                    )}
 
                     {/* Training Level with Circular Progress Indicator */}
                     <td className="px-4 py-3">
@@ -1819,6 +1965,64 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
                   />
                 </label>
               </div>
+
+              {/* COMPENSATION & PAYROLL (COMMAND ACCESS ONLY) */}
+              {canViewCompensation && (
+                <div
+                  id="guard-compensation-payroll-section"
+                  className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-800 text-[11px] uppercase tracking-wide">
+                      <DollarSign className="w-3.5 h-3.5 text-emerald-700" />
+                      <span>COMPENSATION & PAYROLL (COMMAND ACCESS ONLY)</span>
+                    </div>
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded font-mono border text-emerald-800 bg-emerald-100 border-emerald-300">
+                      <Unlock className="w-2.5 h-2.5" />
+                      <span>COMMANDER</span>
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                        Base Hourly Wage ($/hr)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-2 text-xs font-mono font-bold text-slate-400 select-none">
+                          $
+                        </span>
+                        <input
+                          id="guard-form-hourly-pay-rate"
+                          type="number"
+                          step="0.25"
+                          min="0"
+                          value={formHourlyPayRate}
+                          onChange={(e) => setFormHourlyPayRate(e.target.value)}
+                          placeholder="0.00"
+                          className="w-full text-xs border border-slate-300 bg-white text-slate-900 font-bold rounded-lg py-2 pl-6 pr-2 font-mono focus:ring-2 focus:ring-[#1e3a8a]"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                        Overtime Multiplier
+                      </label>
+                      <input
+                        id="guard-form-overtime-multiplier"
+                        type="number"
+                        step="0.1"
+                        min="1.0"
+                        value={formOvertimeMultiplier}
+                        onChange={(e) => setFormOvertimeMultiplier(e.target.value)}
+                        placeholder="1.5"
+                        className="w-full text-xs border border-slate-300 bg-white text-slate-900 font-bold rounded-lg p-2 font-mono focus:ring-2 focus:ring-[#1e3a8a]"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Guard Notes */}
               <div>

@@ -47,6 +47,8 @@ export const INITIAL_SITES: SiteProfile[] = [
     contractType: "ONGOING",
     contractStatus: "ACTIVE",
     startDate: "2025-01-10",
+    hourlyBillRate: 48.50,
+    monthlyBillAmount: 34920.00,
     // Multi-Contact Architecture
     contacts: [
       {
@@ -199,6 +201,8 @@ export const INITIAL_SITES: SiteProfile[] = [
     contractType: "ONGOING",
     contractStatus: "ACTIVE",
     startDate: "2025-01-15",
+    hourlyBillRate: 42.00,
+    monthlyBillAmount: 24192.00,
     // Multi-Contact Architecture
     contacts: [
       {
@@ -2111,6 +2115,8 @@ export const CURRENT_GUARD: GuardProfile = {
   biometricsEnabled: true,
   biometricCredentialId: 'bio-cred-8842',
   lastLogin: '2026-08-27T06:30:00Z',
+  hourlyPayRate: 25.50,
+  overtimeRateMultiplier: 1.5,
   availability: {
     guardId: 'guard-current',
     weeklyRules: createStandardWeeklyRules([1, 2, 3, 4, 5], '06:00', '18:00', ['day']),
@@ -2141,6 +2147,8 @@ export const GUARDS_LIST: GuardProfile[] = [
     biometricsEnabled: true,
     biometricCredentialId: 'bio-cred-7721',
     lastLogin: '2026-08-26T22:15:00Z',
+    hourlyPayRate: 24.50,
+    overtimeRateMultiplier: 1.5,
     availability: {
       guardId: 'guard-101',
       weeklyRules: createStandardWeeklyRules([1, 2, 3, 4, 5, 6], '14:00', '00:00', ['swing', 'day']),
@@ -2167,6 +2175,8 @@ export const GUARDS_LIST: GuardProfile[] = [
     pin: '9104',
     biometricsEnabled: false,
     lastLogin: '2026-08-25T18:00:00Z',
+    hourlyPayRate: 21.50,
+    overtimeRateMultiplier: 1.5,
     availability: {
       guardId: 'guard-102',
       weeklyRules: createStandardWeeklyRules([4, 5, 6, 0, 1], '16:00', '04:00', ['swing', 'grave']),
@@ -2194,6 +2204,8 @@ export const GUARDS_LIST: GuardProfile[] = [
     biometricsEnabled: true,
     biometricCredentialId: 'bio-cred-6340',
     lastLogin: '2026-08-27T05:00:00Z',
+    hourlyPayRate: 28.50,
+    overtimeRateMultiplier: 1.5,
     isRovingGuard: true,
     rovingGroup: 'Metro',
     availability: {
@@ -2223,6 +2235,8 @@ export const GUARDS_LIST: GuardProfile[] = [
     biometricsEnabled: true,
     biometricCredentialId: 'bio-cred-4199',
     lastLogin: '2026-08-26T14:45:00Z',
+    hourlyPayRate: 26.75,
+    overtimeRateMultiplier: 1.5,
     availability: {
       guardId: 'guard-104',
       weeklyRules: createStandardWeeklyRules([1, 2, 3, 4, 5], '00:00', '12:00', ['grave', 'day']),
@@ -2249,6 +2263,8 @@ export const GUARDS_LIST: GuardProfile[] = [
     pin: '5510',
     biometricsEnabled: false,
     lastLogin: '2026-08-24T19:20:00Z',
+    hourlyPayRate: 24.00,
+    overtimeRateMultiplier: 1.5,
     availability: {
       guardId: 'guard-105',
       weeklyRules: createStandardWeeklyRules([3, 4, 5, 6, 0], '18:00', '06:00', ['grave']),
@@ -2275,6 +2291,8 @@ export const GUARDS_LIST: GuardProfile[] = [
     pin: '3820',
     biometricsEnabled: false,
     lastLogin: '2026-08-23T08:10:00Z',
+    hourlyPayRate: 21.00,
+    overtimeRateMultiplier: 1.5,
     availability: {
       guardId: 'guard-106',
       weeklyRules: createStandardWeeklyRules([5, 6, 0], '08:00', '22:00', ['day', 'swing']),
@@ -2311,6 +2329,8 @@ export const GUARDS_LIST: GuardProfile[] = [
     biometricsEnabled: true,
     biometricCredentialId: 'bio-cred-1102',
     lastLogin: '2026-08-27T04:15:00Z',
+    hourlyPayRate: 32.00,
+    overtimeRateMultiplier: 1.5,
     availability: {
       guardId: 'guard-107',
       weeklyRules: createStandardWeeklyRules([1, 2, 3, 4, 5], '06:00', '18:00', ['day', 'swing']),
@@ -2338,6 +2358,8 @@ export const GUARDS_LIST: GuardProfile[] = [
     biometricsEnabled: true,
     biometricCredentialId: 'bio-cred-4930',
     lastLogin: '2026-08-26T09:00:00Z',
+    hourlyPayRate: 25.00,
+    overtimeRateMultiplier: 1.5,
     availability: {
       guardId: 'guard-108',
       weeklyRules: createStandardWeeklyRules([1, 2, 3, 4, 5], '07:00', '19:00', ['day']),
@@ -2364,6 +2386,8 @@ export const GUARDS_LIST: GuardProfile[] = [
     pin: '5201',
     biometricsEnabled: false,
     lastLogin: '2026-08-25T14:30:00Z',
+    hourlyPayRate: 23.50,
+    overtimeRateMultiplier: 1.5,
     availability: {
       guardId: 'guard-109',
       weeklyRules: createStandardWeeklyRules([2, 3, 4, 5, 6], '14:00', '00:00', ['swing']),
@@ -2390,6 +2414,8 @@ export const GUARDS_LIST: GuardProfile[] = [
     pin: '2944',
     biometricsEnabled: false,
     lastLogin: '2026-08-24T16:00:00Z',
+    hourlyPayRate: 21.50,
+    overtimeRateMultiplier: 1.5,
     availability: {
       guardId: 'guard-110',
       weeklyRules: createStandardWeeklyRules([0, 1, 2, 3, 4], '20:00', '06:00', ['grave']),
@@ -2416,6 +2442,8 @@ export const GUARDS_LIST: GuardProfile[] = [
     pin: '1855',
     biometricsEnabled: false,
     lastLogin: '2026-08-23T11:00:00Z',
+    hourlyPayRate: 20.50,
+    overtimeRateMultiplier: 1.5,
     availability: {
       guardId: 'guard-111',
       weeklyRules: createStandardWeeklyRules([4, 5, 6, 0], '16:00', '02:00', ['swing']),

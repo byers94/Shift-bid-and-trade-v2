@@ -10,6 +10,7 @@ import { DashboardCustomizerDrawer } from './DashboardCustomizerDrawer';
 import { SupervisorSignOffModal } from './SupervisorSignOffModal';
 import { GuardMapDashboard } from './GuardMapDashboard';
 import { MpuPerformance } from './MpuPerformance';
+import { ShiftPerformanceWidget } from '../dashboard/ShiftPerformanceWidget';
 import { 
   LayoutDashboard, 
   Sliders, 
@@ -361,6 +362,9 @@ export const DispatchCommandDashboard: React.FC<DispatchCommandDashboardProps> =
       <div className="space-y-5">
         {/* Exception Tray (always top priority if enabled) */}
         {(tileOrder.includes('exceptionsTray') || tileOrder.includes('exceptions')) && (tiles.exceptionsTray || (tiles as any).exceptions) && renderTileComponent('exceptionsTray')}
+
+        {/* 7-Day Shift Performance & Overtime Budget Summary Widget */}
+        <ShiftPerformanceWidget />
 
         {/* 2-Column Responsive Layout for Primary Tiles */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
