@@ -81,22 +81,23 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
 
   const isOnBreak = activeClockedInShift?.status === 'on_break';
 
-  // Resolve currentUser Denver Security License (DSL) compliance state
+  // Resolve currentUser Denver Security License (DSL) compliance state synced with central roster
   const currentUserDsl = React.useMemo(() => {
-    const rawGuard = activeGuard as any;
-    if (rawGuard.licenseStatus) {
-      return {
-        licenseStatus: rawGuard.licenseStatus as LicenseStatus,
-        daysUntilExpiration: rawGuard.daysUntilExpiration ?? 14,
-        daysExpired: rawGuard.daysExpired ?? 0,
-      };
-    }
+    const matchedGuard = guardsList.find((g) => g.id === activeGuard.id) || activeGuard;
+    const rawGuard = matchedGuard as any;
     if (rawGuard.dslExpirationDate !== undefined) {
       const calc = calculateLicenseStatus(rawGuard.dslExpirationDate);
       return {
         licenseStatus: calc.status,
         daysUntilExpiration: calc.daysUntilExpiration,
         daysExpired: calc.daysExpired,
+      };
+    }
+    if (rawGuard.licenseStatus) {
+      return {
+        licenseStatus: rawGuard.licenseStatus as LicenseStatus,
+        daysUntilExpiration: rawGuard.daysUntilExpiration ?? 14,
+        daysExpired: rawGuard.daysExpired ?? 0,
       };
     }
     // Deterministic fallback by guard profile so officers can preview compliance states
@@ -110,7 +111,7 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
       return { licenseStatus: 'REVOKED' as LicenseStatus, daysUntilExpiration: 0, daysExpired: 115 };
     }
     return { licenseStatus: 'COMPLIANT' as LicenseStatus, daysUntilExpiration: 180, daysExpired: 0 };
-  }, [activeGuard]);
+  }, [activeGuard, guardsList]);
 
   const currentUser = {
     ...activeGuard,

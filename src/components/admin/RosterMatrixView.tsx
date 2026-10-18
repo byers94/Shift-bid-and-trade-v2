@@ -4,9 +4,11 @@ import {
   DEFAULT_SCHEDULING_CONSTRAINTS,
   GuardProfile,
   GuardRating,
+  ScheduleTemplate,
   SchedulingConstraints,
   SchedulingViolation,
   Shift,
+  UNIFIED_SCHEDULE_TEMPLATES,
 } from '../../types/scheduling';
 import { calculateLicenseStatus, checkShiftEligibility } from '../../utils/complianceEngine';
 import { autoFillShifts } from '../../utils/autoFillEngine';
@@ -14,17 +16,11 @@ import { SchedulingOverrideModal } from './SchedulingOverrideModal';
 import { useShiftOps } from '../../context/ShiftOpsContext';
 import {
   Zap,
-  ShieldCheck,
-  AlertTriangle,
-  Users,
-  Calendar,
   CheckCircle2,
   UserPlus,
   UserX,
   Terminal,
   X,
-  Clock,
-  FileText,
   RotateCcw,
 } from 'lucide-react';
 
@@ -38,126 +34,9 @@ const DAYS_OF_WEEK: { key: DayOfWeekName; short: string }[] = [
   { key: 'Saturday', short: 'Sat' },
 ];
 
-interface ShiftLineDefinition {
-  lineId: string;
-  shiftName: string;
-  siteCode: string;
-  siteName: string;
-  county: string;
-  requiresDenverLicense: boolean;
-  requiredRating: GuardRating;
-  startTime: string;
-  endTime: string;
-  durationHours: number;
-  serviceCategory: 'MPU' | 'DEDICATED';
-}
-
-const INITIAL_SHIFT_LINES: ShiftLineDefinition[] = [
-  {
-    lineId: 'line-den-1',
-    shiftName: 'Downtown Financial Tower - Swing',
-    siteCode: 'DEN-FIN-01',
-    siteName: '17th St Financial Plaza',
-    county: 'Denver',
-    requiresDenverLicense: true,
-    requiredRating: 3,
-    startTime: '14:00',
-    endTime: '22:00',
-    durationHours: 8.0,
-    serviceCategory: 'DEDICATED',
-  },
-  {
-    lineId: 'line-den-2',
-    shiftName: 'Union Station Transit Hub - Armed Night',
-    siteCode: 'DEN-UST-04',
-    siteName: 'Denver Union Station North Concourse',
-    county: 'Denver',
-    requiresDenverLicense: true,
-    requiredRating: 4,
-    startTime: '18:00',
-    endTime: '06:00',
-    durationHours: 12.0,
-    serviceCategory: 'DEDICATED',
-  },
-  {
-    lineId: 'line-den-mpu',
-    shiftName: 'MPU-1 Metro Core Roving Patrol',
-    siteCode: 'MPU-DEN-01',
-    siteName: 'LoDo & RiNo Commercial Corridor (MPU-1)',
-    county: 'Denver',
-    requiresDenverLicense: true,
-    requiredRating: 3,
-    startTime: '20:00',
-    endTime: '06:00',
-    durationHours: 10.0,
-    serviceCategory: 'MPU',
-  },
-  {
-    lineId: 'line-den-ep',
-    shiftName: 'Cherry Creek Executive Detail',
-    siteCode: 'DEN-EP-05',
-    siteName: 'Cherry Creek North Corporate HQ',
-    county: 'Denver',
-    requiresDenverLicense: true,
-    requiredRating: 5,
-    startTime: '08:00',
-    endTime: '18:00',
-    durationHours: 10.0,
-    serviceCategory: 'DEDICATED',
-  },
-  {
-    lineId: 'line-ara-1',
-    shiftName: 'DTC Tech Campus - Day Access Post',
-    siteCode: 'ARA-DTC-02',
-    siteName: 'Denver Tech Center Meridian Campus',
-    county: 'Arapahoe',
-    requiresDenverLicense: false,
-    requiredRating: 2,
-    startTime: '07:00',
-    endTime: '15:00',
-    durationHours: 8.0,
-    serviceCategory: 'DEDICATED',
-  },
-  {
-    lineId: 'line-ada-mpu',
-    shiftName: 'MPU-2 I-70 Industrial Logistics Rover',
-    siteCode: 'MPU-ADA-02',
-    siteName: 'Aurora & Commerce City Freight Hub (MPU-2)',
-    county: 'Adams',
-    requiresDenverLicense: false,
-    requiredRating: 3,
-    startTime: '18:00',
-    endTime: '04:00',
-    durationHours: 10.0,
-    serviceCategory: 'MPU',
-  },
-  {
-    lineId: 'line-jef-fw',
-    shiftName: 'Lakewood Medical Annex - Fire Watch',
-    siteCode: 'JEF-MED-01',
-    siteName: 'St. Anthony West Construction Wing',
-    county: 'Jefferson',
-    requiresDenverLicense: false,
-    requiredRating: 1,
-    startTime: '22:00',
-    endTime: '06:00',
-    durationHours: 8.0,
-    serviceCategory: 'DEDICATED',
-  },
-  {
-    lineId: 'line-dou-arm',
-    shiftName: 'Meridian Data Center - Armed Vault Post',
-    siteCode: 'DOU-DAT-04',
-    siteName: 'Lone Tree Tier-4 Cloud Vault',
-    county: 'Douglas',
-    requiresDenverLicense: false,
-    requiredRating: 4,
-    startTime: '06:00',
-    endTime: '18:00',
-    durationHours: 12.0,
-    serviceCategory: 'DEDICATED',
-  },
-];
+const OPERATING_DAYS: Array<
+  'Sunday' | 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday'
+> = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 function createInitialGuardRoster(): GuardProfile[] {
   const now = Date.now();
@@ -175,75 +54,84 @@ function createInitialGuardRoster(): GuardProfile[] {
     maxWeeklyHours: number;
   }> = [
     {
-      id: 'grd-101',
-      name: 'Marcus Vance',
-      badgeNumber: 'DSL-4092',
-      phone: '+1 (303) 555-0141',
-      rating: 5,
+      id: 'guard-current',
+      name: 'Alex Mercer',
+      badgeNumber: 'SEC-8842',
+      phone: '+1 (555) 234-5678',
+      rating: 4,
       dslExpirationDate: toISODate(215), // COMPLIANT
       maxWeeklyHours: 40,
     },
     {
-      id: 'grd-102',
-      name: 'Elena Rostova',
-      badgeNumber: 'DSL-4108',
-      phone: '+1 (303) 555-0182',
-      rating: 4,
-      dslExpirationDate: toISODate(140), // COMPLIANT
-      maxWeeklyHours: 40,
-    },
-    {
-      id: 'grd-103',
-      name: 'Darnell Washington',
-      badgeNumber: 'DSL-3819',
-      phone: '+1 (303) 555-0194',
-      rating: 4,
-      dslExpirationDate: toISODate(14), // EXPIRING_SOON (14d)
-      maxWeeklyHours: 40,
-    },
-    {
-      id: 'grd-104',
+      id: 'guard-101',
       name: 'Sarah Jenkins',
-      badgeNumber: 'DSL-3905',
-      phone: '+1 (720) 555-0128',
+      badgeNumber: 'SEC-7721',
+      phone: '+1 (555) 345-6789',
       rating: 3,
       dslExpirationDate: toISODate(180), // COMPLIANT
       maxWeeklyHours: 40,
     },
     {
-      id: 'grd-105',
-      name: 'Carlos Mendez',
-      badgeNumber: 'DSL-3640',
-      phone: '+1 (720) 555-0166',
+      id: 'guard-103',
+      name: 'Marcus Wright',
+      badgeNumber: 'SEC-6340',
+      phone: '+1 (555) 567-8901',
+      rating: 4,
+      dslExpirationDate: toISODate(14), // EXPIRING_SOON (14d)
+      maxWeeklyHours: 40,
+    },
+    {
+      id: 'guard-104',
+      name: 'Elena Rostova',
+      badgeNumber: 'SEC-4199',
+      phone: '+1 (555) 678-9012',
+      rating: 5,
+      dslExpirationDate: toISODate(140), // COMPLIANT
+      maxWeeklyHours: 40,
+    },
+    {
+      id: 'guard-105',
+      name: 'David Silva',
+      badgeNumber: 'SEC-5510',
+      phone: '+1 (555) 789-0123',
       rating: 3,
       dslExpirationDate: toISODate(-22), // EXPIRED_GRACE (22d expired, 68d left)
       maxWeeklyHours: 40,
     },
     {
-      id: 'grd-106',
-      name: 'Devon Brooks',
-      badgeNumber: 'DSL-3112',
-      phone: '+1 (303) 555-0211',
-      rating: 4,
-      dslExpirationDate: toISODate(-115), // REVOKED (>90d expired)
+      id: 'guard-107',
+      name: 'Chloe Bennett',
+      badgeNumber: 'SEC-1102',
+      phone: '+1 (555) 901-2345',
+      rating: 5,
+      dslExpirationDate: toISODate(195), // COMPLIANT
       maxWeeklyHours: 40,
     },
     {
-      id: 'grd-107',
-      name: 'Hannah Abbott',
-      badgeNumber: 'REG-2204',
-      phone: '+1 (720) 555-0277',
-      rating: 2,
-      dslExpirationDate: null, // REVOKED / NO CERT
-      maxWeeklyHours: 40,
-    },
-    {
-      id: 'grd-108',
-      name: 'Tariq Al-Mansoor',
-      badgeNumber: 'DSL-4210',
-      phone: '+1 (303) 555-0299',
+      id: 'guard-108',
+      name: 'Maya Lin',
+      badgeNumber: 'SEC-4930',
+      phone: '+1 (555) 321-7654',
       rating: 3,
       dslExpirationDate: toISODate(9), // EXPIRING_SOON (9d)
+      maxWeeklyHours: 40,
+    },
+    {
+      id: 'guard-106',
+      name: 'Jamar Vance',
+      badgeNumber: 'SEC-3820',
+      phone: '+1 (555) 890-1234',
+      rating: 2,
+      dslExpirationDate: toISODate(-115), // REVOKED (>90d expired - Regional Only)
+      maxWeeklyHours: 40,
+    },
+    {
+      id: 'guard-109',
+      name: 'Carlos Rivera',
+      badgeNumber: 'SEC-5201',
+      phone: '+1 (555) 432-8765',
+      rating: 3,
+      dslExpirationDate: null, // REVOKED / NO CERT - Regional Only
       maxWeeklyHours: 40,
     },
   ];
@@ -263,60 +151,53 @@ function createInitialGuardRoster(): GuardProfile[] {
 }
 
 function createInitialWeeklySchedule(
-  lines: ShiftLineDefinition[],
+  templates: ScheduleTemplate[],
   guards: GuardProfile[]
 ): Shift[] {
-  const initialAssignments: Record<string, string> = {
-    'line-den-1:Sunday': 'grd-104',
-    'line-den-1:Monday': 'grd-104',
-    'line-den-1:Tuesday': 'grd-104',
-    'line-den-1:Wednesday': 'grd-108',
-    'line-den-1:Thursday': 'grd-108',
-    'line-den-2:Sunday': 'grd-102',
-    'line-den-2:Monday': 'grd-102',
-    'line-den-2:Tuesday': 'grd-103',
-    'line-den-2:Wednesday': 'grd-103',
-    'line-den-mpu:Sunday': 'grd-108',
-    'line-den-mpu:Monday': 'grd-104',
-    'line-den-ep:Monday': 'grd-101',
-    'line-den-ep:Tuesday': 'grd-101',
-    'line-den-ep:Wednesday': 'grd-101',
-    'line-ara-1:Sunday': 'grd-107',
-    'line-ara-1:Monday': 'grd-107',
-    'line-ara-1:Tuesday': 'grd-107',
-    'line-ara-1:Wednesday': 'grd-107',
-    'line-ada-mpu:Sunday': 'grd-105',
-    'line-ada-mpu:Monday': 'grd-105',
-    'line-ada-mpu:Tuesday': 'grd-105',
-    'line-jef-fw:Sunday': 'grd-106',
-    'line-jef-fw:Monday': 'grd-106',
-    'line-dou-arm:Wednesday': 'grd-106',
-    'line-dou-arm:Thursday': 'grd-106',
-  };
-
   const guardById = new Map(guards.map((g) => [g.id, g]));
   const shifts: Shift[] = [];
 
-  for (const line of lines) {
-    for (const day of DAYS_OF_WEEK) {
-      const shiftId = `${line.lineId}:${day.key}`;
-      const assignedGuardId = initialAssignments[shiftId];
+  // Default regular assignments per template on their operational days
+  // Note: For Everyday (7-day) templates with a defaultGuardId, assign up to 5 days (40h) so the remaining 2 days or unassigned templates (#7 Retail Plaza, #8 North West MPU) demonstrate open shifts cleanly
+  const customDayOverrides: Record<string, string | undefined> = {
+    'SETSCHED-00:Friday': 'guard-108',
+    'SETSCHED-00:Saturday': 'guard-108',
+    'SETSCHED-03:Friday': undefined,
+    'SETSCHED-03:Saturday': undefined,
+  };
+
+  for (const site of templates) {
+    for (const day of OPERATING_DAYS) {
+      // Only create Shift records on operational days for the contract
+      const isOperational = site.operatingDays.includes(day);
+      if (!isOperational) continue;
+
+      const shiftId = `${site.id}:${day}`;
+      const hasOverrideKey = Object.prototype.hasOwnProperty.call(
+        customDayOverrides,
+        shiftId
+      );
+      const assignedGuardId = hasOverrideKey
+        ? customDayOverrides[shiftId]
+        : site.defaultGuardId;
       const assignedGuard = assignedGuardId ? guardById.get(assignedGuardId) : undefined;
 
       shifts.push({
         id: shiftId,
-        siteCode: line.siteCode,
-        siteName: line.siteName,
-        county: line.county,
-        requiresDenverLicense: line.requiresDenverLicense,
-        requiredRating: line.requiredRating,
-        startTime: line.startTime,
-        endTime: line.endTime,
-        durationHours: line.durationHours,
-        dayOfWeek: day.key,
+        shiftName: site.shiftName,
+        siteCode: site.siteCode,
+        siteName: site.siteName,
+        county: site.county,
+        requiresDenverLicense: site.requiresDenverLicense,
+        requiredRating: site.requiredRating,
+        startTime: site.startTime,
+        endTime: site.endTime,
+        durationHours: site.durationHours,
+        dayOfWeek: day,
+        operatingDays: site.operatingDays,
         assignedGuardId: assignedGuard?.id,
         assignedGuardName: assignedGuard?.name,
-        status: assignedGuard ? 'filled' : 'open',
+        status: assignedGuard ? 'SCHEDULED' : 'UNASSIGNED',
       });
     }
   }
@@ -356,7 +237,7 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
 
   const [baseRoster, setBaseRoster] = useState<GuardProfile[]>(() => createInitialGuardRoster());
   const [shifts, setShifts] = useState<Shift[]>(() =>
-    createInitialWeeklySchedule(INITIAL_SHIFT_LINES, createInitialGuardRoster())
+    createInitialWeeklySchedule(UNIFIED_SCHEDULE_TEMPLATES, createInitialGuardRoster())
   );
 
   // Active Shift Assignment Picker Modal State
@@ -386,13 +267,55 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
       id: 'aud-init-1',
       timestamp: new Date().toISOString(),
       message:
-        '[SYSTEM] Denver Excise & Licenses (DSL) Jurisdiction Gate & 40.0h Weekly Ceiling Active.',
+        '[SYSTEM] Unified 8 Set Schedule Templates Loaded · Operational Day Gating & Denver DSL Compliance Active.',
     },
   ]);
 
-  // Synchronize guard weeklyScheduledHours and assignedShiftIds dynamically from active shifts
+  // Synchronize guard weeklyScheduledHours, assignedShiftIds, and central DSL credentials dynamically
   const computedRoster = useMemo<GuardProfile[]>(() => {
-    return baseRoster.map((guard) => {
+    const centralGuardsById = new Map(
+      (shiftOps.guardsList || []).map((g) => [g.id, g])
+    );
+
+    const mergedBase = baseRoster.map((guard) => {
+      const central = centralGuardsById.get(guard.id);
+      if (!central) return guard;
+      return {
+        ...guard,
+        name: central.name || guard.name,
+        badgeNumber: central.badgeNumber || guard.badgeNumber,
+        phone: central.phone || guard.phone,
+        rating: (central.rating as GuardRating) ?? guard.rating,
+        dslExpirationDate:
+          central.dslExpirationDate !== undefined
+            ? central.dslExpirationDate
+            : guard.dslExpirationDate,
+      };
+    });
+
+    for (const cg of shiftOps.guardsList || []) {
+      if (!mergedBase.some((b) => b.id === cg.id)) {
+        const dslDate = cg.dslExpirationDate ?? null;
+        const st = calculateLicenseStatus(dslDate);
+        mergedBase.push({
+          id: cg.id,
+          name: cg.name,
+          badgeNumber: cg.badgeNumber,
+          phone: cg.phone,
+          rating: (cg.rating as GuardRating) ?? 3,
+          dslExpirationDate: dslDate,
+          licenseStatus: st.status,
+          daysUntilExpiration: st.daysUntilExpiration,
+          daysExpired: st.daysExpired,
+          denverEligible: st.denverEligible,
+          weeklyScheduledHours: 0,
+          maxWeeklyHours: cg.maxWeeklyHours ?? 40,
+          assignedShiftIds: [],
+        });
+      }
+    }
+
+    return mergedBase.map((guard) => {
       const assigned = shifts.filter((s) => s.assignedGuardId === guard.id);
       const totalHours =
         Math.round(assigned.reduce((acc, s) => acc + s.durationHours, 0) * 10) / 10;
@@ -407,16 +330,19 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
         assignedShiftIds: assigned.map((s) => s.id),
       };
     });
-  }, [baseRoster, shifts]);
+  }, [baseRoster, shifts, shiftOps.guardsList]);
 
   const unassignedShiftsCount = useMemo(
-    () => shifts.filter((s) => !s.assignedGuardId).length,
+    () =>
+      shifts.filter(
+        (s) => s.operatingDays.includes(s.dayOfWeek) && !s.assignedGuardId
+      ).length,
     [shifts]
   );
 
-  const filteredShiftLines = useMemo(() => {
-    if (shiftFilter === 'ALL') return INITIAL_SHIFT_LINES;
-    return INITIAL_SHIFT_LINES.filter((line) => line.serviceCategory === shiftFilter);
+  const filteredTemplates = useMemo(() => {
+    if (shiftFilter === 'ALL') return UNIFIED_SCHEDULE_TEMPLATES;
+    return UNIFIED_SCHEDULE_TEMPLATES.filter((t) => t.serviceCategory === shiftFilter);
   }, [shiftFilter]);
 
   const shiftById = useMemo(() => {
@@ -458,14 +384,19 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
 
   // Run Stateful Multi-Day Auto-Fill Engine
   const handleRunAutoFillEngine = () => {
-    const openShifts = shifts.filter((s) => !s.assignedGuardId);
+    const openShifts = shifts.filter(
+      (s) => s.operatingDays.includes(s.dayOfWeek) && !s.assignedGuardId
+    );
     const assignedShifts = shifts.filter((s) => Boolean(s.assignedGuardId));
 
     const result = autoFillShifts(openShifts, computedRoster, assignedShifts, constraints);
 
     const updatedMap = new Map<string, Shift>();
     for (const s of result.updatedShifts) {
-      updatedMap.set(s.id, s);
+      updatedMap.set(s.id, {
+        ...s,
+        status: s.assignedGuardId ? 'SCHEDULED' : 'UNASSIGNED',
+      });
     }
 
     setShifts((prev) => prev.map((s) => updatedMap.get(s.id) || s));
@@ -491,9 +422,11 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
       (s) => s.assignedGuardId === candidate.id && s.id !== targetShift.id
     );
 
-    const lineDef = INITIAL_SHIFT_LINES.find((l) => targetShift.id.startsWith(l.lineId));
-    const shiftLabel = lineDef
-      ? `${lineDef.shiftName} (${targetShift.dayOfWeek})`
+    const templateDef = UNIFIED_SCHEDULE_TEMPLATES.find((t) =>
+      targetShift.id.startsWith(t.id)
+    );
+    const shiftLabel = templateDef
+      ? `${templateDef.shiftName} (${targetShift.dayOfWeek})`
       : `${targetShift.siteName} (${targetShift.dayOfWeek})`;
 
     const eligibility = checkShiftEligibility(
@@ -512,7 +445,7 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
                 ...s,
                 assignedGuardId: candidate.id,
                 assignedGuardName: candidate.name,
-                status: 'filled',
+                status: 'SCHEDULED',
                 isOverride: false,
                 overrideDetails: undefined,
               }
@@ -551,7 +484,7 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
               ...s,
               assignedGuardId: undefined,
               assignedGuardName: undefined,
-              status: 'open',
+              status: 'UNASSIGNED',
               isOverride: false,
               overrideDetails: undefined,
             }
@@ -567,9 +500,9 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
   const handleResetDemoSchedule = () => {
     const freshRoster = createInitialGuardRoster();
     setBaseRoster(freshRoster);
-    setShifts(createInitialWeeklySchedule(INITIAL_SHIFT_LINES, freshRoster));
+    setShifts(createInitialWeeklySchedule(UNIFIED_SCHEDULE_TEMPLATES, freshRoster));
     setLastAutoFillSummary(null);
-    appendAuditEntry('[RESET] Weekly Shift Matrix restored to baseline schedule.');
+    appendAuditEntry('[RESET] Weekly Shift Matrix restored to baseline 8-template schedule.');
   };
 
   return (
@@ -608,7 +541,7 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
           </div>
 
           <span className="text-xs text-slate-400 hidden xl:inline">
-            Denver Excise &amp; Licenses (DSL) Gate · 40.0h Weekly Ceiling · 12.0h Turnaround Rest
+            8 Unified Set Schedules · Operational Day Gating · Denver DSL Gate · 40.0h Cap
           </span>
         </div>
 
@@ -625,7 +558,7 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              All Sites
+              All Sites ({UNIFIED_SCHEDULE_TEMPLATES.length})
             </button>
             <button
               type="button"
@@ -727,8 +660,8 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
           <table className="w-full border-collapse text-left">
             <thead>
               <tr className="bg-slate-900/90 border-b border-slate-800 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                <th className="py-3 px-3 min-w-[180px]">Shift Name</th>
-                <th className="py-3 px-3 min-w-[190px]">Site &amp; County</th>
+                <th className="py-3 px-3 min-w-[190px]">Shift Name</th>
+                <th className="py-3 px-3 min-w-[195px]">Site &amp; County</th>
                 <th className="py-3 px-2.5 min-w-[120px]">Post Level</th>
                 <th className="py-3 px-2.5 min-w-[95px]">Duration</th>
                 {DAYS_OF_WEEK.map((d) => (
@@ -742,29 +675,29 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/80 text-xs">
-              {filteredShiftLines.map((line) => (
+              {filteredTemplates.map((site) => (
                 <tr
-                  key={line.lineId}
+                  key={site.id}
                   className="hover:bg-slate-900/40 transition-colors align-top"
                 >
                   {/* Shift Name */}
                   <td className="py-3 px-3">
-                    <div className="font-bold text-slate-100">{line.shiftName}</div>
+                    <div className="font-bold text-slate-100">{site.shiftName}</div>
                     <div className="text-[11px] font-mono text-slate-400 mt-0.5">
-                      {line.siteCode} · {line.serviceCategory}
+                      {site.siteCode} · {site.serviceCategory}
                     </div>
                   </td>
 
                   {/* Site & County */}
                   <td className="py-3 px-3">
-                    <div className="font-medium text-slate-200 mb-1">{line.siteName}</div>
-                    {line.requiresDenverLicense ? (
+                    <div className="font-medium text-slate-200 mb-1">{site.siteName}</div>
+                    {site.requiresDenverLicense ? (
                       <span className="inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 whitespace-nowrap">
                         [DENVER COUNTY - DSL REQ]
                       </span>
                     ) : (
                       <span className="inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 whitespace-nowrap">
-                        [REGIONAL - {line.county}]
+                        [REGIONAL - {site.county}]
                       </span>
                     )}
                   </td>
@@ -773,55 +706,68 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
                   <td className="py-3 px-2.5">
                     <span
                       className={`inline-block px-2 py-0.5 rounded text-[11px] font-mono font-bold border whitespace-nowrap ${
-                        line.requiredRating === 5
+                        site.requiredRating === 5
                           ? 'bg-purple-500/15 text-purple-300 border-purple-500/40'
-                          : line.requiredRating === 4
+                          : site.requiredRating === 4
                           ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
-                          : line.requiredRating === 3
+                          : site.requiredRating === 3
                           ? 'bg-blue-500/15 text-blue-300 border-blue-500/40'
                           : 'bg-slate-800 text-slate-300 border-slate-700'
                       }`}
                     >
-                      {formatPostLevelBadge(line.requiredRating)}
+                      {formatPostLevelBadge(site.requiredRating)}
                     </span>
                   </td>
 
                   {/* Duration */}
                   <td className="py-3 px-2.5 font-mono tabular-nums text-slate-200">
-                    <div className="font-bold">{line.durationHours.toFixed(1)}h</div>
+                    <div className="font-bold">{site.durationHours.toFixed(1)}h</div>
                     <div className="text-[10px] text-slate-400">
-                      {line.startTime}–{line.endTime}
+                      {site.startTime}–{site.endTime}
                     </div>
                   </td>
 
-                  {/* Day Cells (Sun - Sat) */}
-                  {DAYS_OF_WEEK.map((day) => {
-                    const cellShiftId = `${line.lineId}:${day.key}`;
-                    const cellShift = shiftById.get(cellShiftId);
-                    if (!cellShift) {
-                      return <td key={day.key} className="p-2" />;
+                  {/* Day Cells (Sun - Sat) with Operational Day Gating */}
+                  {OPERATING_DAYS.map((day) => {
+                    // Step 1: Check if the site is operational on that day
+                    const isOperational = site.operatingDays.includes(day);
+
+                    // Step 2: If !isOperational, render muted non-interactive cell (NO red [+ Open Shift] false positive)
+                    if (!isOperational) {
+                      return (
+                        <td key={day} className="p-1.5 align-middle">
+                          <div className="h-full w-full py-3 text-center text-xs text-slate-600 bg-slate-900/40 border border-slate-800/40 rounded flex items-center justify-center font-medium">
+                            {' '}
+                            —{' '}
+                          </div>
+                        </td>
+                      );
                     }
 
-                    const assignedGuard = cellShift.assignedGuardId
-                      ? computedRoster.find((g) => g.id === cellShift.assignedGuardId)
+                    // Step 3: If isOperational, evaluate shift assignment state
+                    const cellShiftId = `${site.id}:${day}`;
+                    const cellShift = shiftById.get(cellShiftId);
+                    const assignedGuardId = cellShift?.assignedGuardId;
+                    const assignedGuard = assignedGuardId
+                      ? computedRoster.find((g) => g.id === assignedGuardId)
                       : undefined;
 
-                    if (!cellShift.assignedGuardId || !assignedGuard) {
+                    if (!assignedGuardId || !assignedGuard || !cellShift) {
                       return (
-                        <td key={day.key} className="p-1.5 align-middle">
+                        <td key={day} className="p-1.5 align-middle">
                           <button
                             type="button"
-                            onClick={() => setActivePickerShiftId(cellShift.id)}
+                            onClick={() => cellShift && setActivePickerShiftId(cellShift.id)}
                             className="w-full bg-rose-500/10 border border-rose-500/40 text-rose-400 font-semibold text-xs p-2 text-center rounded cursor-pointer hover:bg-rose-500/20 transition-colors whitespace-nowrap"
                           >
-                            [ + Open Shift ]
+                            [+ Open Shift]
                           </button>
                         </td>
                       );
                     }
 
                     return (
-                      <td key={day.key} className="p-1.5 align-middle">
+                      <td key={day} className="p-1.5 align-middle">
                         <button
                           type="button"
                           onClick={() => setActivePickerShiftId(cellShift.id)}
@@ -841,7 +787,7 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
                           </div>
                           <div className="flex items-center justify-between gap-1 mt-0.5">
                             <span className="text-[10px] font-mono text-slate-400 tabular-nums">
-                              {assignedGuard.badgeNumber}
+                              {assignedGuard.badgeNumber} · L{assignedGuard.rating}
                             </span>
                             {cellShift.isOverride && (
                               <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-black bg-rose-500/25 text-rose-300 border border-rose-500/50">
@@ -1028,7 +974,13 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
               }
             >
               <span className="text-slate-500 mr-2">
-                [{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}]
+                [
+                {new Date(item.timestamp).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                })}
+                ]
               </span>
               {item.message}
             </div>
@@ -1206,7 +1158,11 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
         onCancel={() => setPendingOverride(null)}
         onConfirmOverride={({ shift: overriddenShift, auditLogMessage }) => {
           setShifts((prev) =>
-            prev.map((s) => (s.id === overriddenShift.id ? overriddenShift : s))
+            prev.map((s) =>
+              s.id === overriddenShift.id
+                ? { ...overriddenShift, status: 'SCHEDULED' }
+                : s
+            )
           );
           setPendingOverride(null);
           appendAuditEntry(auditLogMessage, true);

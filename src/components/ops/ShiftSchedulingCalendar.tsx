@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
 import { ScheduledShift, ShiftDutyStatus, RovingGroup, ROVING_GROUPS, ROVING_GROUP_CONFIGS } from '../../types/shift';
+import { UNIFIED_SCHEDULE_TEMPLATES, DayOfWeekName } from '../../types/scheduling';
 import { 
   Calendar as CalendarIcon, 
   ChevronLeft, 
@@ -123,23 +124,6 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
     setCurrentDate(new Date());
   };
 
-  // Filter shifts
-  const filteredShifts = scheduledShifts.filter((shift) => {
-    const matchesSite = selectedSiteFilter === 'all' || shift.siteName === selectedSiteFilter;
-    const matchesGuard = selectedGuardFilter === 'all' || shift.guardId === selectedGuardFilter;
-    const matchesStatus = selectedStatusFilter === 'all' || shift.status === selectedStatusFilter;
-    const matchesShiftType = 
-      selectedShiftTypeFilter === 'all'
-        ? true
-        : selectedShiftTypeFilter === 'roving'
-          ? !!shift.isRovingShift
-          : !shift.isRovingShift;
-    const matchesRovingGroup =
-      selectedRovingGroupFilter === 'all' || shift.rovingGroup === selectedRovingGroupFilter;
-
-    return matchesSite && matchesGuard && matchesStatus && matchesShiftType && matchesRovingGroup;
-  });
-
   // Calculate Month Days Matrix
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -166,6 +150,118 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
   const endOfWeek = new Date(startOfWeek);
   endOfWeek.setDate(endOfWeek.getDate() + 6);
 
+  // Merge scheduledShifts with UNIFIED_SCHEDULE_TEMPLATES across visible dates so unassigned & weekend shifts (e.g. Retail Plaza & Waterfront Chemical Plant) are never missing
+  const unifiedCalendarShifts = useMemo<ScheduledShift[]>(() => {
+    const dayNames: DayOfWeekName[] = [
+      'Sunday',
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+    ];
+
+    const datesToEnsure = new Set<string>();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(startOfWeek);
+      d.setDate(d.getDate() + i);
+      const dStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+        d.getDate()
+      ).padStart(2, '0')}`;
+      datesToEnsure.add(dStr);
+    }
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      datesToEnsure.add(dStr);
+    }
+
+    const combined: ScheduledShift[] = [...scheduledShifts];
+
+    datesToEnsure.forEach((dateStr) => {
+      const dateObj = new Date(dateStr + 'T00:00:00');
+      const dayOfWeekName = dayNames[dateObj.getDay()];
+
+      UNIFIED_SCHEDULE_TEMPLATES.forEach((tmpl) => {
+        if (!tmpl.operatingDays.includes(dayOfWeekName)) return;
+
+        const alreadyExists = combined.some(
+          (s) =>
+            s.date === dateStr &&
+            (s.siteName.toLowerCase() === tmpl.siteName.toLowerCase() ||
+              s.siteName.toLowerCase() === tmpl.shiftName.toLowerCase() ||
+              (tmpl.id === 'SETSCHED-06' &&
+                s.siteName.toLowerCase().includes('retail plaza') &&
+                s.startTime === tmpl.startTime)) &&
+            s.startTime === tmpl.startTime
+        );
+
+        if (!alreadyExists) {
+          const isUnassignedTemplate =
+            !tmpl.defaultGuardId || tmpl.status === 'UNASSIGNED' || tmpl.status === 'BIDDING';
+
+          combined.push({
+            id: `TMPL-${tmpl.id}-${dateStr}`,
+            guardId: tmpl.defaultGuardId || '',
+            guardName: tmpl.defaultGuardName || 'UNASSIGNED',
+            guardBadge: tmpl.defaultGuardBadge || 'OPEN-POST',
+            siteId: tmpl.siteCode,
+            siteName:
+              tmpl.id === 'SETSCHED-05'
+                ? 'Waterfront Chemical Plant - Weekend Night Watch'
+                : tmpl.id === 'SETSCHED-06'
+                ? 'Retail Plaza - Weekend Safety Patrol'
+                : tmpl.siteName,
+            siteAddress: `${tmpl.county} County Sector`,
+            date: dateStr,
+            startTime: tmpl.startTime,
+            endTime: tmpl.endTime,
+            hours: tmpl.durationHours,
+            postRole: tmpl.postRole || tmpl.shiftName,
+            isRovingShift: tmpl.serviceCategory === 'MPU',
+            rovingGroup: (tmpl.rovingGroup as RovingGroup) || undefined,
+            assignedRoverUnit: tmpl.assignedRoverUnit,
+            status: (isUnassignedTemplate ? 'UNASSIGNED' : 'scheduled') as ShiftDutyStatus,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      });
+    });
+
+    return combined;
+  }, [scheduledShifts, startOfWeek, daysInMonth, year, month]);
+
+  // Filter shifts (Ensuring Master Calendar does NOT filter out unassigned shifts by default)
+  const filteredShifts = unifiedCalendarShifts.filter((shift) => {
+    const isUnassignedShift =
+      !shift.guardId ||
+      (shift.status as string) === 'UNASSIGNED' ||
+      (shift.status as string) === 'BIDDING' ||
+      shift.guardName === 'UNASSIGNED';
+
+    const matchesSite =
+      selectedSiteFilter === 'all' ||
+      shift.siteName === selectedSiteFilter ||
+      shift.siteName.toLowerCase().includes(selectedSiteFilter.toLowerCase());
+    const matchesGuard =
+      selectedGuardFilter === 'all' ||
+      (isUnassignedShift ? selectedGuardFilter === 'unassigned' : shift.guardId === selectedGuardFilter);
+    const matchesStatus =
+      selectedStatusFilter === 'all' ||
+      shift.status === selectedStatusFilter ||
+      (selectedStatusFilter === 'unassigned' && isUnassignedShift);
+    const matchesShiftType =
+      selectedShiftTypeFilter === 'all'
+        ? true
+        : selectedShiftTypeFilter === 'roving'
+        ? !!shift.isRovingShift
+        : !shift.isRovingShift;
+    const matchesRovingGroup =
+      selectedRovingGroupFilter === 'all' || shift.rovingGroup === selectedRovingGroupFilter;
+
+    return matchesSite && matchesGuard && matchesStatus && matchesShiftType && matchesRovingGroup;
+  });
+
   const weekDays = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(startOfWeek);
     d.setDate(d.getDate() + i);
@@ -187,7 +283,7 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
       dayNumber,
       isToday,
       dayShifts,
-      totalDayHours
+      totalDayHours,
     };
   });
 
@@ -550,6 +646,62 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
                       </div>
                     ) : (
                       day.dayShifts.map((shift) => {
+                        const isUnassigned =
+                          !shift.guardId ||
+                          (shift.status as string) === 'UNASSIGNED' ||
+                          (shift.status as string) === 'BIDDING' ||
+                          shift.guardName === 'UNASSIGNED';
+
+                        if (isUnassigned) {
+                          return (
+                            <div
+                              key={shift.id}
+                              className="p-2.5 rounded-xl border border-rose-500/40 bg-rose-950/20 dark:bg-rose-950/30 text-xs flex flex-col justify-between gap-2 shadow-2xs"
+                            >
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="font-mono text-[11px] font-black text-amber-200">
+                                  {shift.startTime} - {shift.endTime}
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 whitespace-nowrap">
+                                  [ UNASSIGNED ]
+                                </span>
+                              </div>
+
+                              <div className="font-bold text-slate-900 dark:text-slate-100 text-xs leading-snug">
+                                {shift.siteName}
+                              </div>
+
+                              {shift.postRole && (
+                                <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                                  {shift.postRole}
+                                </div>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setFormDate(day.dateStr);
+                                  setFormStartTime(shift.startTime);
+                                  setFormEndTime(shift.endTime);
+                                  setFormHours(shift.hours || 8);
+                                  setFormSiteName(
+                                    shift.siteName.includes('Retail Plaza')
+                                      ? 'Retail Plaza - Patrol'
+                                      : shift.siteName
+                                  );
+                                  setFormPostRole(shift.postRole || shift.siteName);
+                                  setFormIsRoving(Boolean(shift.isRovingShift));
+                                  setIsScheduleModalOpen(true);
+                                }}
+                                className="w-full py-1.5 px-2 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-rose-400 dark:text-rose-300 font-semibold text-xs text-center transition-colors cursor-pointer"
+                              >
+                                [ + Assign Guard ]
+                              </button>
+                            </div>
+                          );
+                        }
+
                         const isOnDuty = shift.status === 'on_duty';
                         const isOnBreak = shift.status === 'on_break';
                         const isLate = shift.status === 'late' || shift.isLate;

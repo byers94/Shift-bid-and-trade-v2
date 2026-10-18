@@ -124,6 +124,9 @@ export function normalizeShiftRecord(raw: any): Shift {
       ? raw.requiresDenverLicense
       : county.toLowerCase() === 'denver';
   const requiredRating: GuardRating = (raw.requiredRating as GuardRating) || 3;
+  const operatingDays: DayOfWeekName[] = Array.isArray(raw.operatingDays)
+    ? raw.operatingDays
+    : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   return {
     ...raw,
@@ -138,6 +141,8 @@ export function normalizeShiftRecord(raw: any): Shift {
     durationHours,
     hours: raw.hours ?? durationHours,
     dayOfWeek,
+    operatingDays,
+    status: raw.status || (raw.assignedGuardId || raw.guardId ? 'SCHEDULED' : 'UNASSIGNED'),
     assignedGuardId: raw.assignedGuardId ?? raw.guardId,
     assignedGuardName: raw.assignedGuardName ?? raw.guardName,
   };

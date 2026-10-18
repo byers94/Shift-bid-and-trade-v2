@@ -2474,10 +2474,81 @@ export const GUARDS_LIST: GuardProfile[] = [
     'Bellevue Innovation Tech Park': 'site-11',
     'Midtown Commercial Lofts': 'site-12'
   };
-  const resolvedIds = (g.ojtSites || []).map((s) => siteMap[s] || s);
+  const resolvedIds = (g.ojtSites || []).map((s: string) => siteMap[s] || s);
+
+  const dayMs = 1000 * 60 * 60 * 24;
+  const toOffsetISODate = (offsetDays: number) =>
+    new Date(Date.now() + offsetDays * dayMs).toISOString().split('T')[0];
+
+  const defaultDslConfig: Record<
+    string,
+    { rating: 1 | 2 | 3 | 4 | 5; dslExpirationDate: string | null }
+  > = {
+    'guard-current': { rating: 4, dslExpirationDate: toOffsetISODate(215) },
+    'guard-101': { rating: 3, dslExpirationDate: toOffsetISODate(180) },
+    'guard-102': { rating: 2, dslExpirationDate: toOffsetISODate(120) },
+    'guard-103': { rating: 4, dslExpirationDate: toOffsetISODate(14) },
+    'guard-104': { rating: 5, dslExpirationDate: toOffsetISODate(140) },
+    'guard-105': { rating: 3, dslExpirationDate: toOffsetISODate(-22) },
+    'guard-106': { rating: 2, dslExpirationDate: toOffsetISODate(-115) },
+    'guard-107': { rating: 5, dslExpirationDate: toOffsetISODate(195) },
+    'guard-108': { rating: 3, dslExpirationDate: toOffsetISODate(9) },
+    'guard-109': { rating: 3, dslExpirationDate: null },
+    'guard-110': { rating: 2, dslExpirationDate: toOffsetISODate(-45) },
+    'guard-111': { rating: 1, dslExpirationDate: null }
+  };
+
+  const preset = defaultDslConfig[g.id] || {
+    rating: 3,
+    dslExpirationDate: toOffsetISODate(180)
+  };
+  const dslExpirationDate =
+    g.dslExpirationDate !== undefined ? g.dslExpirationDate : preset.dslExpirationDate;
+  const rating = g.rating || preset.rating;
+
+  let licenseStatus: 'COMPLIANT' | 'EXPIRING_SOON' | 'EXPIRED_GRACE' | 'REVOKED' = 'REVOKED';
+  let daysUntilExpiration = 0;
+  let daysExpired = 999;
+  let denverEligible = false;
+
+  if (dslExpirationDate && dslExpirationDate !== 'NO') {
+    const expTime = new Date(dslExpirationDate).getTime();
+    if (!isNaN(expTime)) {
+      const diffDays = Math.ceil((expTime - Date.now()) / dayMs);
+      if (diffDays > 30) {
+        licenseStatus = 'COMPLIANT';
+        daysUntilExpiration = diffDays;
+        daysExpired = 0;
+        denverEligible = true;
+      } else if (diffDays >= 0) {
+        licenseStatus = 'EXPIRING_SOON';
+        daysUntilExpiration = diffDays;
+        daysExpired = 0;
+        denverEligible = true;
+      } else if (Math.abs(diffDays) <= 90) {
+        licenseStatus = 'EXPIRED_GRACE';
+        daysUntilExpiration = 0;
+        daysExpired = Math.abs(diffDays);
+        denverEligible = false;
+      } else {
+        licenseStatus = 'REVOKED';
+        daysUntilExpiration = 0;
+        daysExpired = Math.abs(diffDays);
+        denverEligible = false;
+      }
+    }
+  }
+
   return {
     ...g,
-    trainedSites: g.trainedSites || Array.from(new Set([...resolvedIds, ...(g.ojtSites || [])]))
+    trainedSites: g.trainedSites || Array.from(new Set([...resolvedIds, ...(g.ojtSites || [])])),
+    rating,
+    dslExpirationDate,
+    licenseStatus,
+    daysUntilExpiration,
+    daysExpired,
+    denverEligible,
+    maxWeeklyHours: g.maxWeeklyHours ?? g.availability?.maxWeeklyHours ?? 40
   };
 });
 
@@ -4547,6 +4618,31 @@ export const INITIAL_STANDARD_REPORTS: StandardShiftReport[] = [
 
 export const INITIAL_SET_SCHEDULES: SetSchedule[] = [
   {
+    id: 'SETSCHED-00',
+    title: 'Metro MPU - Everyday Patrol Circuit',
+    siteId: 'site-12',
+    siteName: 'Metro MPU',
+    siteAddress: '1420 5th Ave, Metro Sector 1, Denver, CO 80202',
+    serviceType: 'roving',
+    rovingGroup: 'Metro',
+    assignedRoverUnit: 'MPU-1 (Metro)',
+    daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+    daysPatternLabel: 'Everyday (Sun - Sat)',
+    startTime: '06:00',
+    endTime: '14:00',
+    hours: 8,
+    postRole: 'Metro MPU Sector 1 Roving Patrol',
+    postInstructions: 'Continuous mobile patrol across Metro Sector 1 commercial properties and priority CFS response.',
+    requiredCertifications: ['Guard Card', 'Armed Endorsement', 'CPR/AED'],
+    urgency: 'standard',
+    regularGuardId: 'guard-103',
+    regularGuardName: 'Marcus Wright',
+    regularGuardBadge: 'SEC-6340',
+    regularGuardPhone: '+1 (555) 567-8901',
+    isActive: true,
+    notes: 'Everyday 7-day roving mobile patrol unit covering Metro Sector 1.'
+  },
+  {
     id: 'SETSCHED-01',
     title: 'Pier 7 Maritime Scale Gate - Mon-Fri Day Shift',
     siteId: 'site-1',
@@ -4599,8 +4695,8 @@ export const INITIAL_SET_SCHEDULES: SetSchedule[] = [
     siteName: 'Tech Campus North - Data Center',
     siteAddress: '1501 4th Ave, Tech District, Seattle, WA 98101',
     serviceType: 'dedicated',
-    daysOfWeek: [1, 2, 3, 4, 5],
-    daysPatternLabel: 'Mon - Fri',
+    daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+    daysPatternLabel: 'Everyday (Sun - Sat)',
     startTime: '00:00',
     endTime: '08:00',
     hours: 8,
@@ -4633,10 +4729,10 @@ export const INITIAL_SET_SCHEDULES: SetSchedule[] = [
     postInstructions: 'Continuous vehicle and foot patrols across Metro assigned downtown properties. Respond to CFS dispatches.',
     requiredCertifications: ['Armed Endorsement', 'Incident Command', 'Guard Card'],
     urgency: 'standard',
-    regularGuardId: 'guard-103',
-    regularGuardName: 'Marcus Wright',
-    regularGuardBadge: 'SEC-6340',
-    regularGuardPhone: '+1 (555) 567-8901',
+    regularGuardId: 'guard-107',
+    regularGuardName: 'Chloe Bennett',
+    regularGuardBadge: 'SEC-1102',
+    regularGuardPhone: '+1 (555) 901-2345',
     isActive: true,
     notes: 'Lead mobile patrol circuit unit patrolling downtown properties.'
   },
@@ -4667,7 +4763,7 @@ export const INITIAL_SET_SCHEDULES: SetSchedule[] = [
     id: 'SETSCHED-06',
     title: 'Retail Plaza Weekend Safety Patrol (Unassigned Shift)',
     siteId: 'site-5',
-    siteName: 'Retail Plaza - Patrol',
+    siteName: 'Retail Plaza - Weekend Safety Patrol',
     siteAddress: '800 Pine St, Downtown Seattle, WA 98101',
     serviceType: 'dedicated',
     daysOfWeek: [0, 6],
@@ -4685,15 +4781,15 @@ export const INITIAL_SET_SCHEDULES: SetSchedule[] = [
   },
   {
     id: 'SETSCHED-07',
-    title: 'North West MPU Waterfront Marina Circuit - Daily Twilight (Unassigned)',
+    title: 'North West MPU Waterfront Marina - Daily Twilight (Unassigned)',
     siteId: 'site-13',
     siteName: 'Pier 66 Marina Boardwalk',
     siteAddress: '2201 Alaskan Way, Pier 66, Seattle, WA 98121',
     serviceType: 'roving',
     rovingGroup: 'North West',
     assignedRoverUnit: 'MPU-2 (North West)',
-    daysOfWeek: [1, 2, 3, 4, 5],
-    daysPatternLabel: 'Mon - Fri',
+    daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+    daysPatternLabel: 'Everyday (Sun - Sat)',
     startTime: '18:00',
     endTime: '02:00',
     hours: 8,

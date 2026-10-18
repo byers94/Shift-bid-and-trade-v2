@@ -179,6 +179,7 @@ import {
   playGeofenceBreachSound
 } from '../utils/audioAlert';
 import { computeSiteLifecycleStatus, ensureSiteContacts } from '../utils/contractLifecycle';
+import { calculateLicenseStatus } from '../utils/complianceEngine';
 
 
 interface NotificationToast {
@@ -241,6 +242,17 @@ interface ShiftOpsContextType {
   dismissToast: (id: string) => void;
   showToast: (title: string, message: string, type: 'info' | 'success' | 'warning' | 'danger') => void;
   logAdminAction: (action: Omit<AdminAction, 'id' | 'timestamp'> & { timestamp?: string }) => void;
+  addAuditLog: (
+    action: string,
+    category: 'shift' | 'trade' | 'swap' | 'system' | 'broadcast' | string,
+    details: string,
+    actor: string,
+    status: 'info' | 'success' | 'warning' | 'danger'
+  ) => void;
+  updateGuardDslCredentials: (
+    guardId: string,
+    newExpirationDate: string | null
+  ) => void;
   dismissCallReceiptNotification: (id?: string) => void;
   clearAllCallReceipts: () => void;
 
@@ -971,10 +983,22 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const parsed: GuardProfile[] = JSON.parse(saved);
         return parsed.map((g) => {
           const initial = GUARDS_LIST.find((ig) => ig.id === g.id || ig.badgeNumber === g.badgeNumber);
+          const resolvedDslDate =
+            g.dslExpirationDate !== undefined
+              ? g.dslExpirationDate
+              : (initial?.dslExpirationDate ?? null);
+          const calc = calculateLicenseStatus(resolvedDslDate);
           return {
             ...g,
             hourlyPayRate: g.hourlyPayRate ?? initial?.hourlyPayRate ?? 24.00,
-            overtimeRateMultiplier: g.overtimeRateMultiplier ?? initial?.overtimeRateMultiplier ?? 1.5
+            overtimeRateMultiplier: g.overtimeRateMultiplier ?? initial?.overtimeRateMultiplier ?? 1.5,
+            rating: g.rating ?? initial?.rating ?? 3,
+            dslExpirationDate: resolvedDslDate,
+            licenseStatus: calc.status,
+            daysUntilExpiration: calc.daysUntilExpiration,
+            daysExpired: calc.daysExpired,
+            denverEligible: calc.denverEligible,
+            maxWeeklyHours: g.maxWeeklyHours ?? initial?.maxWeeklyHours ?? 40
           };
         });
       }
@@ -4441,17 +4465,29 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const updateGuard = (id: string, data: Partial<GuardProfile>) => {
+    let enrichedData: Partial<GuardProfile> = { ...data };
+    if (Object.prototype.hasOwnProperty.call(data, 'dslExpirationDate')) {
+      const calc = calculateLicenseStatus(data.dslExpirationDate ?? null);
+      enrichedData = {
+        ...enrichedData,
+        licenseStatus: calc.status,
+        daysUntilExpiration: calc.daysUntilExpiration,
+        daysExpired: calc.daysExpired,
+        denverEligible: calc.denverEligible
+      };
+    }
+
     setGuardsList((prev) =>
       prev.map((g) => {
         if (g.id === id) {
-          return { ...g, ...data };
+          return { ...g, ...enrichedData };
         }
         return g;
       })
     );
 
     if (activeGuard.id === id) {
-      setActiveGuard((prev) => ({ ...prev, ...data }));
+      setActiveGuard((prev) => ({ ...prev, ...enrichedData }));
     }
 
     const guard = guardsList.find((g) => g.id === id);
@@ -4476,6 +4512,84 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     });
 
     showToast('Guard Updated', `Profile & site qualifications for ${guardName} updated.`, 'info');
+  };
+
+  const updateGuardDslCredentials = (
+    guardId: string,
+    newExpirationDate: string | null
+  ) => {
+    const normalizedDate =
+      newExpirationDate &&
+      newExpirationDate.trim() !== '' &&
+      newExpirationDate.trim().toUpperCase() !== 'NO'
+        ? newExpirationDate.trim()
+        : null;
+
+    const calc = calculateLicenseStatus(normalizedDate);
+    const dslPatch: Partial<GuardProfile> = {
+      dslExpirationDate: normalizedDate,
+      licenseStatus: calc.status,
+      daysUntilExpiration: calc.daysUntilExpiration,
+      daysExpired: calc.daysExpired,
+      denverEligible: calc.denverEligible
+    };
+
+    const targetGuard = guardsList.find((g) => g.id === guardId);
+    const guardName = targetGuard?.name || 'Officer';
+    const guardBadge = targetGuard?.badgeNumber || 'SEC-0000';
+
+    setGuardsList((prev) =>
+      prev.map((g) => (g.id === guardId ? { ...g, ...dslPatch } : g))
+    );
+
+    if (activeGuard.id === guardId) {
+      setActiveGuard((prev) => ({ ...prev, ...dslPatch }));
+    }
+
+    const auditMessage = `[LICENSE UPDATED] Officer ${guardName} (${guardBadge}) DSL updated to ${normalizedDate || 'None'} (${calc.status})`;
+
+    addAuditLog(
+      'LICENSE_UPDATED',
+      'system',
+      auditMessage,
+      "Lt. Mark O'Connor (OPS-CMD-01)",
+      calc.status === 'COMPLIANT'
+        ? 'success'
+        : calc.status === 'EXPIRING_SOON'
+        ? 'warning'
+        : 'danger'
+    );
+
+    logAdminAction({
+      type: 'guard_updated',
+      title: 'Denver Security License (DSL) Updated',
+      description: auditMessage,
+      adminName: "Lt. Mark O'Connor",
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant:
+        calc.status === 'COMPLIANT'
+          ? 'emerald'
+          : calc.status === 'EXPIRING_SOON'
+          ? 'amber'
+          : 'rose',
+      metadata: {
+        guardId,
+        guardBadge,
+        dslExpirationDate: normalizedDate,
+        licenseStatus: calc.status,
+        denverEligible: calc.denverEligible
+      }
+    });
+
+    showToast(
+      'DSL Credentials Updated',
+      `${guardName} (${guardBadge}): ${normalizedDate || 'None'} — ${calc.status}`,
+      calc.status === 'COMPLIANT'
+        ? 'success'
+        : calc.status === 'EXPIRING_SOON'
+        ? 'warning'
+        : 'danger'
+    );
   };
 
   const deleteGuard = (id: string) => {
@@ -9431,6 +9545,8 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         deleteAdminUser,
         addGuard,
         updateGuard,
+        updateGuardDslCredentials,
+        addAuditLog,
         deleteGuard,
         addSite,
         updateSite,

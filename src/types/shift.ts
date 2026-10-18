@@ -70,6 +70,15 @@ export interface GuardProfile {
   // Compensation & Payroll (Command Access Only)
   hourlyPayRate?: number; // e.g., 24.50
   overtimeRateMultiplier?: number; // default 1.5
+
+  // Denver Security License (DSL) & Municipal Compliance
+  rating?: 1 | 2 | 3 | 4 | 5;
+  dslExpirationDate?: string | null; // ISO Date (YYYY-MM-DD) or null / "NO"
+  licenseStatus?: 'COMPLIANT' | 'EXPIRING_SOON' | 'EXPIRED_GRACE' | 'REVOKED';
+  daysUntilExpiration?: number;
+  daysExpired?: number;
+  denverEligible?: boolean;
+  maxWeeklyHours?: number;
 }
 
 export interface SwapProposal {

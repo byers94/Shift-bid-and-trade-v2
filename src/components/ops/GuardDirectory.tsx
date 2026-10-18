@@ -3,6 +3,7 @@ import { useShiftOps } from '../../context/ShiftOpsContext';
 import { GuardProfile, TrainingStatus } from '../../types/shift';
 import { calculateShiftLaborCost } from '../../utils/scheduling';
 import { SiteQualificationCircle } from './SiteQualificationCircle';
+import { GuardCardCredentialBlock } from '../admin/GuardCard';
 
 export { calculateShiftLaborCost };
 import { 
@@ -991,6 +992,9 @@ export const GuardDirectory: React.FC<GuardDirectoryProps> = ({
                       </select>
                     </div>
                   </div>
+
+                  {/* Compliance & Municipal Licensing (Denver Security License - DSL) */}
+                  <GuardCardCredentialBlock guard={guard} />
 
                   {/* Contact Info Row */}
                   <div className="grid grid-cols-1 gap-1.5 bg-slate-50/70 p-2.5 rounded-lg border border-slate-150 text-xs">
