@@ -4,16 +4,19 @@ import {
   ScheduledShift,
 } from './shift';
 
-export type GuardRating = 1 | 2 | 3 | 4 | 5;
-// Level 1: Fire Watch Only (No DSL required)
-// Level 2: Guard Shack & Pool Watch (No DSL required)
-// Level 3: General Guard Duties (Requires active Denver DSL if site is in Denver County)
-// Level 4: Armed Endorsement
-// Level 5: High-Level Sites / Executive Protection
+export type SecurityTier = 1 | 2 | 3 | 4;
+// Tier 1: Basic / Unarmed (No License Required - Fire Watch, Event Staff, Entry Greeter)
+// Tier 2: Certified Security Officer (Standard Uniformed, Access Control, Patrol - License Required if post mandates)
+// Tier 3: Armed Security Officer (Armed Endorsement, Firearms Qualification, High Risk)
+// Tier 4: Specialized / Executive Protection (EP, Maritime/TWIC, Critical Infrastructure)
+
+export type GuardRating = SecurityTier | 5;
+export type SiteTier = SecurityTier;
 
 export type LicenseStatus = 'COMPLIANT' | 'EXPIRING_SOON' | 'EXPIRED_GRACE' | 'REVOKED';
 
 export type SchedulingViolationType =
+  | 'AVAILABILITY'
   | 'OVERTIME'
   | 'REST_TURNAROUND'
   | 'JURISDICTION_LICENSE'
@@ -40,13 +43,27 @@ export type ShiftOperationalStatus =
   | 'BIDDING'
   | 'COMPLETED';
 
+export interface Site {
+  id: string;
+  siteCode: string;
+  siteName: string;
+  county?: string;
+  requiresSecurityLicense: boolean; // Default: true for Tier 2+, false for Tier 1
+  requiredTier: SecurityTier;
+  operatingDays: Array<
+    'Sunday' | 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday'
+  >;
+}
+
 export interface ScheduleTemplate {
   id: string;
   shiftName: string;
   siteCode: string;
   siteName: string;
   county: string;
-  requiresDenverLicense: boolean;
+  requiresSecurityLicense: boolean;
+  requiredTier: SecurityTier;
+  requiresDenverLicense?: boolean;
   requiredRating: GuardRating;
   startTime: string;
   endTime: string;
@@ -68,8 +85,10 @@ export interface Shift {
   id: string;
   siteCode: string;
   siteName: string;
-  county: string; // e.g., 'Denver', 'Arapahoe', 'Adams', 'Douglas', 'Jefferson'
-  requiresDenverLicense: boolean; // True ONLY for sites within the City & County of Denver
+  county?: string;
+  requiresSecurityLicense: boolean; // Default: true for Tier 2+, false for Tier 1
+  requiredTier: SecurityTier;
+  requiresDenverLicense?: boolean;
   requiredRating: GuardRating;
   startTime: string; // "HH:MM" 24h format (e.g., "18:00")
   endTime: string; // "HH:MM" 24h format (e.g., "06:00")
@@ -115,12 +134,20 @@ export interface GuardProfile {
   name: string;
   badgeNumber: string;
   phone?: string;
+  tier: SecurityTier;
+  hasSecurityLicense: boolean;
+  licenseExpirationDate: string | null; // ISO "YYYY-MM-DD" or null if uncertified
+  licenseStatus: 'COMPLIANT' | 'EXPIRING_SOON' | 'EXPIRED_GRACE' | 'REVOKED';
+  availability: {
+    recurringUnavailableDays: string[]; // e.g., ['Tuesday', 'Thursday']
+    blackoutDates: string[]; // ISO 'YYYY-MM-DD'
+    [key: string]: any;
+  };
   rating: GuardRating;
   dslExpirationDate: string | null; // ISO "YYYY-MM-DD" or null if uncertified
-  licenseStatus: LicenseStatus;
   daysUntilExpiration: number;
   daysExpired: number;
-  denverEligible: boolean; // True if license is valid or within authorized grace
+  denverEligible: boolean;
   weeklyScheduledHours: number; // Sum of assigned shift durations in active week
   maxWeeklyHours: number; // Hard ceiling, default: 40
   assignedShiftIds: string[];
@@ -132,15 +159,14 @@ export interface GuardProfile {
   certifications?: string[];
   ojtSites?: string[];
   isRovingGuard?: boolean;
-  availability?: LegacyGuardProfile['availability'];
 }
 
 export interface SchedulingConstraints {
   maxWeeklyHours: number; // Default 40
   minRestHours: number; // Default 12 (turnaround between consecutive shifts)
   maxConsecutiveDays: number; // Default 5
-  enforceDenverLicense: boolean; // Default true
-  enforceRatingCheck: boolean; // Default true
+  enforceDenverLicense: boolean; // Default true (universal security license gate)
+  enforceRatingCheck: boolean; // Default true (tier level check)
   allowOvertimeOverride?: boolean; // Optional compatibility flag
 }
 
@@ -156,6 +182,7 @@ export const DEFAULT_SCHEDULING_CONSTRAINTS: SchedulingConstraints = {
 export type Guard = (GuardProfile | LegacyGuardProfile) & {
   status?: 'ACTIVE' | 'INACTIVE' | 'ON_LEAVE' | string;
   rating?: number;
+  tier?: SecurityTier;
   seniorityYears?: number;
 };
 
@@ -219,8 +246,10 @@ export const UNIFIED_SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
     siteCode: 'MPU-MET-01',
     siteName: 'Metro MPU',
     county: 'Denver',
+    requiresSecurityLicense: true,
+    requiredTier: 2,
     requiresDenverLicense: true,
-    requiredRating: 3,
+    requiredRating: 2,
     startTime: '06:00',
     endTime: '14:00',
     durationHours: 8.0,
@@ -248,8 +277,10 @@ export const UNIFIED_SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
     siteCode: 'PORT-P7',
     siteName: 'Port Authority - Pier 7',
     county: 'Denver',
+    requiresSecurityLicense: true,
+    requiredTier: 3,
     requiresDenverLicense: true,
-    requiredRating: 4,
+    requiredRating: 3,
     startTime: '08:00',
     endTime: '16:00',
     durationHours: 8.0,
@@ -267,8 +298,10 @@ export const UNIFIED_SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
     siteCode: 'CORP-HQ-01',
     siteName: 'Corporate HQ - Main Tower',
     county: 'Denver',
+    requiresSecurityLicense: true,
+    requiredTier: 2,
     requiresDenverLicense: true,
-    requiredRating: 3,
+    requiredRating: 2,
     startTime: '16:00',
     endTime: '00:00',
     durationHours: 8.0,
@@ -286,8 +319,10 @@ export const UNIFIED_SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
     siteCode: 'TECH-DC-04',
     siteName: 'Tech Campus North - Data Center',
     county: 'Arapahoe',
-    requiresDenverLicense: false,
-    requiredRating: 5,
+    requiresSecurityLicense: true,
+    requiredTier: 4,
+    requiresDenverLicense: true,
+    requiredRating: 4,
     startTime: '00:00',
     endTime: '08:00',
     durationHours: 8.0,
@@ -313,8 +348,10 @@ export const UNIFIED_SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
     siteCode: 'MPU-DTN-02',
     siteName: 'Midtown Commercial Lofts',
     county: 'Denver',
+    requiresSecurityLicense: true,
+    requiredTier: 3,
     requiresDenverLicense: true,
-    requiredRating: 4,
+    requiredRating: 3,
     startTime: '20:00',
     endTime: '04:00',
     durationHours: 8.0,
@@ -334,8 +371,10 @@ export const UNIFIED_SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
     siteCode: 'CHEM-WFP-05',
     siteName: 'Waterfront Chemical Plant',
     county: 'Adams',
-    requiresDenverLicense: false,
-    requiredRating: 3,
+    requiresSecurityLicense: true,
+    requiredTier: 2,
+    requiresDenverLicense: true,
+    requiredRating: 2,
     startTime: '18:00',
     endTime: '06:00',
     durationHours: 12.0,
@@ -353,8 +392,10 @@ export const UNIFIED_SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
     siteCode: 'RET-PLZ-06',
     siteName: 'Retail Plaza - Weekend Safety Patrol',
     county: 'Arapahoe',
+    requiresSecurityLicense: false,
+    requiredTier: 1,
     requiresDenverLicense: false,
-    requiredRating: 2,
+    requiredRating: 1,
     startTime: '10:00',
     endTime: '18:00',
     durationHours: 8.0,
@@ -372,8 +413,10 @@ export const UNIFIED_SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
     siteCode: 'MPU-NW-07',
     siteName: 'Pier 66 Marina Boardwalk',
     county: 'Jefferson',
-    requiresDenverLicense: false,
-    requiredRating: 3,
+    requiresSecurityLicense: true,
+    requiredTier: 2,
+    requiresDenverLicense: true,
+    requiredRating: 2,
     startTime: '18:00',
     endTime: '02:00',
     durationHours: 8.0,
@@ -396,3 +439,4 @@ export const UNIFIED_SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
     assignedRoverUnit: 'MPU-2 (North West)',
   },
 ];
+

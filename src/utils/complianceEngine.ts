@@ -137,8 +137,71 @@ export function calculateLicenseStatus(expirationDate: string | null): {
 }
 
 /**
- * Evaluates a guard's eligibility for a specific shift against rating, Denver DSL jurisdiction rules,
- * weekly overtime threshold, and 12-hour turnaround rest periods.
+ * Checks whether a guard is marked unavailable on a given day of the week or specific ISO date.
+ */
+export function isGuardUnavailableOnDay(
+  guard: Partial<GuardProfile> | any,
+  dayOfWeek?: string,
+  dateStr?: string
+): boolean {
+  const availability = guard?.availability;
+  if (!availability) return false;
+
+  // 1. Check blackoutDates (ISO 'YYYY-MM-DD')
+  if (dateStr && Array.isArray(availability.blackoutDates)) {
+    if (availability.blackoutDates.includes(dateStr)) {
+      return true;
+    }
+  }
+
+  // Resolve dayOfWeek from dateStr if not explicitly passed
+  let resolvedDay = dayOfWeek;
+  if (!resolvedDay && dateStr) {
+    const parsed = new Date(dateStr + 'T12:00:00');
+    if (!isNaN(parsed.getTime())) {
+      const names = [
+        'Sunday',
+        'Monday',
+        'Tuesday',
+        'Wednesday',
+        'Thursday',
+        'Friday',
+        'Saturday',
+      ];
+      resolvedDay = names[parsed.getDay()];
+    }
+  }
+
+  // 2. Check recurringUnavailableDays (e.g., ['Tuesday', 'Thursday'])
+  if (resolvedDay && Array.isArray(availability.recurringUnavailableDays)) {
+    const targetLower = resolvedDay.trim().toLowerCase();
+    const targetShort = targetLower.slice(0, 3);
+    const matchesRecurring = availability.recurringUnavailableDays.some((d: string) => {
+      const clean = (d || '').trim().toLowerCase();
+      return clean === targetLower || clean === targetShort;
+    });
+    if (matchesRecurring) {
+      return true;
+    }
+  }
+
+  // 3. Fallback to weeklyRules if present from GuardWeeklyAvailability
+  if (resolvedDay && Array.isArray(availability.weeklyRules)) {
+    const targetLower = resolvedDay.trim().toLowerCase();
+    const rule = availability.weeklyRules.find(
+      (r: any) => (r.dayLabel || '').trim().toLowerCase() === targetLower
+    );
+    if (rule && (rule.isAvailable === false || rule.status === 'unavailable')) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Evaluates a guard's eligibility for a specific shift against availability, 4-tier rating,
+ * universal site security license requirement, weekly overtime threshold, and 12-hour turnaround rest periods.
  */
 export function checkShiftEligibility(
   guard: GuardProfile,
@@ -149,36 +212,59 @@ export function checkShiftEligibility(
   const violations: SchedulingViolation[] = [];
 
   const enforceRating = constraints?.enforceRatingCheck ?? true;
-  const enforceDenver = constraints?.enforceDenverLicense ?? true;
+  const enforceLicense = constraints?.enforceDenverLicense ?? true;
   const maxWeeklyHours = constraints?.maxWeeklyHours ?? guard.maxWeeklyHours ?? 40;
   const minRestHours = constraints?.minRestHours ?? 12;
 
-  // 1. Evaluate Rating
-  if (enforceRating && guard.rating < shift.requiredRating) {
+  // 1. Availability Check
+  if (isGuardUnavailableOnDay(guard, shift.dayOfWeek, shift.date)) {
+    violations.push({
+      type: 'AVAILABILITY',
+      severity: 'BLOCKING',
+      message: '[AVAILABILITY CONFLICT: Officer marked unavailable on this date]',
+    });
+  }
+
+  // 2. Tier Level Match
+  const guardTier = guard.tier ?? Math.min(4, guard.rating || 1);
+  const shiftRequiredTier =
+    shift.requiredTier ?? Math.min(4, shift.requiredRating || 1);
+
+  if (enforceRating && guardTier < shiftRequiredTier) {
     violations.push({
       type: 'RATING',
       severity: 'BLOCKING',
       message:
-        'Guard rating (Level ' +
-        guard.rating +
-        ') below required post level (Level ' +
-        shift.requiredRating +
+        'Officer tier (Tier ' +
+        guardTier +
+        ') below required post tier (Tier ' +
+        shiftRequiredTier +
         ')',
     });
   }
 
-  // 2. Evaluate Jurisdiction License
-  if (enforceDenver && shift.requiresDenverLicense && !guard.denverEligible) {
+  // 3. Universal License Enforcement
+  const requiresSecurityLicense =
+    typeof shift.requiresSecurityLicense === 'boolean'
+      ? shift.requiresSecurityLicense
+      : typeof shift.requiresDenverLicense === 'boolean'
+      ? shift.requiresDenverLicense
+      : shiftRequiredTier >= 2;
+
+  const isLicenseActiveAndValid =
+    guard.hasSecurityLicense !== false &&
+    (guard.licenseStatus === 'COMPLIANT' || guard.licenseStatus === 'EXPIRING_SOON');
+
+  if (enforceLicense && requiresSecurityLicense && !isLicenseActiveAndValid) {
     violations.push({
       type: 'JURISDICTION_LICENSE',
       severity: 'BLOCKING',
       message:
-        'Post requires active Denver County Security License. Guard license status: ' +
-        guard.licenseStatus,
+        'Site mandates an active Security License. Officer license is expired or missing',
     });
   }
 
-  // 3. Evaluate Overtime Threshold
+  // 4. Evaluate Overtime Threshold
   const projectedHours = guard.weeklyScheduledHours + shift.durationHours;
   if (projectedHours > maxWeeklyHours) {
     violations.push({
@@ -195,7 +281,7 @@ export function checkShiftEligibility(
     });
   }
 
-  // 4. Evaluate Turnaround Rest Period (12 Hours)
+  // 5. Evaluate Turnaround Rest Period (12 Hours)
   const targetBounds = getShiftWeekHourBounds(shift);
   let hasRestViolation = false;
 
@@ -237,3 +323,4 @@ export function checkShiftEligibility(
     violations,
   };
 }
+

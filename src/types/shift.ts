@@ -71,7 +71,10 @@ export interface GuardProfile {
   hourlyPayRate?: number; // e.g., 24.50
   overtimeRateMultiplier?: number; // default 1.5
 
-  // Denver Security License (DSL) & Municipal Compliance
+  // Universal 4-Tier Matrix & Security Officer Licensing
+  tier?: 1 | 2 | 3 | 4;
+  hasSecurityLicense?: boolean;
+  licenseExpirationDate?: string | null;
   rating?: 1 | 2 | 3 | 4 | 5;
   dslExpirationDate?: string | null; // ISO Date (YYYY-MM-DD) or null / "NO"
   licenseStatus?: 'COMPLIANT' | 'EXPIRING_SOON' | 'EXPIRED_GRACE' | 'REVOKED';
@@ -799,6 +802,9 @@ export interface SiteProfile {
   zone?: string; // Sector / District e.g. "Maritime District", "Downtown Metro"
   category: SiteCategory;
   securityTier: SiteSecurityTier;
+  requiredTier?: 1 | 2 | 3 | 4;
+  requiresSecurityLicense?: boolean;
+  operatingDays?: Array<'Sunday' | 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday'>;
 
   // Service Type & Roving Property Group
   serviceType?: SiteServiceType; // 'dedicated' (guard remains on-site) | 'roving' (serviced by roving patrol guard)
@@ -1750,9 +1756,11 @@ export interface CallOffRecord {
 export type GuardCallOffRecord = CallOffRecord;
 
 export interface GuardWeeklyAvailability {
-  guardId: string;
+  guardId?: string;
   weeklyRules: DailyAvailabilityRule[];
   rules?: DailyAvailabilityRule[];
+  recurringUnavailableDays?: string[]; // e.g., ['Tuesday', 'Thursday']
+  blackoutDates?: string[]; // ISO 'YYYY-MM-DD'
   maxWeeklyHours: number; // default 40
   overtimeWilling?: boolean;
   preferredSites?: string[];

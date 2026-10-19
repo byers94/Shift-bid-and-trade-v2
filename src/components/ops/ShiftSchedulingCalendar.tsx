@@ -1,7 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
 import { ScheduledShift, ShiftDutyStatus, RovingGroup, ROVING_GROUPS, ROVING_GROUP_CONFIGS } from '../../types/shift';
-import { UNIFIED_SCHEDULE_TEMPLATES, DayOfWeekName } from '../../types/scheduling';
+import {
+  UNIFIED_SCHEDULE_TEMPLATES,
+  DayOfWeekName,
+  GuardProfile as MatrixGuardProfile,
+  SchedulingViolation,
+  Shift as MatrixShift,
+} from '../../types/scheduling';
+import { checkShiftEligibility, isGuardUnavailableOnDay } from '../../utils/complianceEngine';
+import { normalizeGuardRecord, normalizeShiftRecord } from '../../utils/autoFillEngine';
+import { SchedulingOverrideModal } from '../admin/SchedulingOverrideModal';
 import { 
   Calendar as CalendarIcon, 
   ChevronLeft, 
@@ -75,6 +84,13 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
   const [isReassignModalOpen, setIsReassignModalOpen] = useState(false);
   const [reassignTargetGuardId, setReassignTargetGuardId] = useState<string>('');
   const [isCallOffModalOpen, setIsCallOffModalOpen] = useState(false);
+  const [pendingCalendarOverride, setPendingCalendarOverride] = useState<{
+    shift: MatrixShift;
+    guard: MatrixGuardProfile;
+    violations: SchedulingViolation[];
+    shiftLabel: string;
+    commitCallback: () => void;
+  } | null>(null);
 
   // Form State for creating new scheduled shift
   const [formShiftType, setFormShiftType] = useState<'static' | 'roving'>('static');
@@ -294,18 +310,22 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
   const weekTotalShifts = weekDays.reduce((sum, w) => sum + w.dayShifts.length, 0);
   const weekTotalHours = weekDays.reduce((sum, w) => sum + w.totalDayHours, 0);
 
-  const handleCreateShiftSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const selectedGuardProfile = useMemo(
+    () =>
+      selectedGuardFilter !== 'all'
+        ? guardsList.find((g) => g.id === selectedGuardFilter) || null
+        : null,
+    [selectedGuardFilter, guardsList]
+  );
+
+  const executeScheduleCreation = () => {
     const guard = guardsList.find((g) => g.id === formGuardId);
-    if (!guard) {
-      showToast('Validation Error', 'Please select an officer.', 'warning');
-      return;
-    }
+    if (!guard) return;
 
     if (formShiftType === 'roving') {
       const groupConfig = ROVING_GROUP_CONFIGS[formRovingGroup];
-      const associatedRover = rovers.find(r => r.rovingGroup === formRovingGroup) || rovers[0];
-      const groupSites = sitesList.filter(s => s.rovingGroup === formRovingGroup);
+      const associatedRover = rovers.find((r) => r.rovingGroup === formRovingGroup) || rovers[0];
+      const groupSites = sitesList.filter((s) => s.rovingGroup === formRovingGroup);
 
       scheduleNewShift({
         guardId: guard.id,
@@ -320,13 +340,15 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
         endTime: formEndTime,
         hours: formHours,
         postRole: `🚗 Mobile Patrol Driver • ${associatedRover?.unitNumber || 'Rover'} (${formRovingGroup})`,
-        postInstructions: formPostInstructions || `Execute optimized ${formRovingGroup} property patrol circuit (${groupSites.length} customer properties). Maintain SLA compliance and respond to priority intercepts.`,
+        postInstructions:
+          formPostInstructions ||
+          `Execute optimized ${formRovingGroup} property patrol circuit (${groupSites.length} customer properties). Maintain SLA compliance and respond to priority intercepts.`,
         isRovingShift: true,
         rovingGroup: formRovingGroup,
         assignedRoverUnit: associatedRover?.unitNumber || 'Unit R-101',
         assignedRoverId: associatedRover?.id || 'rover-1',
         circuitStopsCount: groupSites.length || 6,
-        status: 'scheduled'
+        status: 'scheduled',
       });
 
       showToast(
@@ -335,11 +357,8 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
         'success'
       );
     } else {
-      const site = sitesList.find((s) => s.name === formSiteName);
-      if (!site) {
-        showToast('Validation Error', 'Please select a facility.', 'warning');
-        return;
-      }
+      const site = sitesList.find((s) => s.name === formSiteName) || sitesList[0];
+      if (!site) return;
 
       scheduleNewShift({
         guardId: guard.id,
@@ -356,13 +375,60 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
         postRole: formPostRole,
         postInstructions: formPostInstructions,
         isRovingShift: false,
-        status: 'scheduled'
+        status: 'scheduled',
       });
 
       showToast('Shift Scheduled', `Assigned ${guard.name} to ${site.name}.`, 'success');
     }
 
     setIsScheduleModalOpen(false);
+  };
+
+  const handleCreateShiftSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const guard = guardsList.find((g) => g.id === formGuardId);
+    if (!guard) {
+      showToast('Validation Error', 'Please select an officer.', 'warning');
+      return;
+    }
+
+    const site = sitesList.find((s) => s.name === formSiteName) || sitesList[0];
+    const targetSiteName =
+      formShiftType === 'roving'
+        ? `${formRovingGroup} Mobile Patrol Circuit`
+        : site?.name || formSiteName;
+
+    const normGuard = normalizeGuardRecord(guard);
+    const normShift = normalizeShiftRecord({
+      id: `cal-shift-${Date.now()}`,
+      siteCode: site?.code || 'POST-01',
+      siteName: targetSiteName,
+      date: formDate,
+      startTime: formStartTime,
+      endTime: formEndTime,
+      durationHours: formHours,
+      requiredTier: site?.requiredTier ?? 2,
+      requiresSecurityLicense: site?.requiresSecurityLicense ?? true,
+    });
+
+    const existingForGuard = unifiedCalendarShifts
+      .filter((s) => s.guardId === guard.id)
+      .map(normalizeShiftRecord);
+
+    const eligibility = checkShiftEligibility(normGuard, normShift, existingForGuard);
+    if (!eligibility.eligible) {
+      setIsScheduleModalOpen(false);
+      setPendingCalendarOverride({
+        shift: normShift,
+        guard: normGuard,
+        violations: eligibility.violations,
+        shiftLabel: `${targetSiteName} (${formDate})`,
+        commitCallback: executeScheduleCreation,
+      });
+      return;
+    }
+
+    executeScheduleCreation();
   };
 
   const handleExecuteReassign = () => {
@@ -627,6 +693,28 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
 
                   {/* Day Shifts Column Body */}
                   <div className="p-2 flex-1 flex flex-col gap-2 overflow-y-auto max-h-[550px] no-scrollbar">
+                    {selectedGuardProfile &&
+                      isGuardUnavailableOnDay(
+                        selectedGuardProfile,
+                        day.dayNameFull,
+                        day.dateStr
+                      ) && (
+                        <div
+                          onClick={() => {
+                            setFormGuardId(selectedGuardProfile.id);
+                            setFormDate(day.dateStr);
+                            setIsScheduleModalOpen(true);
+                          }}
+                          className="bg-slate-900/80 border border-slate-800 text-slate-500 font-medium text-xs text-center py-2 flex items-center justify-center gap-1 rounded cursor-pointer hover:border-rose-500/40 transition-colors"
+                          style={{
+                            backgroundImage:
+                              'repeating-linear-gradient(135deg, rgba(15, 23, 42, 0.85) 0px, rgba(15, 23, 42, 0.85) 6px, rgba(30, 41, 59, 0.55) 6px, rgba(30, 41, 59, 0.55) 12px)',
+                          }}
+                          title={`${selectedGuardProfile.name} is marked unavailable on ${day.dayNameFull} (${day.dateStr}). Click to force override.`}
+                        >
+                          <span>🚫 UNAVAILABLE</span>
+                        </div>
+                      )}
                     {day.dayShifts.length === 0 ? (
                       <div className="flex-1 flex flex-col items-center justify-center p-4 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-center">
                         <Clock className="w-5 h-5 text-slate-300 dark:text-slate-600 mb-1.5" />
@@ -1542,6 +1630,21 @@ export const ShiftSchedulingCalendar: React.FC<ShiftSchedulingCalendarProps> = (
           prefillShiftId={selectedShiftForDetail?.id}
         />
       )}
+
+      {/* Administrative Override Modal for Availability / License / Tier Conflicts */}
+      <SchedulingOverrideModal
+        isOpen={Boolean(pendingCalendarOverride)}
+        shift={pendingCalendarOverride?.shift || null}
+        guard={pendingCalendarOverride?.guard || null}
+        violations={pendingCalendarOverride?.violations || []}
+        shiftLabel={pendingCalendarOverride?.shiftLabel}
+        defaultSupervisor="Lt. Mark O'Connor (OPS-CMD-01)"
+        onCancel={() => setPendingCalendarOverride(null)}
+        onConfirmOverride={() => {
+          pendingCalendarOverride?.commitCallback();
+          setPendingCalendarOverride(null);
+        }}
+      />
     </div>
   );
 };

@@ -69,12 +69,14 @@ export const SchedulingOverrideModal: React.FC<SchedulingOverrideModalProps> = (
 
   const formatViolationBadgeText = (v: SchedulingViolation): string => {
     switch (v.type) {
+      case 'AVAILABILITY':
+        return `[AVAILABILITY CONFLICT: Officer marked unavailable on this date]`;
       case 'OVERTIME':
         return `[ OVERTIME WARNING: Pushes weekly total to ${projectedHours}h (Exceeds 40h limit) ]`;
       case 'JURISDICTION_LICENSE':
-        return `[ MUNICIPAL VIOLATION: Site requires active Denver DSL. Guard license is lapsed/expired ]`;
+        return `[ LICENSE VIOLATION: Site mandates an active Security License. Officer license is expired or missing ]`;
       case 'RATING':
-        return `[ RATING DEFICIT: Post requires Level ${shift.requiredRating}, Guard is Level ${guard.rating} ]`;
+        return `[ TIER DEFICIT: Post requires Tier ${shift.requiredTier ?? shift.requiredRating}, Officer is Tier ${guard.tier ?? guard.rating} ]`;
       case 'REST_TURNAROUND':
         return `[ REST VIOLATION: Less than 12h turnaround between consecutive shifts ]`;
       default:
@@ -168,17 +170,17 @@ export const SchedulingOverrideModal: React.FC<SchedulingOverrideModalProps> = (
                 {shift.dayOfWeek} · {shift.startTime}–{shift.endTime} ({shift.durationHours.toFixed(1)}h)
               </div>
               <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                {shift.requiresDenverLicense ? (
+                {shift.requiresSecurityLicense ?? shift.requiresDenverLicense ? (
                   <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/40">
-                    [DENVER COUNTY - DSL REQ]
+                    [SECURITY LICENSE REQ]
                   </span>
                 ) : (
                   <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">
-                    [REGIONAL - {shift.county}]
+                    [NO LICENSE REQ - TIER 1]
                   </span>
                 )}
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/15 text-blue-300 border border-blue-500/30">
-                  Req Level {shift.requiredRating}
+                  Req Tier {shift.requiredTier ?? shift.requiredRating}
                 </span>
               </div>
             </div>
@@ -193,7 +195,7 @@ export const SchedulingOverrideModal: React.FC<SchedulingOverrideModalProps> = (
                 <span className="text-xs font-mono text-blue-400">({guard.badgeNumber})</span>
               </div>
               <div className="text-xs font-mono text-slate-300 tabular-nums">
-                Rating: Level {guard.rating} · Current Week: {guard.weeklyScheduledHours.toFixed(1)}h
+                Tier: Tier {guard.tier ?? guard.rating} · Current Week: {guard.weeklyScheduledHours.toFixed(1)}h
               </div>
               <div className="flex flex-wrap items-center gap-1.5 pt-1">
                 <span
@@ -205,8 +207,10 @@ export const SchedulingOverrideModal: React.FC<SchedulingOverrideModalProps> = (
                       : 'bg-rose-500/20 text-rose-300 border-rose-500/50'
                   }`}
                 >
-                  DSL: {guard.licenseStatus}
-                  {guard.dslExpirationDate ? ` (${guard.dslExpirationDate})` : ' (NO CERT)'}
+                  License: {guard.licenseStatus}
+                  {guard.licenseExpirationDate || guard.dslExpirationDate
+                    ? ` (${guard.licenseExpirationDate || guard.dslExpirationDate})`
+                    : ' (NO CERT)'}
                 </span>
               </div>
             </div>

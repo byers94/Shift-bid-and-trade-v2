@@ -170,6 +170,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
   const [formRequiredCertifications, setFormRequiredCertifications] = useState<string[]>([]);
   const [formActivePostsCount, setFormActivePostsCount] = useState<number>(2);
   const [formOjtRequired, setFormOjtRequired] = useState<boolean>(true);
+  const [formRequiresSecurityLicense, setFormRequiresSecurityLicense] = useState<boolean>(true);
   const [formOperatingHours, setFormOperatingHours] = useState('24/7 Continuous Ops');
   const [formAccessGateNotes, setFormAccessGateNotes] = useState('');
   const [formStatus, setFormStatus] = useState<'active' | 'inactive' | 'maintenance'>('active');
@@ -677,6 +678,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
     setFormRequiredCertifications(['Guard Card', 'CPR/AED']);
     setFormActivePostsCount(2);
     setFormOjtRequired(true);
+    setFormRequiresSecurityLicense(true);
     setFormOperatingHours('24/7 Continuous Ops');
     setFormAccessGateNotes('');
     setFormStatus('active');
@@ -731,6 +733,11 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
     setFormRequiredCertifications(site.requiredCertifications || []);
     setFormActivePostsCount(site.activePostsCount || 1);
     setFormOjtRequired(site.ojtRequired);
+    setFormRequiresSecurityLicense(
+      typeof site.requiresSecurityLicense === 'boolean'
+        ? site.requiresSecurityLicense
+        : !site.securityTier.startsWith('Tier 1')
+    );
     setFormOperatingHours(site.operatingHours || '24/7 Continuous Ops');
     setFormAccessGateNotes(site.accessGateNotes || '');
     setFormStatus(site.status);
@@ -838,6 +845,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
       requiredCertifications: formRequiredCertifications,
       activePostsCount: Number(formActivePostsCount) || 1,
       ojtRequired: formOjtRequired,
+      requiresSecurityLicense: formRequiresSecurityLicense,
       operatingHours: formOperatingHours.trim() || '24/7 Continuous Ops',
       accessGateNotes: formAccessGateNotes.trim() || undefined,
       status: formStatus,
@@ -1904,6 +1912,63 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                         title="Copy Street Address"
                       >
                         {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+
+                    {/* Universal License Requirement Toggle */}
+                    <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-800 flex items-start justify-between gap-3">
+                      <div className="space-y-0.5">
+                        <label
+                          htmlFor={`site-license-toggle-${site.id}`}
+                          className="text-[11px] font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 shrink-0" />
+                          <span>Mandatory Active Security License</span>
+                        </label>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug">
+                          Enforce active municipal/state guard license validation for all roster assignments at this facility.
+                        </p>
+                      </div>
+                      <button
+                        id={`site-license-toggle-${site.id}`}
+                        type="button"
+                        role="switch"
+                        aria-checked={
+                          typeof site.requiresSecurityLicense === 'boolean'
+                            ? site.requiresSecurityLicense
+                            : !site.securityTier.startsWith('Tier 1')
+                        }
+                        onClick={() => {
+                          const currentVal =
+                            typeof site.requiresSecurityLicense === 'boolean'
+                              ? site.requiresSecurityLicense
+                              : !site.securityTier.startsWith('Tier 1');
+                          const nextVal = !currentVal;
+                          updateSite(site.id, { requiresSecurityLicense: nextVal });
+                          showToast(
+                            'Facility License Policy Updated',
+                            `${site.name}: Mandatory Active Security License ${nextVal ? 'ENABLED' : 'DISABLED'}.`,
+                            'info'
+                          );
+                        }}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none mt-0.5 ${
+                          (typeof site.requiresSecurityLicense === 'boolean'
+                            ? site.requiresSecurityLicense
+                            : !site.securityTier.startsWith('Tier 1'))
+                            ? 'bg-cyan-600'
+                            : 'bg-slate-300 dark:bg-slate-700'
+                        }`}
+                        title="Toggle Mandatory Active Security License"
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${
+                            (typeof site.requiresSecurityLicense === 'boolean'
+                              ? site.requiresSecurityLicense
+                              : !site.securityTier.startsWith('Tier 1'))
+                              ? 'translate-x-4'
+                              : 'translate-x-0'
+                          }`}
+                        />
                       </button>
                     </div>
 
@@ -3982,6 +4047,38 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                         Strict Enforce (Block out-of-perimeter clock-in)
                       </span>
                     </label>
+                  </div>
+
+                  {/* Mandatory Active Security License Compliance Toggle in Modal */}
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3 mt-2">
+                    <div className="space-y-0.5">
+                      <label
+                        htmlFor="modal-site-requires-security-license-switch"
+                        className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <ShieldCheck className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
+                        <span>Mandatory Active Security License</span>
+                      </label>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Enforce active municipal/state guard license validation for all roster assignments at this facility.
+                      </p>
+                    </div>
+                    <button
+                      id="modal-site-requires-security-license-switch"
+                      type="button"
+                      role="switch"
+                      aria-checked={formRequiresSecurityLicense}
+                      onClick={() => setFormRequiresSecurityLicense((prev) => !prev)}
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        formRequiresSecurityLicense ? 'bg-cyan-600' : 'bg-slate-300 dark:bg-slate-700'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${
+                          formRequiresSecurityLicense ? 'translate-x-4' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
                   </div>
                 </div>
               </div>

@@ -7,10 +7,15 @@ import {
   ScheduleTemplate,
   SchedulingConstraints,
   SchedulingViolation,
+  SecurityTier,
   Shift,
   UNIFIED_SCHEDULE_TEMPLATES,
 } from '../../types/scheduling';
-import { calculateLicenseStatus, checkShiftEligibility } from '../../utils/complianceEngine';
+import {
+  calculateLicenseStatus,
+  checkShiftEligibility,
+  isGuardUnavailableOnDay,
+} from '../../utils/complianceEngine';
 import { autoFillShifts } from '../../utils/autoFillEngine';
 import { SchedulingOverrideModal } from './SchedulingOverrideModal';
 import { useShiftOps } from '../../context/ShiftOpsContext';
@@ -49,97 +54,151 @@ function createInitialGuardRoster(): GuardProfile[] {
     name: string;
     badgeNumber: string;
     phone: string;
-    rating: GuardRating;
-    dslExpirationDate: string | null;
+    tier: SecurityTier;
+    hasSecurityLicense: boolean;
+    licenseExpirationDate: string | null;
     maxWeeklyHours: number;
+    availability: {
+      recurringUnavailableDays: string[];
+      blackoutDates: string[];
+    };
   }> = [
     {
       id: 'guard-current',
       name: 'Alex Mercer',
       badgeNumber: 'SEC-8842',
       phone: '+1 (555) 234-5678',
-      rating: 4,
-      dslExpirationDate: toISODate(215), // COMPLIANT
+      tier: 3,
+      hasSecurityLicense: true,
+      licenseExpirationDate: toISODate(215), // COMPLIANT
       maxWeeklyHours: 40,
+      availability: {
+        recurringUnavailableDays: ['Sunday', 'Saturday'],
+        blackoutDates: [],
+      },
     },
     {
       id: 'guard-101',
       name: 'Sarah Jenkins',
       badgeNumber: 'SEC-7721',
       phone: '+1 (555) 345-6789',
-      rating: 3,
-      dslExpirationDate: toISODate(180), // COMPLIANT
+      tier: 2,
+      hasSecurityLicense: true,
+      licenseExpirationDate: toISODate(180), // COMPLIANT
       maxWeeklyHours: 40,
+      availability: {
+        recurringUnavailableDays: ['Sunday', 'Saturday'],
+        blackoutDates: [],
+      },
     },
     {
       id: 'guard-103',
       name: 'Marcus Wright',
       badgeNumber: 'SEC-6340',
       phone: '+1 (555) 567-8901',
-      rating: 4,
-      dslExpirationDate: toISODate(14), // EXPIRING_SOON (14d)
+      tier: 3,
+      hasSecurityLicense: true,
+      licenseExpirationDate: toISODate(14), // EXPIRING_SOON (14d)
       maxWeeklyHours: 40,
+      availability: {
+        recurringUnavailableDays: ['Friday', 'Saturday'],
+        blackoutDates: [],
+      },
     },
     {
       id: 'guard-104',
       name: 'Elena Rostova',
       badgeNumber: 'SEC-4199',
       phone: '+1 (555) 678-9012',
-      rating: 5,
-      dslExpirationDate: toISODate(140), // COMPLIANT
+      tier: 4,
+      hasSecurityLicense: true,
+      licenseExpirationDate: toISODate(140), // COMPLIANT
       maxWeeklyHours: 40,
+      availability: {
+        recurringUnavailableDays: ['Friday', 'Saturday'],
+        blackoutDates: [],
+      },
     },
     {
       id: 'guard-105',
       name: 'David Silva',
       badgeNumber: 'SEC-5510',
       phone: '+1 (555) 789-0123',
-      rating: 3,
-      dslExpirationDate: toISODate(-22), // EXPIRED_GRACE (22d expired, 68d left)
+      tier: 2,
+      hasSecurityLicense: true,
+      licenseExpirationDate: toISODate(-22), // EXPIRED_GRACE (22d expired, 68d left)
       maxWeeklyHours: 40,
+      availability: {
+        recurringUnavailableDays: ['Tuesday', 'Thursday'],
+        blackoutDates: [],
+      },
     },
     {
       id: 'guard-107',
       name: 'Chloe Bennett',
       badgeNumber: 'SEC-1102',
       phone: '+1 (555) 901-2345',
-      rating: 5,
-      dslExpirationDate: toISODate(195), // COMPLIANT
+      tier: 4,
+      hasSecurityLicense: true,
+      licenseExpirationDate: toISODate(195), // COMPLIANT
       maxWeeklyHours: 40,
+      availability: {
+        recurringUnavailableDays: ['Sunday', 'Saturday'],
+        blackoutDates: [],
+      },
     },
     {
       id: 'guard-108',
       name: 'Maya Lin',
       badgeNumber: 'SEC-4930',
       phone: '+1 (555) 321-7654',
-      rating: 3,
-      dslExpirationDate: toISODate(9), // EXPIRING_SOON (9d)
+      tier: 2,
+      hasSecurityLicense: true,
+      licenseExpirationDate: toISODate(9), // EXPIRING_SOON (9d)
       maxWeeklyHours: 40,
+      availability: {
+        recurringUnavailableDays: ['Monday', 'Wednesday'],
+        blackoutDates: [],
+      },
     },
     {
       id: 'guard-106',
       name: 'Jamar Vance',
       badgeNumber: 'SEC-3820',
       phone: '+1 (555) 890-1234',
-      rating: 2,
-      dslExpirationDate: toISODate(-115), // REVOKED (>90d expired - Regional Only)
+      tier: 1,
+      hasSecurityLicense: true,
+      licenseExpirationDate: toISODate(-115), // REVOKED (>90d expired - Tier 1 Only)
       maxWeeklyHours: 40,
+      availability: {
+        recurringUnavailableDays: ['Tuesday', 'Thursday'],
+        blackoutDates: [],
+      },
     },
     {
       id: 'guard-109',
       name: 'Carlos Rivera',
       badgeNumber: 'SEC-5201',
       phone: '+1 (555) 432-8765',
-      rating: 3,
-      dslExpirationDate: null, // REVOKED / NO CERT - Regional Only
+      tier: 2,
+      hasSecurityLicense: false,
+      licenseExpirationDate: null, // REVOKED / NO CERT - Tier 1 Only
       maxWeeklyHours: 40,
+      availability: {
+        recurringUnavailableDays: ['Wednesday', 'Friday'],
+        blackoutDates: [],
+      },
     },
   ];
 
   return rawGuards.map((g) => {
-    const statusInfo = calculateLicenseStatus(g.dslExpirationDate);
+    const statusInfo = calculateLicenseStatus(
+      g.hasSecurityLicense ? g.licenseExpirationDate : null
+    );
     return {
       ...g,
+      rating: g.tier,
+      dslExpirationDate: g.hasSecurityLicense ? g.licenseExpirationDate : null,
       licenseStatus: statusInfo.status,
       daysUntilExpiration: statusInfo.daysUntilExpiration,
       daysExpired: statusInfo.daysExpired,
@@ -157,8 +216,6 @@ function createInitialWeeklySchedule(
   const guardById = new Map(guards.map((g) => [g.id, g]));
   const shifts: Shift[] = [];
 
-  // Default regular assignments per template on their operational days
-  // Note: For Everyday (7-day) templates with a defaultGuardId, assign up to 5 days (40h) so the remaining 2 days or unassigned templates (#7 Retail Plaza, #8 North West MPU) demonstrate open shifts cleanly
   const customDayOverrides: Record<string, string | undefined> = {
     'SETSCHED-00:Friday': 'guard-108',
     'SETSCHED-00:Saturday': 'guard-108',
@@ -168,7 +225,6 @@ function createInitialWeeklySchedule(
 
   for (const site of templates) {
     for (const day of OPERATING_DAYS) {
-      // Only create Shift records on operational days for the contract
       const isOperational = site.operatingDays.includes(day);
       if (!isOperational) continue;
 
@@ -188,8 +244,10 @@ function createInitialWeeklySchedule(
         siteCode: site.siteCode,
         siteName: site.siteName,
         county: site.county,
-        requiresDenverLicense: site.requiresDenverLicense,
-        requiredRating: site.requiredRating,
+        requiresSecurityLicense: site.requiresSecurityLicense,
+        requiredTier: site.requiredTier,
+        requiresDenverLicense: site.requiresSecurityLicense,
+        requiredRating: site.requiredTier,
         startTime: site.startTime,
         endTime: site.endTime,
         durationHours: site.durationHours,
@@ -205,20 +263,19 @@ function createInitialWeeklySchedule(
   return shifts;
 }
 
-export function formatPostLevelBadge(rating: GuardRating): string {
-  switch (rating) {
+export function formatPostLevelBadge(tier: SecurityTier | GuardRating): string {
+  switch (tier) {
     case 1:
-      return '[L1 - Fire Watch]';
+      return '[Tier 1 - Basic]';
     case 2:
-      return '[L2 - Gate/Pool]';
+      return '[Tier 2 - Certified]';
     case 3:
-      return '[L3 - Guard]';
+      return '[Tier 3 - Armed]';
     case 4:
-      return '[L4 - Armed]';
     case 5:
-      return '[L5 - EP]';
+      return '[Tier 4 - Spec/EP]';
     default:
-      return `[L${rating} - Guard]`;
+      return `[Tier ${tier} - Certified]`;
   }
 }
 
@@ -233,6 +290,7 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
 
   const [viewMode, setViewMode] = useState<'matrix' | 'roster'>('matrix');
   const [shiftFilter, setShiftFilter] = useState<'ALL' | 'MPU' | 'DEDICATED'>('ALL');
+  const [focusedGuardId, setFocusedGuardId] = useState<string>('ALL');
   const [constraints] = useState<SchedulingConstraints>(DEFAULT_SCHEDULING_CONSTRAINTS);
 
   const [baseRoster, setBaseRoster] = useState<GuardProfile[]>(() => createInitialGuardRoster());
@@ -267,11 +325,11 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
       id: 'aud-init-1',
       timestamp: new Date().toISOString(),
       message:
-        '[SYSTEM] Unified 8 Set Schedule Templates Loaded · Operational Day Gating & Denver DSL Compliance Active.',
+        '[SYSTEM] Unified 8 Set Schedule Templates Loaded · 4-Tier Matrix, Availability Sync & Universal License Gate Active.',
     },
   ]);
 
-  // Synchronize guard weeklyScheduledHours, assignedShiftIds, and central DSL credentials dynamically
+  // Synchronize guard weeklyScheduledHours, assignedShiftIds, availability, and central credentials dynamically
   const computedRoster = useMemo<GuardProfile[]>(() => {
     const centralGuardsById = new Map(
       (shiftOps.guardsList || []).map((g) => [g.id, g])
@@ -280,34 +338,100 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
     const mergedBase = baseRoster.map((guard) => {
       const central = centralGuardsById.get(guard.id);
       if (!central) return guard;
+
+      const rawTier = Number(central.tier ?? central.rating ?? guard.tier ?? 2);
+      const nextTier: SecurityTier = (
+        rawTier <= 1 ? 1 : rawTier === 2 ? 2 : rawTier === 3 ? 3 : 4
+      ) as SecurityTier;
+
+      const expDate =
+        central.licenseExpirationDate !== undefined
+          ? central.licenseExpirationDate
+          : central.dslExpirationDate !== undefined
+          ? central.dslExpirationDate
+          : guard.licenseExpirationDate;
+
+      const hasLicense =
+        typeof central.hasSecurityLicense === 'boolean'
+          ? central.hasSecurityLicense
+          : !!expDate && expDate !== 'NO';
+
+      const centralRecurring = Array.isArray(central.availability?.recurringUnavailableDays)
+        ? central.availability.recurringUnavailableDays
+        : Array.isArray(central.availability?.weeklyRules)
+        ? central.availability.weeklyRules
+            .filter((r) => r.isAvailable === false || r.status === 'unavailable')
+            .map((r) => r.dayLabel)
+        : null;
+
+      const centralBlackout = Array.isArray(central.availability?.blackoutDates)
+        ? central.availability.blackoutDates
+        : null;
+
       return {
         ...guard,
         name: central.name || guard.name,
         badgeNumber: central.badgeNumber || guard.badgeNumber,
         phone: central.phone || guard.phone,
-        rating: (central.rating as GuardRating) ?? guard.rating,
-        dslExpirationDate:
-          central.dslExpirationDate !== undefined
-            ? central.dslExpirationDate
-            : guard.dslExpirationDate,
+        tier: nextTier,
+        rating: nextTier,
+        hasSecurityLicense: hasLicense,
+        licenseExpirationDate: hasLicense ? expDate : null,
+        dslExpirationDate: hasLicense ? expDate : null,
+        availability: {
+          recurringUnavailableDays:
+            centralRecurring && centralRecurring.length > 0
+              ? centralRecurring
+              : guard.availability.recurringUnavailableDays,
+          blackoutDates:
+            centralBlackout && centralBlackout.length > 0
+              ? centralBlackout
+              : guard.availability.blackoutDates,
+        },
       };
     });
 
     for (const cg of shiftOps.guardsList || []) {
       if (!mergedBase.some((b) => b.id === cg.id)) {
-        const dslDate = cg.dslExpirationDate ?? null;
-        const st = calculateLicenseStatus(dslDate);
+        const expDate = cg.licenseExpirationDate ?? cg.dslExpirationDate ?? null;
+        const hasLicense =
+          typeof cg.hasSecurityLicense === 'boolean'
+            ? cg.hasSecurityLicense
+            : !!expDate && expDate !== 'NO';
+        const st = calculateLicenseStatus(hasLicense ? expDate : null);
+        const rawTier = Number(cg.tier ?? cg.rating ?? 2);
+        const tier: SecurityTier = (
+          rawTier <= 1 ? 1 : rawTier === 2 ? 2 : rawTier === 3 ? 3 : 4
+        ) as SecurityTier;
+
+        const recurringUnavailableDays = Array.isArray(
+          cg.availability?.recurringUnavailableDays
+        )
+          ? cg.availability.recurringUnavailableDays
+          : Array.isArray(cg.availability?.weeklyRules)
+          ? cg.availability.weeklyRules
+              .filter((r) => r.isAvailable === false || r.status === 'unavailable')
+              .map((r) => r.dayLabel)
+          : [];
+
         mergedBase.push({
           id: cg.id,
           name: cg.name,
           badgeNumber: cg.badgeNumber,
           phone: cg.phone,
-          rating: (cg.rating as GuardRating) ?? 3,
-          dslExpirationDate: dslDate,
+          tier,
+          hasSecurityLicense: hasLicense,
+          licenseExpirationDate: hasLicense ? expDate : null,
+          rating: tier,
+          dslExpirationDate: hasLicense ? expDate : null,
           licenseStatus: st.status,
           daysUntilExpiration: st.daysUntilExpiration,
           daysExpired: st.daysExpired,
           denverEligible: st.denverEligible,
+          availability: {
+            recurringUnavailableDays,
+            blackoutDates: cg.availability?.blackoutDates || [],
+          },
           weeklyScheduledHours: 0,
           maxWeeklyHours: cg.maxWeeklyHours ?? 40,
           assignedShiftIds: [],
@@ -319,7 +443,9 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
       const assigned = shifts.filter((s) => s.assignedGuardId === guard.id);
       const totalHours =
         Math.round(assigned.reduce((acc, s) => acc + s.durationHours, 0) * 10) / 10;
-      const statusInfo = calculateLicenseStatus(guard.dslExpirationDate);
+      const statusInfo = calculateLicenseStatus(
+        guard.hasSecurityLicense ? guard.licenseExpirationDate : null
+      );
       return {
         ...guard,
         licenseStatus: statusInfo.status,
@@ -332,6 +458,14 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
     });
   }, [baseRoster, shifts, shiftOps.guardsList]);
 
+  const focusedGuard = useMemo(
+    () =>
+      focusedGuardId !== 'ALL'
+        ? computedRoster.find((g) => g.id === focusedGuardId) || null
+        : null,
+    [focusedGuardId, computedRoster]
+  );
+
   const unassignedShiftsCount = useMemo(
     () =>
       shifts.filter(
@@ -340,18 +474,55 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
     [shifts]
   );
 
+  // Sync template license requirement dynamically if the matching site in shiftOps.sitesList was toggled
+  const syncedTemplates = useMemo<ScheduleTemplate[]>(() => {
+    const sites = shiftOps.sitesList || [];
+    return UNIFIED_SCHEDULE_TEMPLATES.map((tpl) => {
+      const matchedSite = sites.find(
+        (s) =>
+          s.code.toLowerCase() === tpl.siteCode.toLowerCase() ||
+          s.name.toLowerCase() === tpl.siteName.toLowerCase()
+      );
+      if (!matchedSite) return tpl;
+      const reqLicense =
+        typeof matchedSite.requiresSecurityLicense === 'boolean'
+          ? matchedSite.requiresSecurityLicense
+          : tpl.requiresSecurityLicense;
+      const reqTier: SecurityTier = (matchedSite.requiredTier ?? tpl.requiredTier) as SecurityTier;
+      return {
+        ...tpl,
+        requiresSecurityLicense: reqLicense,
+        requiresDenverLicense: reqLicense,
+        requiredTier: reqTier,
+        requiredRating: reqTier,
+      };
+    });
+  }, [shiftOps.sitesList]);
+
   const filteredTemplates = useMemo(() => {
-    if (shiftFilter === 'ALL') return UNIFIED_SCHEDULE_TEMPLATES;
-    return UNIFIED_SCHEDULE_TEMPLATES.filter((t) => t.serviceCategory === shiftFilter);
-  }, [shiftFilter]);
+    if (shiftFilter === 'ALL') return syncedTemplates;
+    return syncedTemplates.filter((t) => t.serviceCategory === shiftFilter);
+  }, [shiftFilter, syncedTemplates]);
 
   const shiftById = useMemo(() => {
     const map = new Map<string, Shift>();
     for (const s of shifts) {
-      map.set(s.id, s);
+      const tpl = syncedTemplates.find((t) => s.id.startsWith(t.id));
+      map.set(
+        s.id,
+        tpl
+          ? {
+              ...s,
+              requiresSecurityLicense: tpl.requiresSecurityLicense,
+              requiresDenverLicense: tpl.requiresSecurityLicense,
+              requiredTier: tpl.requiredTier,
+              requiredRating: tpl.requiredTier,
+            }
+          : s
+      );
     }
     return map;
-  }, [shifts]);
+  }, [shifts, syncedTemplates]);
 
   const activePickerShift = useMemo(
     () => (activePickerShiftId ? shiftById.get(activePickerShiftId) || null : null),
@@ -384,10 +555,11 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
 
   // Run Stateful Multi-Day Auto-Fill Engine
   const handleRunAutoFillEngine = () => {
-    const openShifts = shifts.filter(
+    const allSyncedShifts = Array.from(shiftById.values());
+    const openShifts = allSyncedShifts.filter(
       (s) => s.operatingDays.includes(s.dayOfWeek) && !s.assignedGuardId
     );
-    const assignedShifts = shifts.filter((s) => Boolean(s.assignedGuardId));
+    const assignedShifts = allSyncedShifts.filter((s) => Boolean(s.assignedGuardId));
 
     const result = autoFillShifts(openShifts, computedRoster, assignedShifts, constraints);
 
@@ -404,7 +576,7 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
     setLastAutoFillSummary(result.executionSummary);
 
     appendAuditEntry(
-      `[AUTO-FILL ENGINE] Filled ${result.executionSummary.filledCount} shift(s), ${result.executionSummary.unassignedCount} left OPEN (${result.executionSummary.overtimePreventedCount} overtime/DSL blocks).`
+      `[AUTO-FILL ENGINE] Filled ${result.executionSummary.filledCount} shift(s), ${result.executionSummary.unassignedCount} left OPEN (${result.executionSummary.overtimePreventedCount} availability/license/overtime blocks).`
     );
 
     if (shiftOps?.showToast) {
@@ -418,11 +590,11 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
 
   // Handle Manual Guard Selection for a Cell
   const handleSelectCandidateForShift = (targetShift: Shift, candidate: GuardProfile) => {
-    const existingForGuard = shifts.filter(
+    const existingForGuard = Array.from(shiftById.values()).filter(
       (s) => s.assignedGuardId === candidate.id && s.id !== targetShift.id
     );
 
-    const templateDef = UNIFIED_SCHEDULE_TEMPLATES.find((t) =>
+    const templateDef = syncedTemplates.find((t) =>
       targetShift.id.startsWith(t.id)
     );
     const shiftLabel = templateDef
@@ -500,7 +672,7 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
   const handleResetDemoSchedule = () => {
     const freshRoster = createInitialGuardRoster();
     setBaseRoster(freshRoster);
-    setShifts(createInitialWeeklySchedule(UNIFIED_SCHEDULE_TEMPLATES, freshRoster));
+    setShifts(createInitialWeeklySchedule(syncedTemplates, freshRoster));
     setLastAutoFillSummary(null);
     appendAuditEntry('[RESET] Weekly Shift Matrix restored to baseline 8-template schedule.');
   };
@@ -541,12 +713,30 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
           </div>
 
           <span className="text-xs text-slate-400 hidden xl:inline">
-            8 Unified Set Schedules · Operational Day Gating · Denver DSL Gate · 40.0h Cap
+            8 Unified Set Schedules · 4-Tier Matrix · Availability Sync · Universal License Gate
           </span>
         </div>
 
         {/* Header Controls for Filter & Auto-Fill Engine */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Officer Availability Overlay Filter for Weekly Shift Matrix */}
+          {viewMode === 'matrix' && (
+            <select
+              id="matrix-guard-availability-filter"
+              value={focusedGuardId}
+              onChange={(e) => setFocusedGuardId(e.target.value)}
+              className="bg-slate-950 border border-slate-800 text-slate-200 text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-blue-500 cursor-pointer"
+              title="Overlay an officer's availability across the Weekly Shift Matrix"
+            >
+              <option value="ALL">Overlay Availability: All Officers</option>
+              {computedRoster.map((g) => (
+                <option key={g.id} value={g.id}>
+                  Availability: {g.name} (Tier {g.tier})
+                </option>
+              ))}
+            </select>
+          )}
+
           {/* Shift Filter: All Sites, MPU Only, Dedicated Posts */}
           <div className="flex items-center bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
             <button
@@ -558,7 +748,7 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              All Sites ({UNIFIED_SCHEDULE_TEMPLATES.length})
+              All Sites ({syncedTemplates.length})
             </button>
             <button
               type="button"
@@ -624,7 +814,7 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
               </span>
               <span className="text-slate-600">·</span>
               <span className="font-bold text-amber-300 font-mono tabular-nums">
-                Overtime / DSL Prevented: {lastAutoFillSummary.overtimePreventedCount}
+                Overtime / License / Availability Prevented: {lastAutoFillSummary.overtimePreventedCount}
               </span>
             </div>
             <button
@@ -661,8 +851,8 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
             <thead>
               <tr className="bg-slate-900/90 border-b border-slate-800 text-[11px] font-bold uppercase tracking-wider text-slate-400">
                 <th className="py-3 px-3 min-w-[190px]">Shift Name</th>
-                <th className="py-3 px-3 min-w-[195px]">Site &amp; County</th>
-                <th className="py-3 px-2.5 min-w-[120px]">Post Level</th>
+                <th className="py-3 px-3 min-w-[195px]">Site &amp; License Policy</th>
+                <th className="py-3 px-2.5 min-w-[120px]">Required Tier</th>
                 <th className="py-3 px-2.5 min-w-[95px]">Duration</th>
                 {DAYS_OF_WEEK.map((d) => (
                   <th
@@ -688,34 +878,34 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
                     </div>
                   </td>
 
-                  {/* Site & County */}
+                  {/* Site & License Policy */}
                   <td className="py-3 px-3">
                     <div className="font-medium text-slate-200 mb-1">{site.siteName}</div>
-                    {site.requiresDenverLicense ? (
+                    {site.requiresSecurityLicense ? (
                       <span className="inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/40 whitespace-nowrap">
-                        [DENVER COUNTY - DSL REQ]
+                        [SECURITY LICENSE REQ]
                       </span>
                     ) : (
                       <span className="inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700 whitespace-nowrap">
-                        [REGIONAL - {site.county}]
+                        [NO LICENSE REQ - TIER 1]
                       </span>
                     )}
                   </td>
 
-                  {/* Post Level */}
+                  {/* Post Tier */}
                   <td className="py-3 px-2.5">
                     <span
                       className={`inline-block px-2 py-0.5 rounded text-[11px] font-mono font-bold border whitespace-nowrap ${
-                        site.requiredRating === 5
+                        site.requiredTier === 4
                           ? 'bg-purple-500/15 text-purple-300 border-purple-500/40'
-                          : site.requiredRating === 4
+                          : site.requiredTier === 3
                           ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
-                          : site.requiredRating === 3
+                          : site.requiredTier === 2
                           ? 'bg-blue-500/15 text-blue-300 border-blue-500/40'
                           : 'bg-slate-800 text-slate-300 border-slate-700'
                       }`}
                     >
-                      {formatPostLevelBadge(site.requiredRating)}
+                      {formatPostLevelBadge(site.requiredTier)}
                     </span>
                   </td>
 
@@ -727,12 +917,10 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
                     </div>
                   </td>
 
-                  {/* Day Cells (Sun - Sat) with Operational Day Gating */}
+                  {/* Day Cells (Sun - Sat) with Operational Day & Availability Gating */}
                   {OPERATING_DAYS.map((day) => {
-                    // Step 1: Check if the site is operational on that day
                     const isOperational = site.operatingDays.includes(day);
 
-                    // Step 2: If !isOperational, render muted non-interactive cell (NO red [+ Open Shift] false positive)
                     if (!isOperational) {
                       return (
                         <td key={day} className="p-1.5 align-middle">
@@ -744,7 +932,6 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
                       );
                     }
 
-                    // Step 3: If isOperational, evaluate shift assignment state
                     const cellShiftId = `${site.id}:${day}`;
                     const cellShift = shiftById.get(cellShiftId);
                     const assignedGuardId = cellShift?.assignedGuardId;
@@ -752,16 +939,69 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
                       ? computedRoster.find((g) => g.id === assignedGuardId)
                       : undefined;
 
-                    if (!assignedGuardId || !assignedGuard || !cellShift) {
+                    // If a guard is focused in the Availability Overlay and is unavailable on this day
+                    if (
+                      focusedGuard &&
+                      isGuardUnavailableOnDay(focusedGuard, day, cellShift?.date)
+                    ) {
                       return (
                         <td key={day} className="p-1.5 align-middle">
                           <button
                             type="button"
-                            onClick={() => cellShift && setActivePickerShiftId(cellShift.id)}
-                            className="w-full bg-rose-500/10 border border-rose-500/40 text-rose-400 font-semibold text-xs p-2 text-center rounded cursor-pointer hover:bg-rose-500/20 transition-colors whitespace-nowrap"
+                            onClick={() =>
+                              cellShift &&
+                              handleSelectCandidateForShift(cellShift, focusedGuard)
+                            }
+                            className="w-full bg-slate-900/80 border border-slate-800 text-slate-500 font-medium text-xs text-center py-2 flex items-center justify-center gap-1 rounded cursor-pointer hover:border-rose-500/50 transition-colors"
+                            style={{
+                              backgroundImage:
+                                'repeating-linear-gradient(135deg, rgba(15, 23, 42, 0.85) 0px, rgba(15, 23, 42, 0.85) 6px, rgba(30, 41, 59, 0.55) 6px, rgba(30, 41, 59, 0.55) 12px)',
+                            }}
+                            title={`${focusedGuard.name} is marked unavailable on ${day}. Click to trigger manual override.`}
                           >
-                            [+ Open Shift]
+                            <span>🚫 UNAVAILABLE</span>
                           </button>
+                        </td>
+                      );
+                    }
+
+                    if (!assignedGuardId || !assignedGuard || !cellShift) {
+                      // Check if the template's default guard is unavailable on this open day
+                      const defaultGuard = site.defaultGuardId
+                        ? computedRoster.find((g) => g.id === site.defaultGuardId)
+                        : undefined;
+                      const isDefaultGuardUnavailable =
+                        defaultGuard &&
+                        isGuardUnavailableOnDay(defaultGuard, day, cellShift?.date);
+
+                      return (
+                        <td key={day} className="p-1.5 align-middle">
+                          <div className="space-y-1">
+                            {isDefaultGuardUnavailable && (
+                              <div
+                                onClick={() =>
+                                  cellShift &&
+                                  defaultGuard &&
+                                  handleSelectCandidateForShift(cellShift, defaultGuard)
+                                }
+                                className="bg-slate-900/80 border border-slate-800 text-slate-500 font-medium text-xs text-center py-2 flex items-center justify-center gap-1 rounded cursor-pointer hover:border-rose-500/40"
+                                style={{
+                                  backgroundImage:
+                                    'repeating-linear-gradient(135deg, rgba(15, 23, 42, 0.85) 0px, rgba(15, 23, 42, 0.85) 6px, rgba(30, 41, 59, 0.55) 6px, rgba(30, 41, 59, 0.55) 12px)',
+                                }}
+                                title={`${defaultGuard.name} is unavailable on ${day}. Click to force override or use [+ Open Shift] below.`}
+                              >
+                                <span>🚫 UNAVAILABLE</span>
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => cellShift && setActivePickerShiftId(cellShift.id)}
+                              className="w-full bg-rose-500/10 border border-rose-500/40 text-rose-400 font-semibold text-xs p-2 text-center rounded cursor-pointer hover:bg-rose-500/20 transition-colors whitespace-nowrap"
+                            >
+                              [+ Open Shift]
+                            </button>
+                          </div>
                         </td>
                       );
                     }
@@ -787,7 +1027,7 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
                           </div>
                           <div className="flex items-center justify-between gap-1 mt-0.5">
                             <span className="text-[10px] font-mono text-slate-400 tabular-nums">
-                              {assignedGuard.badgeNumber} · L{assignedGuard.rating}
+                              {assignedGuard.badgeNumber} · T{assignedGuard.tier}
                             </span>
                             {cellShift.isOverride && (
                               <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-black bg-rose-500/25 text-rose-300 border border-rose-500/50">
@@ -813,13 +1053,13 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
             <thead>
               <tr className="bg-slate-900/90 border-b border-slate-800 text-[11px] font-bold uppercase tracking-wider text-slate-400">
                 <th className="py-3 px-3 min-w-[180px]">Guard Name &amp; Badge</th>
-                <th className="py-3 px-2.5 min-w-[110px]">Level Rating</th>
-                <th className="py-3 px-2.5 min-w-[140px]">Denver DSL Expiration</th>
+                <th className="py-3 px-2.5 min-w-[125px]">Security Tier</th>
+                <th className="py-3 px-2.5 min-w-[140px]">SECURITY LICENSE EXPIRATION</th>
                 <th className="py-3 px-3 min-w-[210px]">License Status</th>
                 {DAYS_OF_WEEK.map((d) => (
                   <th
                     key={d.key}
-                    className="py-3 px-2 min-w-[105px] text-center font-mono"
+                    className="py-3 px-2 min-w-[120px] text-center font-mono"
                   >
                     {d.short}
                   </th>
@@ -844,17 +1084,17 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
                       </div>
                     </td>
 
-                    {/* Level Rating */}
+                    {/* Security Tier */}
                     <td className="py-3 px-2.5">
                       <span className="inline-block px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-slate-800 text-slate-200 border border-slate-700 whitespace-nowrap">
-                        Level {guard.rating}
+                        Tier {guard.tier}
                       </span>
                     </td>
 
-                    {/* Denver DSL Expiration */}
+                    {/* Security License Expiration */}
                     <td className="py-3 px-2.5 font-mono tabular-nums text-slate-200">
-                      {guard.dslExpirationDate ? (
-                        guard.dslExpirationDate
+                      {guard.hasSecurityLicense && guard.licenseExpirationDate ? (
+                        guard.licenseExpirationDate
                       ) : (
                         <span className="text-rose-400 font-bold">NO CERT</span>
                       )}
@@ -864,33 +1104,69 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
                     <td className="py-3 px-3">
                       {guard.licenseStatus === 'COMPLIANT' && (
                         <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 whitespace-nowrap">
-                          Valid ({guard.dslExpirationDate})
+                          Valid ({guard.daysUntilExpiration}d left)
                         </span>
                       )}
                       {guard.licenseStatus === 'EXPIRING_SOON' && (
                         <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/40 whitespace-nowrap">
-                          Expires in {guard.daysUntilExpiration}d
+                          Expiring in {guard.daysUntilExpiration}d
                         </span>
                       )}
                       {guard.licenseStatus === 'EXPIRED_GRACE' && (
                         <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold bg-rose-500/20 text-amber-200 border border-rose-500/60 animate-pulse whitespace-nowrap">
-                          Grace: {guard.daysExpired}d Expired ({90 - guard.daysExpired}d left)
+                          Grace: {guard.daysExpired}d Expired ({90 - guard.daysExpired}d to renew)
                         </span>
                       )}
                       {guard.licenseStatus === 'REVOKED' && (
                         <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold bg-rose-950 text-rose-300 border border-rose-600 whitespace-nowrap">
-                          Lapsed (&gt;90d) - Regional Only
+                          License Lapsed (&gt;90d) - Tier 1 Only
                         </span>
                       )}
                     </td>
 
-                    {/* Sun - Sat Assigned Shifts for this Guard */}
+                    {/* Sun - Sat Assigned Shifts or Availability Block for this Guard */}
                     {DAYS_OF_WEEK.map((day) => {
-                      const dayShifts = shifts.filter(
+                      const dayShifts = Array.from(shiftById.values()).filter(
                         (s) => s.assignedGuardId === guard.id && s.dayOfWeek === day.key
                       );
+                      const isUnavailable = isGuardUnavailableOnDay(guard, day.key);
 
                       if (dayShifts.length === 0) {
+                        if (isUnavailable) {
+                          const openOnDay = Array.from(shiftById.values()).find(
+                            (s) =>
+                              s.dayOfWeek === day.key &&
+                              s.operatingDays.includes(day.key) &&
+                              !s.assignedGuardId
+                          );
+                          const fallbackShiftForDay =
+                            openOnDay ||
+                            Array.from(shiftById.values()).find(
+                              (s) =>
+                                s.dayOfWeek === day.key && s.operatingDays.includes(day.key)
+                            );
+
+                          return (
+                            <td key={day.key} className="p-1.5 align-middle">
+                              <div
+                                onClick={() => {
+                                  if (fallbackShiftForDay) {
+                                    handleSelectCandidateForShift(fallbackShiftForDay, guard);
+                                  }
+                                }}
+                                className="bg-slate-900/80 border border-slate-800 text-slate-500 font-medium text-xs text-center py-2 flex items-center justify-center gap-1 rounded cursor-pointer hover:border-rose-500/40 transition-colors"
+                                style={{
+                                  backgroundImage:
+                                    'repeating-linear-gradient(135deg, rgba(15, 23, 42, 0.85) 0px, rgba(15, 23, 42, 0.85) 6px, rgba(30, 41, 59, 0.55) 6px, rgba(30, 41, 59, 0.55) 12px)',
+                                }}
+                                title={`${guard.name} is marked unavailable on ${day.key}. Click to attempt manual override assignment.`}
+                              >
+                                <span>🚫 UNAVAILABLE</span>
+                              </div>
+                            </td>
+                          );
+                        }
+
                         return (
                           <td
                             key={day.key}
@@ -1010,8 +1286,8 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
                 <p className="text-xs text-slate-400 font-mono mt-0.5">
                   {activePickerShift.siteName} · {activePickerShift.dayOfWeek}{' '}
                   {activePickerShift.startTime}–{activePickerShift.endTime} (
-                  {activePickerShift.durationHours.toFixed(1)}h) · Req L
-                  {activePickerShift.requiredRating}
+                  {activePickerShift.durationHours.toFixed(1)}h) · Req Tier{' '}
+                  {activePickerShift.requiredTier}
                 </p>
               </div>
               <button
@@ -1049,12 +1325,12 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
               )}
 
               <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                Select Officer (Evaluates Denver DSL, Rating, 40h Cap &amp; 12h Turnaround)
+                Select Officer (Evaluates Availability, 4-Tier Matrix, License, 40h Cap &amp; 12h Rest)
               </div>
 
               <div className="space-y-2">
                 {computedRoster.map((candidate) => {
-                  const existingForCandidate = shifts.filter(
+                  const existingForCandidate = Array.from(shiftById.values()).filter(
                     (s) =>
                       s.assignedGuardId === candidate.id && s.id !== activePickerShift.id
                   );
@@ -1066,6 +1342,11 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
                   );
                   const isCurrentlyAssigned =
                     activePickerShift.assignedGuardId === candidate.id;
+                  const isUnavailableToday = isGuardUnavailableOnDay(
+                    candidate,
+                    activePickerShift.dayOfWeek,
+                    activePickerShift.date
+                  );
 
                   return (
                     <div
@@ -1085,11 +1366,16 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
                             {candidate.badgeNumber}
                           </span>
                           <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-slate-800 text-slate-300 border border-slate-700">
-                            L{candidate.rating}
+                            Tier {candidate.tier}
                           </span>
                           <span className="text-[11px] font-mono text-slate-400 tabular-nums">
                             {candidate.weeklyScheduledHours.toFixed(1)}h / 40h
                           </span>
+                          {isUnavailableToday && (
+                            <span className="bg-slate-900/80 border border-slate-800 text-slate-500 font-medium text-xs text-center py-0.5 px-2 rounded flex items-center justify-center gap-1">
+                              🚫 UNAVAILABLE
+                            </span>
+                          )}
                         </div>
 
                         {check.eligible ? (
@@ -1181,3 +1467,4 @@ export const RosterMatrixView: React.FC<RosterMatrixViewProps> = ({
 };
 
 export default RosterMatrixView;
+

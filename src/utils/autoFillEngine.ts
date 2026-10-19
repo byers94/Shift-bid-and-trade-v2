@@ -7,6 +7,7 @@ import {
   GuardRating,
   GuardWorkloadTracker,
   SchedulingConstraints,
+  SecurityTier,
   Shift,
   ShiftAssignment,
   ShiftSchedule,
@@ -19,6 +20,7 @@ import {
   checkShiftEligibility,
   doShiftsOverlap,
   getShiftWeekHourBounds,
+  isGuardUnavailableOnDay,
   parseTimeToDecimalHours,
 } from './complianceEngine';
 import { parseShiftTimeWindow } from './scheduling';
@@ -119,11 +121,17 @@ export function normalizeShiftRecord(raw: any): Shift {
   const durationHours = getShiftDurationHours(raw);
   const dayOfWeek = resolveDayOfWeek(raw);
   const county = raw.county || (raw.address?.toLowerCase().includes('denver') ? 'Denver' : 'Arapahoe');
-  const requiresDenverLicense =
-    typeof raw.requiresDenverLicense === 'boolean'
+  const rawTierNum = Number(raw.requiredTier ?? raw.requiredRating ?? 2);
+  const requiredTier: SecurityTier = (
+    rawTierNum <= 1 ? 1 : rawTierNum === 2 ? 2 : rawTierNum === 3 ? 3 : 4
+  ) as SecurityTier;
+  const requiresSecurityLicense =
+    typeof raw.requiresSecurityLicense === 'boolean'
+      ? raw.requiresSecurityLicense
+      : typeof raw.requiresDenverLicense === 'boolean'
       ? raw.requiresDenverLicense
-      : county.toLowerCase() === 'denver';
-  const requiredRating: GuardRating = (raw.requiredRating as GuardRating) || 3;
+      : requiredTier >= 2;
+  const requiredRating: GuardRating = (raw.requiredRating as GuardRating) || requiredTier;
   const operatingDays: DayOfWeekName[] = Array.isArray(raw.operatingDays)
     ? raw.operatingDays
     : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -134,7 +142,9 @@ export function normalizeShiftRecord(raw: any): Shift {
     siteCode: raw.siteCode || raw.location || 'POST-01',
     siteName: raw.siteName || 'Assigned Security Post',
     county,
-    requiresDenverLicense,
+    requiresSecurityLicense,
+    requiredTier,
+    requiresDenverLicense: requiresSecurityLicense,
     requiredRating,
     startTime: raw.startTime || '08:00',
     endTime: raw.endTime || '16:00',
@@ -149,14 +159,23 @@ export function normalizeShiftRecord(raw: any): Shift {
 }
 
 /**
- * Normalizes any guard record into a compliant GuardProfile with Denver DSL status fields.
+ * Normalizes any guard record into a compliant GuardProfile with universal 4-Tier and Security License status fields.
  */
 export function normalizeGuardRecord(raw: any): GuardProfile {
   const hasExplicitDslFields =
     typeof raw.denverEligible === 'boolean' && typeof raw.licenseStatus === 'string';
 
-  const dslExpirationDate: string | null =
-    raw.dslExpirationDate !== undefined ? raw.dslExpirationDate : '2027-06-30';
+  const licenseExpirationDate: string | null =
+    raw.licenseExpirationDate !== undefined
+      ? raw.licenseExpirationDate
+      : raw.dslExpirationDate !== undefined
+      ? raw.dslExpirationDate
+      : '2027-06-30';
+
+  const hasSecurityLicense: boolean =
+    typeof raw.hasSecurityLicense === 'boolean'
+      ? raw.hasSecurityLicense
+      : !!licenseExpirationDate && licenseExpirationDate.toUpperCase() !== 'NO';
 
   const computedLicense = hasExplicitDslFields
     ? {
@@ -165,9 +184,27 @@ export function normalizeGuardRecord(raw: any): GuardProfile {
         daysExpired: raw.daysExpired ?? 0,
         denverEligible: raw.denverEligible,
       }
-    : calculateLicenseStatus(dslExpirationDate);
+    : calculateLicenseStatus(hasSecurityLicense ? licenseExpirationDate : null);
 
-  const rating: GuardRating = (raw.rating as GuardRating) || 3;
+  const rawTierNum = Number(raw.tier ?? raw.rating ?? 2);
+  const tier: SecurityTier = (
+    rawTierNum <= 1 ? 1 : rawTierNum === 2 ? 2 : rawTierNum === 3 ? 3 : 4
+  ) as SecurityTier;
+  const rating: GuardRating = (raw.rating as GuardRating) || tier;
+
+  const recurringUnavailableDays: string[] = Array.isArray(
+    raw.availability?.recurringUnavailableDays
+  )
+    ? raw.availability.recurringUnavailableDays
+    : Array.isArray(raw.availability?.weeklyRules)
+    ? raw.availability.weeklyRules
+        .filter((r: any) => r.isAvailable === false || r.status === 'unavailable')
+        .map((r: any) => r.dayLabel)
+    : [];
+
+  const blackoutDates: string[] = Array.isArray(raw.availability?.blackoutDates)
+    ? raw.availability.blackoutDates
+    : [];
 
   return {
     ...raw,
@@ -175,12 +212,20 @@ export function normalizeGuardRecord(raw: any): GuardProfile {
     name: raw.name,
     badgeNumber: raw.badgeNumber || 'SEC-000',
     phone: raw.phone,
+    tier,
+    hasSecurityLicense,
+    licenseExpirationDate: hasSecurityLicense ? licenseExpirationDate : null,
     rating,
-    dslExpirationDate,
+    dslExpirationDate: hasSecurityLicense ? licenseExpirationDate : null,
     licenseStatus: computedLicense.status,
     daysUntilExpiration: computedLicense.daysUntilExpiration,
     daysExpired: computedLicense.daysExpired,
     denverEligible: computedLicense.denverEligible,
+    availability: {
+      ...(raw.availability || {}),
+      recurringUnavailableDays,
+      blackoutDates,
+    },
     weeklyScheduledHours:
       typeof raw.weeklyScheduledHours === 'number' ? raw.weeklyScheduledHours : 0,
     maxWeeklyHours: typeof raw.maxWeeklyHours === 'number' ? raw.maxWeeklyHours : 40,
@@ -390,6 +435,11 @@ export function autoFillShifts(
 
       const tracker = trackerMap.get(guard.id)!;
 
+      // Skip guards marked as unavailable on that specific day
+      if (isGuardUnavailableOnDay(tracker.guard, shift.dayOfWeek, shift.date)) {
+        continue;
+      }
+
       // Guard must not already be booked on the same day during an overlapping time window
       const hasSameDayOverlap = tracker.assignedShifts.some(
         (existing) => existing.dayOfWeek === shift.dayOfWeek && doShiftsOverlap(existing, shift)
@@ -424,13 +474,13 @@ export function autoFillShifts(
 
     // 2. Candidate Selection (Least-Loaded Load Balancing):
     // - From eligible guards, select the candidate with the lowest accumulated weeklyHours.
-    // - Tie-breaker: guard with higher rating or seniority.
+    // - Tie-breaker: guard with higher tier or seniority.
     eligibleCandidates.sort((a, b) => {
       if (a.weeklyHours !== b.weeklyHours) {
         return a.weeklyHours - b.weeklyHours;
       }
-      if (b.guard.rating !== a.guard.rating) {
-        return b.guard.rating - a.guard.rating;
+      if (b.guard.tier !== a.guard.tier) {
+        return b.guard.tier - a.guard.tier;
       }
       const senA = a.guard.seniorityYears ?? 0;
       const senB = b.guard.seniorityYears ?? 0;
