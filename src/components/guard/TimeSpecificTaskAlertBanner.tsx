@@ -97,15 +97,15 @@ export const TimeSpecificTaskAlertBanner: React.FC = () => {
         }`}
       >
         {/* Header Alert Bar */}
-        <div className={`flex items-center justify-between px-3.5 py-2.5 border-b ${
+        <div className={`flex items-center justify-between gap-2 flex-wrap px-3.5 py-2.5 border-b ${
           isOverdue 
             ? 'bg-rose-600/30 border-rose-500/50 text-rose-200' 
             : isDueNow 
             ? 'bg-amber-500/30 border-amber-500/50 text-amber-200' 
             : 'bg-cyan-500/30 border-cyan-500/50 text-cyan-200'
         }`}>
-          <div className="flex items-center gap-2">
-            <span className="relative flex h-3.5 w-3.5">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <span className="relative flex h-3.5 w-3.5 shrink-0">
               <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${
                 isOverdue ? 'bg-rose-400 animate-ping' : 'bg-amber-400 animate-ping'
               }`} />
@@ -113,11 +113,11 @@ export const TimeSpecificTaskAlertBanner: React.FC = () => {
                 isOverdue ? 'bg-rose-500' : 'bg-amber-500'
               }`} />
             </span>
-            <div className="flex items-center gap-1.5 font-mono text-xs font-black uppercase tracking-wider">
-              <BellRing className={`w-4 h-4 ${
+            <div className="flex items-center gap-1.5 min-w-0 flex-1 font-mono text-xs font-black uppercase tracking-wider">
+              <BellRing className={`w-4 h-4 shrink-0 ${
                 isOverdue ? 'text-rose-400 animate-bounce' : isDueNow ? 'text-amber-400 animate-pulse' : 'text-cyan-400'
               }`} />
-              <span>
+              <span className="min-w-0 flex-1 truncate">
                 {isOverdue 
                   ? '⚠️ OVERDUE SCHEDULED TASK / LOCKOUT' 
                   : isDueNow 
@@ -127,11 +127,11 @@ export const TimeSpecificTaskAlertBanner: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={handleAcknowledge}
-              className="px-2.5 py-0.5 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-[10px] font-bold border border-slate-700 cursor-pointer"
+              className="shrink-0 px-2.5 py-0.5 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-[10px] font-bold border border-slate-700 cursor-pointer"
             >
               Acknowledge
             </button>
@@ -139,7 +139,7 @@ export const TimeSpecificTaskAlertBanner: React.FC = () => {
               type="button"
               onClick={handleDismiss}
               title="Dismiss alert"
-              className="rounded p-1 text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer transition-colors"
+              className="shrink-0 rounded p-1 text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer transition-colors"
               aria-label="Dismiss task notification"
             >
               <X className="w-4 h-4" />

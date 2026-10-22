@@ -43,6 +43,24 @@ export type ShiftOperationalStatus =
   | 'BIDDING'
   | 'COMPLETED';
 
+export type SiteDocType =
+  | 'VACANT_UNITS'
+  | 'PARKING_ROSTER'
+  | 'GATE_CODES'
+  | 'KEY_LOG'
+  | 'PROPERTY_SOP';
+
+export interface SiteDocument {
+  id: string;
+  siteId: string;
+  title: string; // e.g., "Weekly Vacant Unit List - Oct 2026"
+  docType: SiteDocType;
+  contentSnippet?: string; // Text summary or markdown table of units
+  fileUrl?: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
 export interface Site {
   id: string;
   siteCode: string;
@@ -53,7 +71,11 @@ export interface Site {
   operatingDays: Array<
     'Sunday' | 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday'
   >;
+  documents?: SiteDocument[];
+  operationalDocuments?: SiteDocument[];
 }
+
+export type Facility = Site;
 
 export interface ScheduleTemplate {
   id: string;

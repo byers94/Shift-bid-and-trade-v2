@@ -16,6 +16,7 @@ import { UpcomingShiftReminderBanner } from './UpcomingShiftReminderBanner';
 import { GuardLeaderboardView } from './GuardLeaderboardView';
 import { GuardCoachingAlertBanner } from './GuardCoachingAlertBanner';
 import { GuardPanicButton, usePanicSosAlert } from './GuardPanicButton';
+import { GuardResourceHub } from './GuardResourceHub';
 import { calculateLicenseStatus } from '../../utils/complianceEngine';
 import { LicenseStatus } from '../../types/scheduling';
 import { 
@@ -57,7 +58,7 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
   } = useShiftOps();
 
   const { activeDistress } = usePanicSosAlert();
-  const [activeTab, setActiveTab] = useState<'duty_post' | 'schedule_calendar' | 'live_route' | 'open_board' | 'trade_board' | 'ranking' | 'active_calls'>('duty_post');
+  const [activeTab, setActiveTab] = useState<'duty_post' | 'schedule_calendar' | 'live_route' | 'open_board' | 'trade_board' | 'ranking' | 'active_calls' | 'resources'>('duty_post');
   const [showGuardMenu, setShowGuardMenu] = useState(false);
   const [isAlertPrefsOpen, setIsAlertPrefsOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -386,6 +387,18 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
             {activeCallsCount}
           </span>
         </button>
+
+        <button
+          id="guard-tab-resources"
+          onClick={() => setActiveTab('resources')}
+          className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wide whitespace-nowrap flex items-center gap-1 transition-all cursor-pointer shrink-0 ${
+            activeTab === 'resources'
+              ? 'bg-blue-600 text-white font-black shadow-2xs'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/70'
+          }`}
+        >
+          <span>[ 📚 RESOURCES ]</span>
+        </button>
       </nav>
 
       {/* 3. Scrollable Body (flex-1 overflow-y-auto p-3 space-y-4) */}
@@ -615,6 +628,7 @@ export const GuardView: React.FC<GuardViewProps> = ({ isSidebarMode = true }) =>
           <TradeBoard onOpenAlertPrefs={() => setIsAlertPrefsOpen(true)} />
         )}
         {activeTab === 'active_calls' && <ActiveCallsPanel />}
+        {activeTab === 'resources' && <GuardResourceHub />}
       </div>
     </aside>
   );

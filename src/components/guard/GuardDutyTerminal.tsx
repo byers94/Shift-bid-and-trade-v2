@@ -63,6 +63,7 @@ import { GuardThirtyMinIntervalTracker } from './GuardThirtyMinIntervalTracker';
 import { GuardReportsLogSection } from './GuardReportsLogSection';
 import { GuardDeparturePromptModal } from './GuardDeparturePromptModal';
 import { GuardSiteInfoModal } from './GuardSiteInfoModal';
+import { GuardSiteIntelDrawer } from './GuardSiteIntelDrawer';
 import { GuardContinuousPermissionsModal } from './GuardContinuousPermissionsModal';
 import { ShiftBreadcrumbsModal } from '../ops/ShiftBreadcrumbsModal';
 import { useGuardContinuousTelemetry } from '../../hooks/useGuardContinuousTelemetry';
@@ -147,6 +148,7 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
   // 48-Hour Shift Handoff (Pass-Down) Modal State
   const [isHandoffModalOpen, setIsHandoffModalOpen] = useState<boolean>(false);
   const [handoffAckRecord, setHandoffAckRecord] = useState<ShiftHandoffAcknowledgment | null>(null);
+  const [isSiteIntelDrawerOpen, setIsSiteIntelDrawerOpen] = useState<boolean>(false);
 
   // Geofence Departure Reason Prompt Modal State
   const [isDeparturePromptOpen, setIsDeparturePromptOpen] = useState<boolean>(false);
@@ -510,22 +512,25 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
               ? 'bg-gradient-to-br from-amber-950/80 via-slate-900 to-amber-950/40 border-amber-500 text-amber-100'
               : 'bg-gradient-to-br from-slate-900 via-blue-950/90 to-slate-950 border-emerald-500 text-white shadow-emerald-950/30'
           }`}>
-            <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className={`w-3.5 h-3.5 rounded-full ${
+            <div className="flex items-center justify-between gap-2 flex-wrap border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className={`w-3 h-3 rounded-full shrink-0 ${
                   activeClockedInShift.status === 'on_break' 
                     ? 'bg-amber-400 animate-pulse' 
-                    : 'bg-emerald-400 animate-ping'
+                    : 'bg-emerald-400 animate-pulse'
                 }`} />
-                <div>
-                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                    activeClockedInShift.status === 'on_break'
-                      ? 'bg-amber-500/30 text-amber-300 border-amber-400/50'
-                      : 'bg-emerald-500/30 text-emerald-300 border-emerald-400/50'
-                  }`}>
-                    {activeClockedInShift.status === 'on_break' ? '☕ ON REST BREAK' : '● ACTIVE ON-DUTY POST'}
-                  </span>
-                  <p className="text-xs font-bold text-slate-300 mt-0.5">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className={`inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full border whitespace-nowrap ${
+                      activeClockedInShift.status === 'on_break'
+                        ? 'bg-amber-500/30 text-amber-300 border-amber-400/50'
+                        : 'bg-emerald-500/30 text-emerald-300 border-emerald-400/50'
+                    }`}>
+                      <span>{activeClockedInShift.status === 'on_break' ? '☕ ON REST BREAK' : '• ACTIVE ON-DUTY'}</span>
+                      {activeClockedInShift.status !== 'on_break' && <span>POST</span>}
+                    </span>
+                  </div>
+                  <p className="text-xs font-bold text-slate-300 truncate">
                     Officer {activeGuard.name} ({activeGuard.badgeNumber})
                   </p>
                 </div>
@@ -710,12 +715,12 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
 
             {/* Facility & Post Specifications */}
             <div className="bg-slate-950/70 rounded-xl p-3 border border-white/10 space-y-2.5 text-xs">
-              <div className="flex items-start justify-between gap-2">
-                <div>
+              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2">
+                <div className="min-w-0 flex-1">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Assigned Facility</span>
                   <div className="font-bold text-white flex items-center gap-1.5 mt-0.5">
-                    <Building2 className="w-3.5 h-3.5 text-blue-400" />
-                    <span>{activeClockedInShift.siteName}</span>
+                    <Building2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                    <span className="truncate">{activeClockedInShift.siteName}</span>
                   </div>
                   {activeClockedInShift.siteAddress && (
                     <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
@@ -725,26 +730,38 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
                   )}
                 </div>
 
-                <div className="text-right flex flex-col items-end gap-1.5">
-                  <div>
+                {/* Post Assignment / POC Container — Mobile-First Vertical Stack (< 768px) */}
+                <div className="flex flex-col gap-2 w-full mt-3 pt-3 border-t border-slate-800 md:w-auto md:mt-0 md:pt-0 md:border-t-0 md:border-l md:border-emerald-500/30 md:pl-3 md:items-end md:text-right">
+                  <div className="w-full md:w-auto">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Post Assignment</span>
-                    <span className="font-mono font-bold text-blue-300 bg-blue-950/80 px-2 py-0.5 rounded border border-blue-800/60 block mt-0.5">
+                    <span className="font-mono font-bold text-blue-300 bg-blue-950/80 px-2.5 py-1 rounded border border-blue-800/60 inline-block mt-0.5 max-w-full truncate">
                       {activeClockedInShift.postRole}
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const site = sitesList.find((s) => s.name === activeClockedInShift.siteName || s.id === activeClockedInShift.siteId);
-                      setSiteInfoTargetSite(site);
-                      setIsSiteInfoModalOpen(true);
-                    }}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-lg bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 border border-blue-500/40 transition-colors cursor-pointer"
-                    title="View Property Info, Persons of Contact (POCs), and Emergency Lines"
-                  >
-                    <PhoneCall className="w-3 h-3 text-blue-300" />
-                    <span>Site POCs</span>
-                  </button>
+                  <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto justify-end">
+                    <button
+                      id="guard-active-duty-site-intel-btn"
+                      type="button"
+                      onClick={() => setIsSiteIntelDrawerOpen(true)}
+                      className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-mono font-black rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50 transition-colors cursor-pointer"
+                      title="Open Live Site Operational Sheets: Vacant Units, Parking Roster & Gate Codes"
+                    >
+                      <span>[ 📋 Site Intel ]</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const site = sitesList.find((s) => s.name === activeClockedInShift.siteName || s.id === activeClockedInShift.siteId);
+                        setSiteInfoTargetSite(site);
+                        setIsSiteInfoModalOpen(true);
+                      }}
+                      className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-bold rounded-lg bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 border border-blue-500/40 transition-colors cursor-pointer"
+                      title="View Property Info, Persons of Contact (POCs), and Emergency Lines"
+                    >
+                      <PhoneCall className="w-3.5 h-3.5 text-blue-300 shrink-0" />
+                      <span>Site POCs</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -869,10 +886,10 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
                 </div>
 
                 {/* 30-Second Continuous GPS Breadcrumb Telemetry & Permissions Status */}
-                <div className="p-2.5 rounded-lg bg-slate-900/90 border border-emerald-500/30 text-xs">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="relative">
+                <div className="p-2.5 rounded-lg bg-slate-900/90 border border-emerald-500/30 text-xs space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <div className="relative shrink-0">
                         <div className={`w-7 h-7 rounded-lg border flex items-center justify-center ${
                           isTracking && isBackgroundEnabled
                             ? 'bg-emerald-950 border-emerald-500/60 text-emerald-400'
@@ -884,59 +901,52 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
                           <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                         )}
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[9px] font-mono uppercase font-bold text-emerald-400">
+                          <span className="text-[9px] font-mono uppercase font-bold text-emerald-400 whitespace-nowrap">
                             30s Continuous GPS
                           </span>
-                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-700/50 font-mono">
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-700/50 font-mono whitespace-nowrap">
                             Fix #{activeClockedInShift.breadcrumbs?.length || liveBreadcrumbs.length}
                           </span>
                           {wakeLockActive && (
-                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-blue-950 text-blue-300 border border-blue-700/50 font-mono">
-                              Screen-Off WakeLock ON
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-blue-950 text-blue-300 border border-blue-700/50 font-mono whitespace-nowrap">
+                              WakeLock ON
                             </span>
                           )}
                           {isPowerSaveMode && (
-                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-700/50 font-mono">
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-700/50 font-mono whitespace-nowrap">
                               Battery Saver Active
                             </span>
                           )}
                         </div>
-                        <div className="text-[11px] text-slate-300 truncate mt-0.5 flex items-center gap-1">
-                          <span>
-                            {lastBreadcrumb
-                              ? `Fix: ${lastBreadcrumb.latitude.toFixed(5)}, ${lastBreadcrumb.longitude.toFixed(5)} (±${Math.round(lastBreadcrumb.accuracy)}m)`
-                              : 'Continuous 30s background loop active...'}
-                          </span>
+                        <div className="text-[11px] text-slate-300 truncate mt-0.5">
+                          {lastBreadcrumb
+                            ? `Fix: ${lastBreadcrumb.latitude.toFixed(5)}, ${lastBreadcrumb.longitude.toFixed(5)} (±${Math.round(lastBreadcrumb.accuracy)}m)`
+                            : 'Continuous 30s background loop active...'}
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         type="button"
                         onClick={() => setIsShiftTrailModalOpen(true)}
-                        className="px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-bold rounded text-[10px] transition-colors flex items-center gap-1"
+                        className="flex-1 sm:flex-initial justify-center px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-bold rounded text-[10px] transition-colors flex items-center gap-1 whitespace-nowrap cursor-pointer"
                         title="Review 30-second interval GPS breadcrumb path"
                       >
-                        <Navigation className="w-3 h-3 text-cyan-400" />
+                        <Navigation className="w-3 h-3 text-cyan-400 shrink-0" />
                         <span>Trail ({activeClockedInShift.breadcrumbs?.length || liveBreadcrumbs.length})</span>
                       </button>
                       <button
                         type="button"
                         onClick={openPermissionsModal}
-                        className="px-2 py-1 bg-emerald-700/80 hover:bg-emerald-600 border border-emerald-500/50 text-white font-bold rounded text-[10px] transition-colors flex items-center gap-1"
+                        className="flex-1 sm:flex-initial justify-center px-2.5 py-1 bg-emerald-700/80 hover:bg-emerald-600 border border-emerald-500/50 text-white font-bold rounded text-[10px] transition-colors flex items-center gap-1 whitespace-nowrap cursor-pointer"
                         title="Configure background GPS and power-save permissions"
                       >
-                        <Smartphone className="w-3 h-3" />
+                        <Smartphone className="w-3 h-3 shrink-0" />
                         <span>Permissions</span>
                       </button>
-                      <GuardPanicButton
-                        activeShift={activeClockedInShift}
-                        variant="compact"
-                        showActiveBanner={false}
-                      />
                     </div>
                   </div>
 
@@ -1521,6 +1531,13 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    onClick={() => setIsSiteIntelDrawerOpen(true)}
+                    className="text-[10px] font-mono font-black text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>[ 📋 Site Intel ]</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => {
                       const currentSite = sitesList.find(s => s.name === selectedSiteName);
                       setSiteInfoTargetSite(currentSite);
@@ -1890,6 +1907,20 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
         isOpen={isSiteInfoModalOpen}
         onClose={() => setIsSiteInfoModalOpen(false)}
         site={siteInfoTargetSite}
+      />
+
+      {/* GUARD SITE INTEL OPERATIONAL VAULT BOTTOM DRAWER */}
+      <GuardSiteIntelDrawer
+        isOpen={isSiteIntelDrawerOpen}
+        onClose={() => setIsSiteIntelDrawerOpen(false)}
+        site={
+          sitesList.find(
+            (s) =>
+              s.name === (activeClockedInShift?.siteName || selectedSiteName) ||
+              s.id === activeClockedInShift?.siteId
+          ) || null
+        }
+        siteName={activeClockedInShift?.siteName || selectedSiteName}
       />
 
       {/* CONTINUOUS BACKGROUND GPS & POWER-SAVE PERMISSIONS MODAL */}

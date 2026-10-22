@@ -28,8 +28,10 @@ import { MpuPerformance } from './MpuPerformance';
 import { GuardMapDashboard } from './GuardMapDashboard';
 import { DispatchCommandDashboard } from './DispatchCommandDashboard';
 import { RosterMatrixView } from '../admin/RosterMatrixView';
+import { ResourceManagement } from '../admin/ResourceManagement';
 import { 
   ShieldCheck, 
+  BookOpen, 
   Activity, 
   Layers, 
   FileText, 
@@ -119,7 +121,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   const isDarkMode = theme === 'dark';
 
   const [activeMainTab, setActiveMainTabState] = useState<
-    'command_dashboard' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'audit_terminal'
+    'command_dashboard' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'resources_training' | 'audit_terminal'
   >(() => {
     try {
       const saved = localStorage.getItem(STORAGE_OPS_MAIN_TAB_KEY);
@@ -141,6 +143,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         saved === 'guard_directory' || 
         saved === 'top_performers' || 
         saved === 'coaching_analytics' ||
+        saved === 'resources_training' ||
         saved === 'audit_terminal'
       ) {
         return saved as any;
@@ -149,7 +152,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
     return 'command_dashboard';
   });
 
-  const setActiveMainTab = (tab: 'command_dashboard' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'audit_terminal') => {
+  const setActiveMainTab = (tab: 'command_dashboard' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'resources_training' | 'audit_terminal') => {
     setActiveMainTabState(tab);
     try {
       localStorage.setItem(STORAGE_OPS_MAIN_TAB_KEY, tab);
@@ -252,8 +255,9 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         </div>
 
         {/* Far-Right Utility Cluster */}
-        <div className="flex gap-1 items-center shrink-0">
+        <div className="flex items-center gap-1 shrink-0">
           <button
+            id="mobile-header-theme-toggle-btn"
             type="button"
             onClick={toggleTheme}
             className="p-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-amber-400 hover:border-slate-600 active:scale-95 transition-all cursor-pointer"
@@ -264,6 +268,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
           </button>
 
           <button
+            id="mobile-header-session-lock-btn"
             type="button"
             onClick={() => setShowSessionModal(true)}
             className="p-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-white hover:border-amber-500/50 active:scale-95 transition-all cursor-pointer"
@@ -960,6 +965,20 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
           </button>
 
           <button
+            id="tab-resources-training-btn"
+            type="button"
+            onClick={() => setActiveMainTab('resources_training')}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              activeMainTab === 'resources_training'
+                ? 'bg-blue-600 text-white font-black shadow-xs'
+                : 'text-blue-300 hover:text-white hover:bg-blue-950/60 dark:hover:bg-slate-800'
+            }`}
+          >
+            <BookOpen className="w-3.5 h-3.5 text-blue-300" />
+            <span>Resources &amp; Training</span>
+          </button>
+
+          <button
             id="tab-audit-terminal-btn"
             type="button"
             onClick={() => setActiveMainTab('audit_terminal')}
@@ -1278,6 +1297,12 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
                 setActiveMainTab('top_performers');
               }}
             />
+          </div>
+        )}
+
+        {activeMainTab === 'resources_training' && (
+          <div className="p-4 lg:p-6 max-w-7xl mx-auto w-full">
+            <ResourceManagement adminName={adminName} adminBadge={adminBadge} />
           </div>
         )}
 

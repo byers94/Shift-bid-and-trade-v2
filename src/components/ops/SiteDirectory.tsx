@@ -18,6 +18,7 @@ import {
 } from '../../types/shift';
 import { SiteJsonImportModal } from './SiteJsonImportModal';
 import { GeofenceBoundaryEditorModal } from './GeofenceBoundaryEditorModal';
+import { SiteDocumentManager } from '../admin/SiteDocumentManager';
 import { validateSite, auditAllSites, SiteValidationResult } from '../../utils/siteValidation';
 import {
   computeSiteLifecycleStatus,
@@ -2986,6 +2987,11 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                   </div>
                 </div>
               )}
+
+              {/* Operational Documents & Vacant Units Vault */}
+              <div className="pt-2">
+                <SiteDocumentManager site={viewingDossierSite} />
+              </div>
             </div>
 
             {/* Dossier Footer Actions */}
@@ -4422,6 +4428,25 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Operational Documents & Vacant Units Section */}
+              <div className="pt-3 border-t border-slate-200 dark:border-slate-800">
+                <SiteDocumentManager
+                  site={
+                    editingSiteId
+                      ? sitesList.find((s) => s.id === editingSiteId) || {
+                          id: editingSiteId,
+                          name: formName || 'Selected Facility',
+                          code: formCode || 'SITE',
+                        }
+                      : {
+                          id: 'new-site-draft',
+                          name: formName || 'New Facility',
+                          code: formCode || 'NEW',
+                        }
+                  }
+                />
               </div>
 
               {/* Modal Buttons */}

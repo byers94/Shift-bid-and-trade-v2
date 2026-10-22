@@ -856,6 +856,28 @@ export interface SiteProfile {
 
   // Time-Specific Scheduled Tasks & Amenities Closures
   timeSpecificTasks?: TimeSpecificTask[];
+
+  // Site-Specific Operational Document Vault (Vacant Units, Gate Codes, Parking Rosters)
+  documents?: {
+    id: string;
+    siteId: string;
+    title: string;
+    docType: 'VACANT_UNITS' | 'PARKING_ROSTER' | 'GATE_CODES' | 'KEY_LOG' | 'PROPERTY_SOP';
+    contentSnippet?: string;
+    fileUrl?: string;
+    updatedAt: string;
+    updatedBy: string;
+  }[];
+  operationalDocuments?: {
+    id: string;
+    siteId: string;
+    title: string;
+    docType: 'VACANT_UNITS' | 'PARKING_ROSTER' | 'GATE_CODES' | 'KEY_LOG' | 'PROPERTY_SOP';
+    contentSnippet?: string;
+    fileUrl?: string;
+    updatedAt: string;
+    updatedBy: string;
+  }[];
 }
 
 export type TimeSpecificTaskCategory = 
