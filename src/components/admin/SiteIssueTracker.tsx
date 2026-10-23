@@ -112,6 +112,7 @@ export const SiteIssueTracker: React.FC<SiteIssueTrackerProps> = ({
     return d.toISOString().slice(0, 10);
   });
   const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [printFeedbackBanner, setPrintFeedbackBanner] = useState<string | null>(null);
 
   // Export PM Violation Notice Modal State
   const [pmNoticePreviewIssue, setPmNoticePreviewIssue] = useState<SiteIssue | null>(null);
@@ -587,12 +588,261 @@ export const SiteIssueTracker: React.FC<SiteIssueTrackerProps> = ({
     );
   };
 
+  const selectedSiteName = useMemo(() => {
+    if (selectedSiteFilter === 'ALL') return '';
+    const found = sitesList.find(
+      (s) => s.id === selectedSiteFilter || s.name.toLowerCase() === selectedSiteFilter.toLowerCase()
+    );
+    return found ? found.name : selectedSiteFilter;
+  }, [selectedSiteFilter, sitesList]);
+
+  // Safe Variable Derivation for Digest & Print Engine
+  const timeRange = digestTimeframe;
+  const customStartDate = startDate;
+  const customEndDate = endDate;
+  const filteredList = digestFilteredIssues || [];
+  const totalCount = filteredList.length;
+  const openCount = filteredList.filter((i) => i.status === 'OPEN').length;
+  const pendingCount = filteredList.filter((i) => i.status === 'PENDING_VERIFICATION').length;
+  const resolvedCount = filteredList.filter((i) => i.status === 'RESOLVED').length;
+  const chronicCount = filteredList.filter(
+    (i) => (i.recurrenceCount || 1) > 1 || i.isAutoEscalated
+  ).length;
+
+  const timeframeLabel =
+    timeRange === '7D'
+      ? 'Last 7 Days'
+      : timeRange === '30D'
+      ? 'Last 30 Days'
+      : timeRange === '90D'
+      ? 'Last 90 Days'
+      : timeRange === 'ALL'
+      ? 'All-Time Record'
+      : `Custom: ${customStartDate || 'Start'} to ${customEndDate || 'Current'}`;
+
+  const digestSummaryCounts = {
+    count: totalCount,
+    openCount,
+    chronicCount,
+    resolvedCount
+  };
+
+  // Standalone Tab + Blob HTML Download Fail-Safe Print Engine
+  const handlePrint = () => {
+    console.log('[SiteIssueTracker] Initiating Print Digest...', {
+      site: selectedSiteName || 'All Enterprise Facilities',
+      timeframe: timeframeLabel,
+      totalCount
+    });
+
+    // Generate self-contained, high-contrast black-and-white printable HTML
+    const reportHtml = `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SecureShift Property Digest - ${selectedSiteName || 'All Sites'}</title>
+    <style>
+      @page { size: letter portrait; margin: 0.6in; }
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; color: #111; background: #fff; margin: 0; padding: 20px; font-size: 11pt; line-height: 1.4; }
+      .no-print-bar { background: #0f172a; color: #f8fafc; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 10pt; }
+      .no-print-btn { background: #10b981; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 10pt; }
+      @media print {
+        body { padding: 0; }
+        .no-print-bar { display: none !important; }
+      }
+      .header { border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+      .title { font-size: 15pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
+      .subtitle { font-size: 9pt; color: #555; text-align: right; }
+      .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; background: #f8f8f8; border: 1px solid #ddd; padding: 10px; margin-bottom: 16px; font-size: 9.5pt; }
+      .meta-item strong { color: #222; }
+      .issue-card { border: 1px solid #ccc; border-radius: 4px; padding: 10px 12px; margin-bottom: 10px; page-break-inside: avoid; break-inside: avoid; }
+      .issue-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 4px; margin-bottom: 6px; flex-wrap: wrap; gap: 6px; }
+      .issue-id { font-weight: bold; font-size: 10.5pt; }
+      .badge { display: inline-block; padding: 2px 6px; font-size: 8pt; font-weight: bold; border-radius: 3px; border: 1px solid #888; text-transform: uppercase; }
+      .location { font-weight: bold; color: #222; margin-bottom: 4px; font-size: 10pt; }
+      .desc { color: #333; margin-bottom: 6px; font-size: 9.5pt; }
+      .log-history { font-size: 8.5pt; color: #555; background: #fafafa; border-left: 2px solid #999; padding: 4px 8px; margin-top: 6px; }
+      .footer { margin-top: 20px; border-top: 1px solid #ccc; padding-top: 6px; font-size: 8pt; color: #775; display: flex; justify-content: space-between; }
+    </style>
+  </head>
+  <body>
+    <div class="no-print-bar">
+      <span><strong>SecureShift Executive Digest</strong> (${totalCount} Issues • ${timeframeLabel})</span>
+      <button class="no-print-btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
+    </div>
+
+    <div class="header">
+      <div>
+        <div class="title">SECURESHIFT DISPATCH &amp; OPERATIONS</div>
+        <div style="font-size: 10pt; color: #333;">Site Issue &amp; Compliance Audit Digest</div>
+      </div>
+      <div class="subtitle">
+        CONFIDENTIAL PROPERTY RECORD<br>
+        Generated: ${new Date().toLocaleString()}
+      </div>
+    </div>
+
+    <div class="meta-grid">
+      <div class="meta-item"><strong>Facility:</strong> ${selectedSiteName || 'All Enterprise Facilities'}</div>
+      <div class="meta-item"><strong>Audit Window:</strong> ${timeframeLabel}</div>
+      <div class="meta-item"><strong>Summary:</strong> ${totalCount} Total Issues (${openCount} Open, ${chronicCount} Chronic/Repeat)</div>
+      <div class="meta-item"><strong>Resolution Status:</strong> ${pendingCount} Pending Verification, ${resolvedCount} Resolved</div>
+    </div>
+
+    <div class="issues-list">
+      ${filteredList
+        .map(
+          (issue) => `
+        <div class="issue-card">
+          <div class="issue-header">
+            <span class="issue-id">#${issue.id} • ${issue.siteName || ''}</span>
+            <div>
+              <span class="badge">${issue.category}</span>
+              <span class="badge" style="margin-left: 4px;">${issue.status}</span>${
+                (issue.recurrenceCount || 1) > 1
+                  ? `<span class="badge" style="margin-left: 4px; background: #eee;">Repeat x${issue.recurrenceCount}</span>`
+                  : ''
+              }
+            </div>
+          </div>
+          <div class="location">Location: ${issue.unitOrLocation || 'General Post Area'} — ${issue.title || ''}</div>
+          <div class="desc">${issue.description || ''}</div>${
+            issue.clientContactLog
+              ? `
+            <div class="log-history">
+              <strong>Client Outreach:</strong> Notified ${issue.clientContactLog.contactName || 'PM'} on ${issue.clientContactLog.notifiedDate || ''} via ${issue.clientContactLog.method || 'System'}
+            </div>
+          `
+              : ''
+          }
+          ${
+            issue.verificationDetails
+              ? `
+            <div class="log-history">
+              <strong>Field Verification:</strong> Signed off by ${issue.verificationDetails.verifiedBy || 'Officer'} on ${issue.verificationDetails.verifiedDate || ''} — Notes: ${issue.verificationDetails.resolutionNotes || 'None'}
+            </div>
+          `
+              : ''
+          }
+        </div>
+      `
+        )
+        .join('')}
+    </div>
+
+    <div class="footer">
+      <span>SecureShift CAD Logistics Platform</span>
+      <span>Official Security Operations Record</span>
+    </div>
+
+    <script>
+      window.onload = function() {
+        setTimeout(function() {
+          try { window.print(); } catch (e) { console.warn('Auto-print blocked:', e); }
+        }, 250);
+      };
+    </script>
+  </body>
+</html>`;
+
+    const downloadHtmlDigestFallback = (reason: string) => {
+      console.log(
+        '[SiteIssueTracker] Fallback triggered — downloading self-contained Site_Issue_Digest.html. Reason:',
+        reason
+      );
+      try {
+        const blob = new Blob([reportHtml], { type: 'text/html;charset=utf-8' });
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = 'Site_Issue_Digest.html';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+
+        const msg =
+          'Sandbox/browser blocked direct print popup — downloaded "Site_Issue_Digest.html" so you can open and print it directly from your device.';
+        setPrintFeedbackBanner(msg);
+        showToast('Printable HTML Digest Downloaded', msg, 'warning');
+      } catch (dlErr) {
+        console.error('[SiteIssueTracker] HTML fallback download failed:', dlErr);
+        const errMsg = 'Unable to open print dialog or download digest in this browser sandbox.';
+        setPrintFeedbackBanner(errMsg);
+        showToast('Print Action Blocked', errMsg, 'error');
+      }
+    };
+
+    try {
+      // 1. Try opening a fresh standalone tab to escape the sandboxed iframe
+      const printWindow = window.open('', '_blank');
+
+      if (!printWindow || printWindow.closed || typeof printWindow.closed === 'undefined') {
+        // 2. Popup/tab was blocked by mobile browser or iframe sandbox -> fallback to Blob download
+        downloadHtmlDigestFallback('window.open returned null or was blocked by mobile popup blocker');
+        return;
+      }
+
+      printWindow.document.open();
+      printWindow.document.write(reportHtml);
+      printWindow.document.close();
+
+      console.log('[SiteIssueTracker] Successfully wrote printable digest to standalone tab.');
+      setPrintFeedbackBanner(
+        'Opened printable digest in a new tab. If your mobile browser suppressed the tab, tap again or use the downloaded HTML report.'
+      );
+      showToast(
+        'Print Tab Opened',
+        'Opened printable Site Issue Digest in a standalone tab.',
+        'success'
+      );
+
+      setTimeout(() => {
+        try {
+          printWindow.focus();
+          printWindow.print();
+        } catch (printErr) {
+          console.warn('[SiteIssueTracker] Standalone window.print() threw error:', printErr);
+          downloadHtmlDigestFallback(String(printErr));
+        }
+      }, 250);
+    } catch (err) {
+      console.error('[SiteIssueTracker] Print failed, falling back to HTML file download:', err);
+      downloadHtmlDigestFallback(String(err));
+    }
+  };
+
   return (
     <div id="site-issue-tracker-console" className="space-y-5">
+      <style>{`
+        @media print {
+          @page {
+            margin: 0.5in;
+            size: letter portrait;
+          }
+          body {
+            background: white !important;
+            color: black !important;
+          }
+          .print\\:hidden {
+            display: none !important;
+          }
+          .print\\:block {
+            display: block !important;
+          }
+          /* Ensure issue cards do not split awkwardly across page breaks */
+          .issue-print-card {
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+        }
+      `}</style>
+
       {/* =================================================================== */}
       {/* HEADER & PRIMARY ACTIONS                                            */}
       {/* =================================================================== */}
-      <div className="bg-slate-900 text-white rounded-2xl p-4 sm:p-5 border border-slate-800 shadow-lg space-y-4">
+      <div className="print:hidden bg-slate-900 text-white rounded-2xl p-4 sm:p-5 border border-slate-800 shadow-lg space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -745,7 +995,7 @@ export const SiteIssueTracker: React.FC<SiteIssueTrackerProps> = ({
       {/* =================================================================== */}
       {/* ISSUE TABLE / CARDS                                                 */}
       {/* =================================================================== */}
-      <div className="space-y-3">
+      <div className="print:hidden space-y-3">
         {filteredIssues.length === 0 ? (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center text-slate-400 space-y-2">
             <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
@@ -1284,14 +1534,14 @@ export const SiteIssueTracker: React.FC<SiteIssueTrackerProps> = ({
       {/* =================================================================== */}
       {isDigestModalOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4"
+          className="print:hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4"
           onClick={() => setIsDigestModalOpen(false)}
         >
           <div
-            className="w-full max-w-2xl bg-slate-900 border border-slate-700 rounded-2xl p-4 sm:p-5 text-slate-100 shadow-2xl space-y-4 overflow-hidden"
+            className="print:hidden w-full max-w-2xl bg-slate-900 border border-slate-700 rounded-2xl p-4 sm:p-5 text-slate-100 shadow-2xl space-y-4 overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div className="print:hidden flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <span className="text-[10px] font-mono uppercase text-cyan-400 font-bold block">
                   Printable &amp; CSV Executive Summary
@@ -1303,14 +1553,14 @@ export const SiteIssueTracker: React.FC<SiteIssueTrackerProps> = ({
               <button
                 type="button"
                 onClick={() => setIsDigestModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-white"
+                className="print:hidden p-1 text-slate-400 hover:text-white"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Responsive 2-Tier Digest Controls Bar */}
-            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+            <div className="print:hidden bg-slate-950 p-3 rounded-xl border border-slate-800">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 {/* Tier 1: Timeframe Filters */}
                 <div className="w-full sm:w-auto">
@@ -1347,7 +1597,7 @@ export const SiteIssueTracker: React.FC<SiteIssueTrackerProps> = ({
                 <div className="grid grid-cols-2 gap-2 w-full sm:w-auto mt-3 sm:mt-0 shrink-0">
                   <button
                     type="button"
-                    onClick={() => window.print()}
+                    onClick={handlePrint}
                     className="w-full justify-center text-xs py-2 px-3 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 cursor-pointer"
                   >
                     <Printer className="w-3.5 h-3.5 shrink-0" />
@@ -1382,10 +1632,24 @@ export const SiteIssueTracker: React.FC<SiteIssueTrackerProps> = ({
                   />
                 </div>
               )}
+
+              {/* Visual Feedback Banner when Print / Fallback is triggered */}
+              {printFeedbackBanner && (
+                <div className="mt-2.5 p-2.5 rounded-lg bg-amber-950/60 border border-amber-500/50 text-amber-200 text-xs flex items-start justify-between gap-2">
+                  <span>{printFeedbackBanner}</span>
+                  <button
+                    type="button"
+                    onClick={() => setPrintFeedbackBanner(null)}
+                    className="text-amber-300 hover:text-white shrink-0"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Digest Preview Item Row Layout (Stacked Header/Body Card) */}
-            <div className="max-h-72 overflow-y-auto divide-y divide-slate-800 bg-slate-950 rounded-xl border border-slate-800 p-3 text-xs font-mono">
+            <div className="print:hidden max-h-72 overflow-y-auto divide-y divide-slate-800 bg-slate-950 rounded-xl border border-slate-800 p-3 text-xs font-mono">
               {digestFilteredIssues.length === 0 ? (
                 <div className="py-6 text-center text-slate-400">
                   No site issues recorded within the selected timeframe window.
@@ -1413,11 +1677,138 @@ export const SiteIssueTracker: React.FC<SiteIssueTrackerProps> = ({
       )}
 
       {/* =================================================================== */}
+      {/* DEDICATED PRINTABLE DOCUMENT CONTAINER                              */}
+      {/* =================================================================== */}
+      <div
+        id="printable-site-digest"
+        className="hidden print:block print:w-full print:bg-white print:text-black font-sans p-6 text-sm"
+      >
+        {/* Header Section */}
+        <div className="flex items-center justify-between pb-3">
+          <div className="font-bold tracking-wide text-xs uppercase text-black">
+            SECURESHIFT DISPATCH &amp; SECURITY OPERATIONS
+          </div>
+          <div className="font-bold tracking-wide text-xs uppercase text-black text-right">
+            EXECUTIVE PROPERTY AUDIT &amp; ISSUE DIGEST
+          </div>
+        </div>
+        <hr className="border-t-2 border-black mb-4" />
+
+        {/* Metadata Block (2-column grid) */}
+        <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs border border-gray-300 rounded p-3 mb-5 bg-white">
+          <div>
+            <span className="font-semibold text-gray-700">Facility Name: </span>
+            <span className="font-bold text-black">
+              {selectedSiteName || 'All Enterprise Facilities'}
+            </span>
+          </div>
+          <div>
+            <span className="font-semibold text-gray-700">Audit Timeframe: </span>
+            <span className="font-bold text-black">{timeframeLabel}</span>
+          </div>
+          <div>
+            <span className="font-semibold text-gray-700">Report Generated: </span>
+            <span className="text-black">{new Date().toLocaleString()}</span>
+          </div>
+          <div>
+            <span className="font-semibold text-gray-700">Authorized By: </span>
+            <span className="text-black">Operations Dispatch / Sentinel CAD</span>
+          </div>
+          <div className="col-span-2 pt-1.5 mt-1 border-t border-gray-200 font-semibold text-black">
+            Summary Counts: Total Issues: {digestSummaryCounts.count} | Open:{' '}
+            {digestSummaryCounts.openCount} | Chronic Repeat: {digestSummaryCounts.chronicCount} |
+            Resolved: {digestSummaryCounts.resolvedCount}
+          </div>
+        </div>
+
+        {/* Tabular / Card Issue Breakdown */}
+        <div className="space-y-3">
+          {digestFilteredIssues.length === 0 ? (
+            <div className="border border-gray-300 rounded p-4 text-center text-gray-600 text-xs">
+              No site issues recorded within the selected audit timeframe.
+            </div>
+          ) : (
+            digestFilteredIssues.map((issue) => (
+              <div
+                key={issue.id}
+                className="issue-print-card border border-gray-400 rounded p-3 bg-white text-black shadow-none"
+              >
+                {/* Header Line */}
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-1.5 mb-2 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold text-black">#{issue.id}</span>
+                    <span className="text-gray-700">
+                      {new Date(issue.initialReportDate).toLocaleDateString()} • Priority:{' '}
+                      <strong className="text-black">{issue.priority}</strong>
+                    </span>
+                    <span className="font-mono font-semibold text-black">
+                      [{issue.category.replace(/_/g, ' ')}]
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold uppercase px-1.5 py-0.5 border border-gray-400 rounded text-[11px] text-black">
+                      {issue.status.replace(/_/g, ' ')}
+                    </span>
+                    {issue.recurrenceCount > 1 && (
+                      <span className="font-semibold text-gray-800">
+                        (Repeat Infraction: {issue.recurrenceCount}x sightings)
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Location / Asset */}
+                <div className="font-bold text-xs text-black">
+                  Location: {issue.siteName} — {issue.unitOrLocation}
+                  {issue.vehicleDetails ? ` | Vehicle: ${issue.vehicleDetails}` : ''} —{' '}
+                  {issue.title}
+                </div>
+
+                {/* Narrative Description */}
+                <p className="text-gray-800 mt-1 leading-normal text-xs">{issue.description}</p>
+
+                {/* Action & History Log */}
+                {(issue.clientContactLog || issue.verificationDetails) && (
+                  <div className="mt-2 pt-1.5 border-t border-gray-200 space-y-1 text-xs text-gray-800">
+                    {issue.clientContactLog && (
+                      <div>
+                        <span className="font-semibold text-black">Client Notified: </span>
+                        {issue.clientContactLog.notifiedDate
+                          ? new Date(issue.clientContactLog.notifiedDate).toLocaleString()
+                          : 'N/A'}{' '}
+                        via {issue.clientContactLog.method || 'N/A'} - Ref #
+                        {issue.clientContactLog.externalTicketRef || 'N/A'}
+                      </div>
+                    )}
+                    {issue.verificationDetails && (
+                      <div>
+                        <span className="font-semibold text-black">Field Verified: </span>
+                        {issue.verificationDetails.verifiedDate
+                          ? new Date(issue.verificationDetails.verifiedDate).toLocaleString()
+                          : 'N/A'}{' '}
+                        by {issue.verificationDetails.verifiedBy || 'On-Duty Officer'} - Notes:{' '}
+                        {issue.verificationDetails.resolutionNotes || 'Verified resolved on site.'}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Document Footer */}
+        <div className="mt-6 pt-3 border-t border-gray-400 text-center text-[11px] font-semibold tracking-wider text-gray-700 uppercase">
+          CONFIDENTIAL PROPERTY MANAGEMENT RECORD • SECURESHIFT AUTOMATED LOGISTICS • PAGE 1 OF 1
+        </div>
+      </div>
+
+      {/* =================================================================== */}
       {/* EXPORT PM VIOLATION NOTICE MODAL ([ 📄 Export PM Violation Notice ]) */}
       {/* =================================================================== */}
       {pmNoticePreviewIssue && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4"
+          className="print:hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4"
           onClick={() => setPmNoticePreviewIssue(null)}
         >
           <div
