@@ -71,6 +71,7 @@ import { getCurrentLocation, calculateDistance, GeoCoordinates, formatDistance, 
 import { playBreakOverAlertSound } from '../../utils/audioAlert';
 import { GuardPanicButton } from './GuardPanicButton';
 import { ShiftHandoffModal, ShiftHandoffAcknowledgment } from './ShiftHandoffModal';
+import { GuardSiteIssues } from './GuardSiteIssues';
 
 interface GuardDutyTerminalProps {
   onOpenAlertPrefs?: () => void;
@@ -1071,6 +1072,12 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
             }}
           />
 
+          {/* Active Site Issues & Shift Pass-Down Watchlist */}
+          <GuardSiteIssues
+            siteId={activeClockedInShift.siteId}
+            siteName={activeClockedInShift.siteName}
+          />
+
           {/* Time-Specific Tasks & Amenity Lockouts Schedule */}
           <GuardTimedTasksSection 
             currentSiteName={activeClockedInShift.siteName} 
@@ -1437,6 +1444,9 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
               </div>
             </div>
           </div>
+
+          {/* Active Site Issues & Shift Pass-Down Watchlist */}
+          <GuardSiteIssues siteName={selectedSiteName} />
 
           {/* Today's Scheduled Shifts Quick-Select (if any) */}
           {guardTodayShifts.length > 0 && (

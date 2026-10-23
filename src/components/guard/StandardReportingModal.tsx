@@ -62,6 +62,13 @@ import {
 } from '../../types/shift';
 import { addReportPhotoWatermark, generateSampleReportMedia } from '../../utils/camera';
 import { GeoCoordinates } from '../../utils/geo';
+import {
+  GuardDARInFormAlertBanner,
+  processGuardDARInfractionSubmission,
+  useSiteIssuesStore
+} from './GuardSiteIssues';
+import { IssueCategory } from '../../types/siteIssues';
+import { useShiftOps } from '../../context/ShiftOpsContext';
 
 interface StandardReportingModalProps {
   isOpen: boolean;
@@ -92,6 +99,8 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
 }) => {
   // Active Report Category
   const [reportType, setReportType] = useState<StandardReportType>(initialReportType);
+  const { addAuditLog, showToast } = useShiftOps();
+  const { siteIssues, darLogs, updateSiteIssues, updateDarLogs } = useSiteIssuesStore();
 
   // Common metadata
   const [locationName, setLocationName] = useState<string>(siteName);
@@ -649,6 +658,54 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
     };
 
     try {
+      const mappedCategory: IssueCategory =
+        reportType === 'maintenance'
+          ? maintSafetyHazard
+            ? 'SAFETY_HAZARD'
+            : 'MAINTENANCE'
+          : reportType === 'incident'
+          ? incCategory === 'parking_violation'
+            ? 'PARKING_VIOLATION'
+            : incCategory === 'altercation_verbal'
+            ? 'NOISE_COMPLAINT'
+            : 'CHRONIC_LEASE_VIOLATION'
+          : 'CHRONIC_LEASE_VIOLATION';
+
+      const targetKeyInput =
+        reportType === 'activity'
+          ? zoneChecked
+          : reportType === 'maintenance'
+          ? maintLocation
+          : incTitle;
+
+      const targetNotes =
+        reportType === 'activity'
+          ? activityNotes
+          : reportType === 'maintenance'
+          ? maintDescription
+          : incSummary;
+
+      processGuardDARInfractionSubmission({
+        siteId: activeShift?.siteId || locationName,
+        siteName: locationName,
+        category: mappedCategory,
+        rawKeyValue: targetKeyInput,
+        unitOrLocation: targetKeyInput,
+        title: reportType === 'maintenance' ? maintTitle : reportType === 'incident' ? incTitle : zoneChecked,
+        notes: targetNotes,
+        photoUrl: mediaList[0]?.dataUrl,
+        guardName: guard.name,
+        badgeNumber: guard.badgeNumber,
+        shiftId: activeShift?.id,
+        shiftName: activeShift?.postRole || 'Active Shift',
+        existingLogs: darLogs,
+        siteIssues,
+        updateDarLogs,
+        updateSiteIssues,
+        addAuditLog,
+        showToast
+      });
+
       onSubmitReport(payload);
       setTimeout(() => {
         setIsSubmitting(false);
@@ -871,9 +928,14 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                   id="activity-zone-input"
                   value={zoneChecked}
                   onChange={(e) => setZoneChecked(e.target.value)}
-                  placeholder="e.g. North Container Berth 4, Gate B, 2nd Floor Hallways"
+                  placeholder="e.g. North Container Berth 4, Gate B, Apt 304, 2nd Floor Hallways"
                   className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
+                />
+                <GuardDARInFormAlertBanner
+                  siteId="ALL"
+                  category="NOISE_COMPLAINT"
+                  rawKeyValue={zoneChecked}
                 />
               </div>
 
@@ -1031,9 +1093,14 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                     id="maint-location-input"
                     value={maintLocation}
                     onChange={(e) => setMaintLocation(e.target.value)}
-                    placeholder="e.g. Building B, 2nd Floor near Suite 204"
+                    placeholder="e.g. Building B, Gate 2, Apt 304"
                     className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
                     required
+                  />
+                  <GuardDARInFormAlertBanner
+                    siteId="ALL"
+                    category={maintSafetyHazard ? 'SAFETY_HAZARD' : 'MAINTENANCE'}
+                    rawKeyValue={maintLocation}
                   />
                 </div>
               </div>
@@ -1306,9 +1373,14 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                   id="inc-title-input"
                   value={incTitle}
                   onChange={(e) => setIncTitle(e.target.value)}
-                  placeholder="e.g. Trespasser Escorted Off Pier 7 Berth 4"
+                  placeholder="e.g. Apt 304 Noise Complaint / Plate ABC-123 Fire Lane"
                   className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
                   required
+                />
+                <GuardDARInFormAlertBanner
+                  siteId="ALL"
+                  category={incCategory === 'parking_violation' ? 'PARKING_VIOLATION' : 'CHRONIC_LEASE_VIOLATION'}
+                  rawKeyValue={incTitle}
                 />
               </div>
 

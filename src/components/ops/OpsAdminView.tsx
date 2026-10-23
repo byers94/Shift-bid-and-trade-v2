@@ -29,6 +29,7 @@ import { GuardMapDashboard } from './GuardMapDashboard';
 import { DispatchCommandDashboard } from './DispatchCommandDashboard';
 import { RosterMatrixView } from '../admin/RosterMatrixView';
 import { ResourceManagement } from '../admin/ResourceManagement';
+import { SiteIssueTracker } from '../admin/SiteIssueTracker';
 import { 
   ShieldCheck, 
   BookOpen, 
@@ -121,12 +122,13 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   const isDarkMode = theme === 'dark';
 
   const [activeMainTab, setActiveMainTabState] = useState<
-    'command_dashboard' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'resources_training' | 'audit_terminal'
+    'command_dashboard' | 'site_issues' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'resources_training' | 'audit_terminal'
   >(() => {
     try {
       const saved = localStorage.getItem(STORAGE_OPS_MAIN_TAB_KEY);
       if (
         saved === 'command_dashboard' ||
+        saved === 'site_issues' ||
         saved === 'operations' || 
         saved === 'live_tracking' || 
         saved === 'live_map' || 
@@ -152,7 +154,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
     return 'command_dashboard';
   });
 
-  const setActiveMainTab = (tab: 'command_dashboard' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'resources_training' | 'audit_terminal') => {
+  const setActiveMainTab = (tab: 'command_dashboard' | 'site_issues' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'resources_training' | 'audit_terminal') => {
     setActiveMainTabState(tab);
     try {
       localStorage.setItem(STORAGE_OPS_MAIN_TAB_KEY, tab);
@@ -887,6 +889,24 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
             </span>
           </button>
 
+          {/* Site Issues & Chronic Resolution Console Sub-Nav Tab */}
+          <button
+            id="tab-site-issues-btn"
+            type="button"
+            onClick={() => setActiveMainTab('site_issues')}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              activeMainTab === 'site_issues'
+                ? 'bg-purple-600 dark:bg-purple-600 text-white shadow-xs font-black ring-1 ring-purple-400'
+                : 'text-amber-300 hover:text-white hover:bg-purple-950/60 dark:hover:bg-slate-800'
+            }`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+            <span>Site Issues &amp; Chronic Tracker</span>
+            <span className="bg-purple-950 text-purple-200 border border-purple-500/60 text-[10px] font-black px-1.5 py-0.2 rounded-full font-mono">
+              ⚡ Chronic
+            </span>
+          </button>
+
           <button
             id="tab-guard-directory-btn"
             type="button"
@@ -1261,6 +1281,12 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         {activeMainTab === 'standard_reports' && (
           <div className="p-3 sm:p-4 lg:p-6 max-w-7xl mx-auto w-full">
             <StandardReportsHub />
+          </div>
+        )}
+
+        {activeMainTab === 'site_issues' && (
+          <div className="p-3 sm:p-4 lg:p-6 max-w-7xl mx-auto w-full">
+            <SiteIssueTracker adminName={adminName} adminBadge={adminBadge} />
           </div>
         )}
 
