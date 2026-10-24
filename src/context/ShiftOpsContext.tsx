@@ -81,6 +81,7 @@ import {
   DashboardConfig,
   DashboardPreset,
   DashboardTileVisibility,
+  ALL_DASHBOARD_TILE_KEYS,
   DEFAULT_DASHBOARD_PRESETS
 } from '../types/shift';
 import { generateSyntheticShiftBreadcrumbs } from '../utils/breadcrumbHelper';
@@ -1437,6 +1438,22 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [telemetryLogs]);
 
+  const normalizeDashboardTileOrder = (
+    rawOrder: string[] | undefined,
+    tiles: DashboardTileVisibility
+  ): string[] => {
+    const validMasterSet = new Set<string>(ALL_DASHBOARD_TILE_KEYS);
+    const baseOrder = Array.from(
+      new Set([
+        ...(rawOrder || []).filter(k => validMasterSet.has(k)),
+        ...ALL_DASHBOARD_TILE_KEYS
+      ])
+    );
+    const activeKeys = baseOrder.filter(k => tiles[k as keyof DashboardTileVisibility]);
+    const inactiveKeys = baseOrder.filter(k => !tiles[k as keyof DashboardTileVisibility]);
+    return [...activeKeys, ...inactiveKeys];
+  };
+
   // Dispatch & Command Dashboard Configuration State
   const [dashboardConfig, setDashboardConfigState] = useState<DashboardConfig>(() => {
     try {
@@ -1445,10 +1462,18 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const parsed = JSON.parse(saved);
         const presetKey = (parsed.preset as DashboardPreset) || 'WATCH_DESK';
         const defaultPreset = DEFAULT_DASHBOARD_PRESETS[presetKey] || DEFAULT_DASHBOARD_PRESETS.WATCH_DESK;
+        const mergedTiles: DashboardTileVisibility = {
+          ...defaultPreset.tiles,
+          ...(parsed.tiles || {})
+        };
+        const rawOrder =
+          parsed.tileOrder && parsed.tileOrder.length > 0
+            ? parsed.tileOrder
+            : defaultPreset.tileOrder;
         return {
           preset: presetKey,
-          tiles: { ...defaultPreset.tiles, ...(parsed.tiles || {}) },
-          tileOrder: parsed.tileOrder && parsed.tileOrder.length > 0 ? parsed.tileOrder : defaultPreset.tileOrder
+          tiles: mergedTiles,
+          tileOrder: normalizeDashboardTileOrder(rawOrder, mergedTiles)
         };
       }
     } catch (e) {
@@ -1457,7 +1482,10 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return {
       preset: 'WATCH_DESK',
       tiles: { ...DEFAULT_DASHBOARD_PRESETS.WATCH_DESK.tiles },
-      tileOrder: [...DEFAULT_DASHBOARD_PRESETS.WATCH_DESK.tileOrder]
+      tileOrder: normalizeDashboardTileOrder(
+        DEFAULT_DASHBOARD_PRESETS.WATCH_DESK.tileOrder,
+        DEFAULT_DASHBOARD_PRESETS.WATCH_DESK.tiles
+      )
     };
   });
 
@@ -1494,20 +1522,28 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [siteOrientations]);
 
   const updateDashboardConfig = (config: Partial<DashboardConfig>) => {
-    setDashboardConfigState(prev => ({
-      ...prev,
-      ...config,
-      tiles: config.tiles ? { ...prev.tiles, ...config.tiles } : prev.tiles,
-      tileOrder: config.tileOrder ? config.tileOrder : prev.tileOrder
-    }));
+    setDashboardConfigState(prev => {
+      const nextTiles = config.tiles ? { ...prev.tiles, ...config.tiles } : prev.tiles;
+      const nextOrder = normalizeDashboardTileOrder(
+        config.tileOrder ? config.tileOrder : prev.tileOrder,
+        nextTiles
+      );
+      return {
+        ...prev,
+        ...config,
+        tiles: nextTiles,
+        tileOrder: nextOrder
+      };
+    });
   };
 
   const setDashboardPreset = (preset: DashboardPreset) => {
     const defaultPresetConfig = DEFAULT_DASHBOARD_PRESETS[preset] || DEFAULT_DASHBOARD_PRESETS.WATCH_DESK;
+    const nextTiles = { ...defaultPresetConfig.tiles };
     setDashboardConfigState({
       preset,
-      tiles: { ...defaultPresetConfig.tiles },
-      tileOrder: [...defaultPresetConfig.tileOrder]
+      tiles: nextTiles,
+      tileOrder: normalizeDashboardTileOrder(defaultPresetConfig.tileOrder, nextTiles)
     });
     showToast(
       'Command Preset Applied',
@@ -1520,10 +1556,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setDashboardConfigState(prev => {
       const nextVal = !prev.tiles[tileKey];
       const updatedTiles = { ...prev.tiles, [tileKey]: nextVal };
-      let updatedOrder = [...prev.tileOrder];
-      if (nextVal && !updatedOrder.includes(tileKey)) {
-        updatedOrder.push(tileKey);
-      }
+      const updatedOrder = normalizeDashboardTileOrder(prev.tileOrder, updatedTiles);
       return {
         ...prev,
         tiles: updatedTiles,
@@ -1535,7 +1568,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const setDashboardTileOrder = (order: string[]) => {
     setDashboardConfigState(prev => ({
       ...prev,
-      tileOrder: order
+      tileOrder: normalizeDashboardTileOrder(order, prev.tiles)
     }));
   };
 
@@ -9361,7 +9394,10 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setDashboardConfigState({
       preset: 'WATCH_DESK',
       tiles: { ...DEFAULT_DASHBOARD_PRESETS.WATCH_DESK.tiles },
-      tileOrder: [...DEFAULT_DASHBOARD_PRESETS.WATCH_DESK.tileOrder]
+      tileOrder: normalizeDashboardTileOrder(
+        DEFAULT_DASHBOARD_PRESETS.WATCH_DESK.tileOrder,
+        DEFAULT_DASHBOARD_PRESETS.WATCH_DESK.tiles
+      )
     });
     localStorage.removeItem(STORAGE_KEY_SET_SCHEDULES);
     localStorage.removeItem(STORAGE_KEY_TIME_OFF_REQUESTS);

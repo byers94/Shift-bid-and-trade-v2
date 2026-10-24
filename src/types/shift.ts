@@ -2041,6 +2041,18 @@ export interface DashboardConfig {
   tileOrder: string[];
 }
 
+export const ALL_DASHBOARD_TILE_KEYS: (keyof DashboardTileVisibility)[] = [
+  'exceptionsTray',
+  'liveOnDutyFieldStatus',
+  'upcomingSiteOrientations',
+  'criticalIncidentFeed',
+  'liveMap',
+  'mobilePatrolUnits',
+  'openShiftsBidding',
+  'asrExecutiveMetrics',
+  'contractExpirations'
+];
+
 export const DEFAULT_DASHBOARD_PRESETS: Record<DashboardPreset, { tiles: DashboardTileVisibility; tileOrder: string[] }> = {
   WATCH_DESK: {
     tiles: {
@@ -2054,7 +2066,17 @@ export const DEFAULT_DASHBOARD_PRESETS: Record<DashboardPreset, { tiles: Dashboa
       asrExecutiveMetrics: false,
       contractExpirations: false
     },
-    tileOrder: ['exceptionsTray', 'liveOnDutyFieldStatus', 'mobilePatrolUnits', 'liveMap', 'openShiftsBidding']
+    tileOrder: [
+      'exceptionsTray',
+      'liveOnDutyFieldStatus',
+      'mobilePatrolUnits',
+      'liveMap',
+      'openShiftsBidding',
+      'upcomingSiteOrientations',
+      'criticalIncidentFeed',
+      'asrExecutiveMetrics',
+      'contractExpirations'
+    ]
   },
   FIELD_SUPERVISOR: {
     tiles: {
@@ -2068,7 +2090,17 @@ export const DEFAULT_DASHBOARD_PRESETS: Record<DashboardPreset, { tiles: Dashboa
       asrExecutiveMetrics: false,
       contractExpirations: false
     },
-    tileOrder: ['exceptionsTray', 'upcomingSiteOrientations', 'liveOnDutyFieldStatus', 'criticalIncidentFeed']
+    tileOrder: [
+      'exceptionsTray',
+      'upcomingSiteOrientations',
+      'liveOnDutyFieldStatus',
+      'criticalIncidentFeed',
+      'liveMap',
+      'mobilePatrolUnits',
+      'openShiftsBidding',
+      'asrExecutiveMetrics',
+      'contractExpirations'
+    ]
   },
   EXECUTIVE: {
     tiles: {
@@ -2082,6 +2114,17 @@ export const DEFAULT_DASHBOARD_PRESETS: Record<DashboardPreset, { tiles: Dashboa
       liveMap: false,
       openShiftsBidding: false
     },
-    tileOrder: ['exceptionsTray', 'criticalIncidentFeed', 'asrExecutiveMetrics', 'contractExpirations']
+    tileOrder: [
+      'exceptionsTray',
+      'criticalIncidentFeed',
+      'asrExecutiveMetrics',
+      'contractExpirations',
+      'liveOnDutyFieldStatus',
+      'upcomingSiteOrientations',
+      'liveMap',
+      'mobilePatrolUnits',
+      'openShiftsBidding'
+    ]
   }
 };
+

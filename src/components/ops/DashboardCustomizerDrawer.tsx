@@ -99,21 +99,59 @@ export const DashboardCustomizerDrawer: React.FC<DashboardCustomizerDrawerProps>
     setDashboardTileOrder
   } = useShiftOps();
 
-  if (!isOpen) return null;
-
   const currentPreset = dashboardConfig.preset;
   const tiles = dashboardConfig.tiles;
   const tileOrder = dashboardConfig.tileOrder;
+
+  // Build the ordered list of all 9 master tiles: active tiles first (in tileOrder priority), inactive tiles below
+  const orderedMasterTileKeys = React.useMemo(() => {
+    const masterKeys = TILE_DEFINITIONS.map(t => t.key);
+    const validSet = new Set<string>(masterKeys);
+    const combinedKeys = Array.from(
+      new Set([
+        ...tileOrder.filter(k => validSet.has(k)),
+        ...masterKeys
+      ])
+    ) as (keyof DashboardTileVisibility)[];
+
+    const activeKeys = combinedKeys.filter(k => Boolean(tiles[k]));
+    const inactiveKeys = combinedKeys.filter(k => !tiles[k]);
+    return [...activeKeys, ...inactiveKeys];
+  }, [tileOrder, tiles]);
+
+  if (!isOpen) return null;
+
+  const activeTileKeys = orderedMasterTileKeys.filter(k => Boolean(tiles[k]));
+  const activeCount = activeTileKeys.length;
 
   const handleSelectPreset = (preset: DashboardPreset) => {
     setDashboardPreset(preset);
   };
 
+  const handleEnableAllTiles = () => {
+    const allVisible: DashboardTileVisibility = {
+      exceptionsTray: true,
+      liveOnDutyFieldStatus: true,
+      upcomingSiteOrientations: true,
+      criticalIncidentFeed: true,
+      liveMap: true,
+      mobilePatrolUnits: true,
+      openShiftsBidding: true,
+      asrExecutiveMetrics: true,
+      contractExpirations: true
+    };
+    updateDashboardConfig({
+      tiles: allVisible,
+      tileOrder: orderedMasterTileKeys
+    });
+  };
+
   const moveTile = (index: number, direction: 'up' | 'down') => {
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= tileOrder.length) return;
+    // Reorder within active tiles
+    if (targetIndex < 0 || targetIndex >= activeTileKeys.length) return;
 
-    const newOrder = [...tileOrder];
+    const newOrder = [...orderedMasterTileKeys];
     const temp = newOrder[index];
     newOrder[index] = newOrder[targetIndex];
     newOrder[targetIndex] = temp;
@@ -229,20 +267,31 @@ export const DashboardCustomizerDrawer: React.FC<DashboardCustomizerDrawerProps>
 
           {/* Granular Tile Toggles & Ordering */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                 Dashboard Tiles & Ordering
               </span>
-              <span className="text-xs text-slate-400">
-                {Object.values(tiles).filter(Boolean).length} / {TILE_DEFINITIONS.length} Active
-              </span>
+              <div className="flex items-center space-x-2">
+                <span className="text-xs text-slate-400">
+                  {activeCount} / {TILE_DEFINITIONS.length} Active
+                </span>
+                {activeCount < TILE_DEFINITIONS.length && (
+                  <button
+                    type="button"
+                    onClick={handleEnableAllTiles}
+                    className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-blue-500/15 hover:bg-blue-500/25 text-blue-600 dark:text-blue-400 border border-blue-500/30 transition-colors cursor-pointer"
+                  >
+                    Enable All 9
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="space-y-2">
-              {tileOrder.map((tileKey, index) => {
+              {orderedMasterTileKeys.map((tileKey, index) => {
                 const meta = TILE_DEFINITIONS.find(t => t.key === tileKey);
                 if (!meta) return null;
-                const isVisible = tiles[meta.key];
+                const isVisible = Boolean(tiles[meta.key]);
 
                 return (
                   <div
@@ -250,17 +299,17 @@ export const DashboardCustomizerDrawer: React.FC<DashboardCustomizerDrawerProps>
                     className={`p-3 rounded-xl border transition-all flex items-center justify-between gap-2.5 ${
                       isVisible
                         ? 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 shadow-xs'
-                        : 'bg-slate-50/60 dark:bg-slate-900/60 border-slate-200/60 dark:border-slate-800 opacity-60'
+                        : 'opacity-60 bg-slate-900/40 border-slate-800/60'
                     }`}
                   >
                     <div className="flex items-center space-x-2.5 min-w-0 flex-1">
                       <button
                         type="button"
                         onClick={() => toggleDashboardTile(meta.key)}
-                        className={`p-1.5 rounded-lg transition-colors ${
+                        className={`p-1.5 rounded-lg transition-colors shrink-0 cursor-pointer ${
                           isVisible
-                            ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60'
-                            : 'text-slate-400 bg-slate-100 dark:bg-slate-800'
+                            ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60'
+                            : 'text-slate-400 bg-slate-800/80 hover:text-white hover:bg-slate-700'
                         }`}
                         title={isVisible ? 'Hide tile' : 'Show tile'}
                       >
@@ -268,7 +317,13 @@ export const DashboardCustomizerDrawer: React.FC<DashboardCustomizerDrawerProps>
                       </button>
 
                       <div className="min-w-0">
-                        <span className="font-semibold text-xs text-slate-900 dark:text-white block truncate">
+                        <span
+                          className={`font-semibold text-xs block truncate ${
+                            isVisible
+                              ? 'text-slate-900 dark:text-white'
+                              : 'text-slate-400 dark:text-slate-400'
+                          }`}
+                        >
                           {meta.label}
                         </span>
                         <span className="text-[11px] text-slate-500 dark:text-slate-400 block truncate">
@@ -277,27 +332,37 @@ export const DashboardCustomizerDrawer: React.FC<DashboardCustomizerDrawerProps>
                       </div>
                     </div>
 
-                    {/* Reorder Buttons */}
-                    <div className="flex items-center space-x-1 shrink-0">
+                    {/* Right Side Controls: Up/Down Priority Reorder for Active Tiles, [+ Show] Pill for Hidden Tiles */}
+                    {isVisible ? (
+                      <div className="flex items-center space-x-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => moveTile(index, 'up')}
+                          disabled={index === 0}
+                          className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-20 rounded cursor-pointer disabled:cursor-not-allowed"
+                          title="Move Up"
+                        >
+                          <ArrowUp className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveTile(index, 'down')}
+                          disabled={index === activeTileKeys.length - 1}
+                          className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-20 rounded cursor-pointer disabled:cursor-not-allowed"
+                          title="Move Down"
+                        >
+                          <ArrowDown className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
                       <button
                         type="button"
-                        onClick={() => moveTile(index, 'up')}
-                        disabled={index === 0}
-                        className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-20 rounded"
-                        title="Move Up"
+                        onClick={() => toggleDashboardTile(meta.key)}
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white border border-slate-700 hover:border-blue-500 transition-colors shrink-0 cursor-pointer"
                       >
-                        <ArrowUp className="w-3.5 h-3.5" />
+                        + Show
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => moveTile(index, 'down')}
-                        disabled={index === tileOrder.length - 1}
-                        className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-20 rounded"
-                        title="Move Down"
-                      >
-                        <ArrowDown className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    )}
                   </div>
                 );
               })}
