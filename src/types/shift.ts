@@ -60,7 +60,8 @@ export interface GuardProfile {
   biometricCredentialId?: string;
   lastLogin?: string;
 
-  // Rover Fleet Circuit Assignment
+  // Rover / MPU Fleet Circuit Assignment
+  assignmentType?: 'DEDICATED_SITE' | 'MPU';
   isRovingGuard?: boolean;
   rovingGroup?: RovingGroup;
 

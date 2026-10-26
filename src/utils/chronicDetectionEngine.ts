@@ -736,5 +736,136 @@ export const INITIAL_SITE_ISSUES: SiteIssue[] = [
         notes: 'Logged 3rd sighting — chronic noise hotspot active on pass-down watchlist.'
       }
     ]
+  },
+  {
+    id: 'ISS-1047',
+    siteId: 'site-8',
+    siteName: 'Industrial Warehouse Night Watch',
+    category: 'MAINTENANCE',
+    status: 'OPEN',
+    title: 'Bay 9 Hydraulic Dock Leveler Latch Failure & Perimeter Gap',
+    unitOrLocation: 'Loading Bay 9 / South Freight Apron',
+    matchKeyType: 'LOCATION_ASSET',
+    matchKeyValue: 'BAY9',
+    description:
+      'Bay 9 roll-up freight door fails to seal flush against dock apron due to bent lower track, leaving an 8-inch perimeter gap. Logged across 2 consecutive night firewatch patrols.',
+    initialReportDate: hoursAgoIso(36),
+    reportedBy: 'Officer Marcus Vance (SEC-104)',
+    priority: 'HIGH',
+    recurrenceCount: 2,
+    isAutoEscalated: false,
+    linkedDarLogs: [
+      {
+        darId: 'dar-log-ind-b9-1',
+        shiftId: 'shift-hist-601',
+        shiftName: 'Night Shift (22:00 - 06:00)',
+        timestamp: hoursAgoIso(36),
+        guardName: 'Officer Marcus Vance',
+        badgeNumber: 'SEC-104',
+        category: 'MAINTENANCE',
+        notes: 'Bay 9 roll-up door lower track bent by freight pallet jack; unable to engage interior slide bolt completely.',
+        siteId: 'site-8',
+        siteName: 'Industrial Warehouse Night Watch',
+        unitOrLocation: 'Loading Bay 9',
+        matchKeyType: 'LOCATION_ASSET',
+        matchKeyValue: 'BAY9'
+      },
+      {
+        darId: 'dar-log-ind-b9-2',
+        shiftId: 'shift-hist-602',
+        shiftName: 'Night Shift (22:00 - 06:00)',
+        timestamp: hoursAgoIso(12),
+        guardName: 'Officer Elena Rostova',
+        badgeNumber: 'SEC-204',
+        category: 'SAFETY_HAZARD',
+        notes: 'Bay 9 track still unlatched on 01:00 perimeter loop; secured exterior padlock hasp with heavy duty chain.',
+        siteId: 'site-8',
+        siteName: 'Industrial Warehouse Night Watch',
+        unitOrLocation: 'Loading Bay 9',
+        matchKeyType: 'LOCATION_ASSET',
+        matchKeyValue: 'BAY9'
+      }
+    ],
+    history: [
+      {
+        id: 'upd-1047-1',
+        timestamp: hoursAgoIso(12),
+        authorName: 'Officer Elena Rostova',
+        authorBadge: 'SEC-204',
+        authorRole: 'GUARD',
+        shiftContext: 'Night Shift',
+        notes: 'Second consecutive night shift report; awaiting warehouse maintenance track alignment.'
+      }
+    ]
+  },
+  {
+    id: 'ISS-1048',
+    siteId: 'site-8',
+    siteName: 'Industrial Warehouse Night Watch',
+    category: 'PARKING_VIOLATION',
+    status: 'CLIENT_NOTIFIED',
+    title: 'Unregistered Semi-Trailer Blocking South Fire Hydrant Zone',
+    unitOrLocation: 'South Yard Hydrant Lane / Bay 14',
+    vehicleDetails: 'White 53ft Dry Van Trailer [Plate: WA-992-TRL]',
+    matchKeyType: 'LICENSE_PLATE',
+    matchKeyValue: 'WA992TRL',
+    description:
+      'Dropped 53ft freight trailer parked within 15ft of South Yard high-pressure fire hydrant across 3 patrol sweeps. Final tow warning affixed.',
+    initialReportDate: hoursAgoIso(44),
+    reportedBy: 'Officer Carlos Silva (SEC-118)',
+    priority: 'URGENT',
+    recurrenceCount: 3,
+    isAutoEscalated: true,
+    clientContactLog: {
+      notifiedDate: hoursAgoIso(8),
+      contactName: 'PM Frank Kowalski',
+      method: 'PORTAL',
+      externalTicketRef: 'IND-TOW-992',
+      notes: 'Warehouse logistics manager notified to relocate dropped trailer before 22:00 firewatch inspection.'
+    },
+    linkedDarLogs: [
+      {
+        darId: 'dar-log-ind-trl-1',
+        shiftId: 'shift-hist-605',
+        shiftName: 'Night Shift (22:00 - 06:00)',
+        timestamp: hoursAgoIso(44),
+        guardName: 'Officer Carlos Silva',
+        badgeNumber: 'SEC-118',
+        category: 'PARKING_VIOLATION',
+        notes: 'Unregistered 53ft trailer WA-992-TRL dropped in red fire lane near Bay 14 hydrant.',
+        siteId: 'site-8',
+        siteName: 'Industrial Warehouse Night Watch',
+        unitOrLocation: 'South Yard Hydrant Lane',
+        matchKeyType: 'LICENSE_PLATE',
+        matchKeyValue: 'WA992TRL'
+      },
+      {
+        darId: 'dar-log-ind-trl-2',
+        shiftId: 'shift-hist-606',
+        shiftName: 'Swing Shift (14:00 - 22:00)',
+        timestamp: hoursAgoIso(20),
+        guardName: 'Officer Marcus Vance',
+        badgeNumber: 'SEC-104',
+        category: 'PARKING_VIOLATION',
+        notes: 'Trailer WA-992-TRL still blocking South Fire Hydrant. Issued orange citation #2.',
+        siteId: 'site-8',
+        siteName: 'Industrial Warehouse Night Watch',
+        unitOrLocation: 'South Yard Hydrant Lane',
+        matchKeyType: 'LICENSE_PLATE',
+        matchKeyValue: 'WA992TRL'
+      }
+    ],
+    history: [
+      {
+        id: 'upd-1048-1',
+        timestamp: hoursAgoIso(8),
+        authorName: "Lt. Mark O'Connor",
+        authorBadge: 'OPS-CMD-01',
+        authorRole: 'DISPATCHER',
+        shiftContext: 'Command CAD',
+        notes: 'Escalated to Warehouse Operations Director & PM Frank Kowalski for yard tractor relocation.'
+      }
+    ]
   }
 ];
+

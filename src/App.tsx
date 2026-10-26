@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ShiftOpsProvider, useShiftOps } from './context/ShiftOpsContext';
 import { GuardView } from './components/guard/GuardView';
 import { OpsAdminView } from './components/ops/OpsAdminView';
+import { ClientPortal } from './components/client/ClientPortal';
 import { ToastContainer } from './components/common/ToastContainer';
 import { CallReceiptBanner } from './components/ops/CallReceiptBanner';
 import { 
@@ -14,6 +15,7 @@ import {
   Smartphone, 
   LayoutDashboard, 
   Columns, 
+  Building2,
   HelpCircle, 
   X, 
   CheckCircle2, 
@@ -43,7 +45,7 @@ interface AdminAuthGateProps {
   adminBadge: string;
 }
 
-function getTargetViewFromUrl(): 'guard' | 'ops' | 'dual' | null {
+function getTargetViewFromUrl(): 'guard' | 'ops' | 'dual' | 'client' | null {
   if (typeof window === 'undefined') return null;
   const path = window.location.pathname.toLowerCase();
   const hash = window.location.hash.toLowerCase().replace('#', '');
@@ -69,6 +71,15 @@ function getTargetViewFromUrl(): 'guard' | 'ops' | 'dual' | null {
     return 'ops';
   }
 
+  if (
+    path === '/client' ||
+    path.startsWith('/client/') ||
+    hash === 'client' ||
+    viewParam === 'client'
+  ) {
+    return 'client';
+  }
+
   if (path === '/guard' || path.startsWith('/guard/') || hash === 'guard' || viewParam === 'guard') {
     return 'guard';
   }
@@ -80,10 +91,17 @@ function getTargetViewFromUrl(): 'guard' | 'ops' | 'dual' | null {
   return null;
 }
 
-function updateBrowserRoute(view: 'guard' | 'ops' | 'dual') {
+function updateBrowserRoute(view: 'guard' | 'ops' | 'dual' | 'client') {
   if (typeof window === 'undefined') return;
   try {
-    const targetPath = view === 'ops' ? '/command' : view === 'guard' ? '/guard' : '/dual';
+    const targetPath =
+      view === 'ops'
+        ? '/command'
+        : view === 'guard'
+        ? '/guard'
+        : view === 'client'
+        ? '/client'
+        : '/dual';
     if (window.location.pathname !== targetPath) {
       window.history.replaceState({ view }, '', targetPath);
     }
@@ -269,10 +287,16 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const handleSwitchView = (view: 'guard' | 'ops' | 'dual') => {
+  const handleSwitchView = (view: 'guard' | 'ops' | 'dual' | 'client') => {
     if (view === 'guard') {
       setActiveView('guard');
       updateBrowserRoute('guard');
+      return;
+    }
+
+    if (view === 'client') {
+      setActiveView('client');
+      updateBrowserRoute('client');
       return;
     }
 
@@ -311,12 +335,12 @@ const AppContent: React.FC = () => {
         </div>
 
         {/* Mode Switcher Controls */}
-        <div className="flex items-center gap-1.5 bg-slate-900/70 dark:bg-slate-900 p-1 rounded-lg border border-blue-800/40 dark:border-slate-800">
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar bg-slate-900/70 dark:bg-slate-900 p-1 rounded-lg border border-blue-800/40 dark:border-slate-800 max-w-full">
           {/* Guard App (Always open without login) */}
           <button
             id="view-mode-guard-btn"
             onClick={() => handleSwitchView('guard')}
-            className={`px-3 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
               activeView === 'guard'
                 ? 'bg-[#1e3a8a] text-white shadow-xs'
                 : 'text-slate-300 hover:text-white hover:bg-slate-800/50'
@@ -331,7 +355,7 @@ const AppContent: React.FC = () => {
           <button
             id="view-mode-ops-btn"
             onClick={() => handleSwitchView('ops')}
-            className={`px-3 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
               activeView === 'ops'
                 ? 'bg-[#1e3a8a] text-white shadow-xs'
                 : 'text-slate-300 hover:text-white hover:bg-slate-800/50'
@@ -351,7 +375,7 @@ const AppContent: React.FC = () => {
           <button
             id="view-mode-dual-btn"
             onClick={() => handleSwitchView('dual')}
-            className={`px-3 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
               activeView === 'dual'
                 ? 'bg-[#1e3a8a] text-white shadow-xs'
                 : 'text-slate-300 hover:text-white hover:bg-slate-800/50'
@@ -361,6 +385,20 @@ const AppContent: React.FC = () => {
             <Columns className="w-3.5 h-3.5" />
             <span className="hidden md:inline">Dual Split View</span>
             <span className="md:hidden">Dual</span>
+          </button>
+
+          {/* Client Portal */}
+          <button
+            id="view-mode-client-btn"
+            onClick={() => handleSwitchView('client')}
+            className={`px-3 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
+              activeView === 'client'
+                ? 'bg-emerald-700 text-white shadow-xs ring-1 ring-emerald-400/50'
+                : 'text-emerald-300 hover:text-white hover:bg-slate-800/50'
+            }`}
+            title="Property Manager Client Portal (Sanitized Live Security & Issue Verification)"
+          >
+            <span>[ 🏢 Client Portal ]</span>
           </button>
         </div>
 
@@ -474,6 +512,13 @@ const AppContent: React.FC = () => {
               adminName={adminUser.name}
               adminBadge={adminUser.badgeId}
             />
+          </div>
+        )}
+
+        {/* CLIENT PORTAL VIEW (Operational Firewall Property Manager Console) */}
+        {activeView === 'client' && (
+          <div className="flex-1 flex flex-col h-full overflow-hidden">
+            <ClientPortal />
           </div>
         )}
       </div>

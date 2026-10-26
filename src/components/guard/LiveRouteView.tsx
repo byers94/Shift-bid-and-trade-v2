@@ -143,7 +143,7 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
     setTimeout(() => {
       reoptimizeRoverRoutes();
       setIsReoptimizing(false);
-      showToast('Dynamic Route Updated', 'Live sequence re-optimized against real-time traffic and SLA hit windows.', 'success');
+      showToast('Dynamic MPU Patrol Updated', 'Live MPU sequence re-optimized against real-time traffic and SLA hit windows.', 'success');
     }, 600);
   };
 
@@ -151,7 +151,7 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
     if (!activeRover || !currentStop) return;
     if (activeRover.status === 'dwelling') {
       advanceRoverCheckpoint(activeRover.id, 'finish_dwell');
-      showToast('Patrol Stop Completed', `Dwell complete at ${currentStop.siteName}. En-route to next checkpoint.`, 'info');
+      showToast('MPU Stop Completed', `Dwell complete at ${currentStop.siteName}. En-route to next MPU checkpoint.`, 'info');
     } else {
       advanceRoverCheckpoint(activeRover.id, 'arrive');
       showToast('Geofence Verified', `Arrived on-site at ${currentStop.siteName}. Dwell timer started.`, 'success');
@@ -162,13 +162,13 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
     return (
       <div className="bg-slate-900 text-white rounded-2xl p-6 text-center space-y-4 border border-slate-800">
         <Car className="w-12 h-12 text-cyan-400 mx-auto animate-bounce" />
-        <h3 className="text-base font-bold text-white">Initializing Mobile Patrol Route...</h3>
-        <p className="text-xs text-slate-400">Loading GPS coordinates and site sequence from Dispatch & Command.</p>
+        <h3 className="text-base font-bold text-white">Initializing MPU Patrol Circuit...</h3>
+        <p className="text-xs text-slate-400">Loading GPS coordinates and MPU site sequence from Dispatch & Command.</p>
         <button
           onClick={handleManualReoptimize}
           className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-slate-950 font-bold text-xs rounded-xl cursor-pointer"
         >
-          Load Live Route
+          Load Live MPU Patrol
         </button>
       </div>
     );
@@ -185,7 +185,7 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
         isOpen={isPhotoModalOpen}
         onClose={() => setIsPhotoModalOpen(false)}
         guard={activeGuard}
-        siteName={currentStop?.siteName || 'Roving Patrol Checkpoint'}
+        siteName={currentStop?.siteName || 'MPU Patrol Checkpoint'}
         gpsCoordinates={currentStop ? { latitude: currentStop.coords.latitude, longitude: currentStop.coords.longitude } : undefined}
         onCompleteVerification={() => {
           setIsPhotoModalOpen(false);
@@ -193,7 +193,7 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
         }}
       />
 
-      {/* TOP STATUS BAR: Active Unit, Dispatch Sync, & Group Selector */}
+      {/* TOP STATUS BAR: Active MPU Unit, Dispatch Sync, & Sector Selector */}
       <div className="bg-slate-950 text-white rounded-2xl p-3.5 border border-cyan-500/40 shadow-xl space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2.5">
@@ -203,7 +203,7 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-black text-white tracking-tight flex items-center gap-1.5">
-                  <span>{activeRover.unitNumber}</span>
+                  <span>MPU Patrol: {activeRover.unitNumber}</span>
                   <span className="text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-500/50 px-2 py-0.5 rounded font-mono font-bold">
                     {activeRover.rovingGroup}
                   </span>
@@ -219,13 +219,13 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
             </div>
           </div>
 
-          {/* Quick Roving Group Switcher */}
+          {/* Quick MPU Sector Switcher */}
           <div className="flex items-center gap-1.5">
             <select
               value={selectedRoverId}
               onChange={(e) => setSelectedRoverId(e.target.value)}
               className="bg-slate-900 border border-slate-700 hover:border-cyan-500 text-cyan-300 rounded-lg px-2 py-1 text-xs font-mono font-bold cursor-pointer transition-colors"
-              title="Select Roving Patrol Circuit"
+              title="Select MPU Patrol Circuit"
             >
               {rovers.map((r) => (
                 <option key={r.id} value={r.id}>
@@ -552,7 +552,7 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
               }`}
             >
               <Compass className="w-3 h-3" />
-              <span>Map Route</span>
+              <span>MPU Topology</span>
             </button>
 
             <button
@@ -606,7 +606,7 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
           <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
             <span className="flex items-center gap-1.5 text-cyan-300 font-bold">
               <Compass className="w-3.5 h-3.5" />
-              <span>Circuit Route Topology: {activeRover.rovingGroup}</span>
+              <span>MPU Sector Topology: {activeRover.rovingGroup}</span>
             </span>
             <span>Total: {activePlan.totalDistanceKm || 18.4} km • ~{activePlan.totalEstimatedMinutes || 180}m circuit</span>
           </div>
@@ -698,7 +698,7 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
                 <span>Shift #{activeClockedInShift?.id || '402'}</span>
               </div>
               <p className="mt-0.5">
-                Officer {activeGuard.name} ({activeGuard.badgeNumber}) confirmed for {activeRover.unitNumber} roving patrol.
+                Officer {activeGuard.name} ({activeGuard.badgeNumber}) confirmed for {activeRover.unitNumber} MPU patrol.
               </p>
             </div>
           </div>
@@ -901,7 +901,7 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
             <Phone className="w-4 h-4" />
           </div>
           <div>
-            <span className="text-[10px] text-slate-400 uppercase font-bold block">Need Route Reassignment?</span>
+            <span className="text-[10px] text-slate-400 uppercase font-bold block">Need MPU Sector Reassignment?</span>
             <span className="font-bold text-slate-800 dark:text-slate-200 font-mono">Dispatch & Command: {opsPhone}</span>
           </div>
         </div>
@@ -910,7 +910,7 @@ export const LiveRouteView: React.FC<LiveRouteViewProps> = ({
           onClick={handleManualReoptimize}
           className="px-3 py-1.5 bg-[#1e3a8a] hover:bg-blue-800 dark:bg-cyan-600 dark:hover:bg-cyan-500 text-white dark:text-slate-950 rounded-xl font-bold text-xs cursor-pointer shadow-xs transition-colors"
         >
-          Re-Optimize Route
+          Re-Optimize MPU
         </button>
       </div>
     </div>

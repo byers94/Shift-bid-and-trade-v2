@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
 import { ScheduledShift, StandardShiftReport } from '../../types/shift';
+import { useClientDirectivesStore } from '../client/ClientPortal';
 import {
   ShieldAlert,
   Wrench,
@@ -102,6 +103,7 @@ export const ShiftHandoffModal: React.FC<ShiftHandoffModalProps> = ({
     standardReports,
     sitesList
   } = useShiftOps();
+  const { directives, acknowledgeDirective } = useClientDirectivesStore();
 
   const [selectedFilter, setSelectedFilter] = useState<'all' | HandoffCategory>('all');
 
@@ -215,9 +217,36 @@ export const ShiftHandoffModal: React.FC<ShiftHandoffModalProps> = ({
       };
     });
 
+    // Merge active Client Portal Special Watch Directives for this site
+    const activeClientDirectives = directives.filter(
+      (dir) =>
+        dir.status === 'ACTIVE' &&
+        (dir.siteId === targetSite.siteId ||
+          dir.siteName.toLowerCase() === targetSite.siteName.toLowerCase())
+    );
+
+    activeClientDirectives.forEach((dir) => {
+      const tsMs = new Date(dir.createdAt).getTime();
+      normalized.push({
+        id: `client-dir-${dir.id}`,
+        reportNumber: dir.id,
+        category: dir.priority === 'High Alert' ? 'critical_incident' : 'routine_dar',
+        categoryLabel: `Client Watch (${dir.priority})`,
+        timestamp: dir.createdAt,
+        timestampMs: tsMs,
+        relativeTimestamp: formatRelativePassDownTime(dir.createdAt),
+        officerName: dir.postedBy,
+        officerCallsign: 'CLIENT-PM',
+        title: `[Special Watch] ${dir.targetArea}`,
+        narrative: dir.instructions,
+        locationZone: dir.targetArea,
+        metadataTag: `EXP: ${dir.expirationWindow}`
+      });
+    });
+
     // Sort newest first
     return normalized.sort((a, b) => b.timestampMs - a.timestampMs);
-  }, [allReports, targetSite]);
+  }, [allReports, targetSite, directives]);
 
   if (!isOpen) return null;
 
@@ -231,6 +260,22 @@ export const ShiftHandoffModal: React.FC<ShiftHandoffModalProps> = ({
       : handoffEntries.filter((e) => e.category === selectedFilter);
 
   const handleConfirmAcknowledge = () => {
+    // Also record acknowledgment on any active client directives for this site
+    directives
+      .filter(
+        (dir) =>
+          dir.status === 'ACTIVE' &&
+          (dir.siteId === targetSite.siteId ||
+            dir.siteName.toLowerCase() === targetSite.siteName.toLowerCase())
+      )
+      .forEach((dir) => {
+        acknowledgeDirective(dir.id, {
+          id: activeGuard.id,
+          name: activeGuard.name,
+          badgeNumber: activeGuard.badgeNumber
+        });
+      });
+
     const payload: ShiftHandoffAcknowledgment = {
       shiftId: activeShift?.id || `shift-${Date.now()}`,
       officerId: activeShift?.guardId || activeGuard.id,

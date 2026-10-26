@@ -1,5 +1,6 @@
 import React from 'react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
+import { useClientDirectivesStore } from '../client/ClientPortal';
 import { 
   AlertTriangle, 
   AlertOctagon, 
@@ -52,8 +53,28 @@ export const PriorityExceptionTray: React.FC<PriorityExceptionTrayProps> = ({
     guardsList,
     sitesList
   } = useShiftOps();
+  const { directives } = useClientDirectivesStore();
 
   const exceptions: PriorityExceptionItem[] = [];
+
+  // 0. Active Client Portal Special Watch / Pass-Down Directives
+  directives
+    .filter(d => d.status === 'ACTIVE')
+    .slice(0, 3)
+    .forEach(dir => {
+      exceptions.push({
+        id: `exc-client-dir-${dir.id}`,
+        category: 'critical_incident',
+        title: `Client Special Watch (${dir.priority}): ${dir.siteName}`,
+        subtitle: `${dir.targetArea} — "${dir.instructions}" • Posted by ${dir.postedBy} (${dir.acknowledgments.length} Guard Ack)`,
+        siteName: dir.siteName,
+        urgency: dir.priority === 'High Alert' ? 'critical' : 'high',
+        actionLabel: 'View Pass-Down',
+        onAction: () => {
+          if (onNavigateTab) onNavigateTab('standard_reports');
+        }
+      });
+    });
 
   // 1. Uncovered / open shifts starting within 2 hours
   const now = new Date();

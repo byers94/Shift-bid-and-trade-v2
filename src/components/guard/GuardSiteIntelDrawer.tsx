@@ -107,10 +107,17 @@ export const GuardSiteIntelDrawer: React.FC<GuardSiteIntelDrawerProps> = ({
   const parkingDocs = siteDocs.filter((d) => d.docType === 'PARKING_ROSTER');
   const gateDocs = siteDocs.filter((d) => d.docType === 'GATE_CODES');
 
-  const vacantRows = parsePipeRows(vacantDocs).filter((r) => {
-    const q = searchQuery.trim().toLowerCase();
-    return !q || r.cols.some((c) => c.toLowerCase().includes(q));
-  });
+  const isNewlyVacantRow = (r: { cols: string[] }) =>
+    (r.cols[5] || '').toUpperCase().includes('NEW') ||
+    (r.cols[3] || '').toUpperCase().includes('NEW') ||
+    (r.cols[4] || '').includes('NEW (24h)');
+
+  const vacantRows = parsePipeRows(vacantDocs)
+    .filter((r) => {
+      const q = searchQuery.trim().toLowerCase();
+      return !q || r.cols.some((c) => c.toLowerCase().includes(q));
+    })
+    .sort((a, b) => (isNewlyVacantRow(b) ? 1 : 0) - (isNewlyVacantRow(a) ? 1 : 0));
 
   const parkingRows = parsePipeRows(parkingDocs).filter((r) => {
     const q = searchQuery.trim().toLowerCase();
@@ -311,12 +318,25 @@ export const GuardSiteIntelDrawer: React.FC<GuardSiteIntelDrawerProps> = ({
                       const lockbox = row.cols[2] || 'N/A';
                       const status = row.cols[3] || 'VACANT_READY';
                       const note = row.cols[4] || '';
+                      const isNewlyAdded = isNewlyVacantRow(row);
                       const checkedAt = inspectedUnits[unit];
 
                       return (
-                        <tr key={`${unit}-${idx}`} className="hover:bg-slate-900/50">
+                        <tr
+                          key={`${unit}-${idx}`}
+                          className={`hover:bg-slate-900/50 ${
+                            isNewlyAdded ? 'bg-emerald-950/25' : ''
+                          }`}
+                        >
                           <td className="py-2.5 px-3">
-                            <div className="font-black text-white">{unit}</div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-black text-white">{unit}</span>
+                              {isNewlyAdded && (
+                                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 font-mono text-[10px] font-black">
+                                  🟢 NEWLY VACANT • NEW (24h)
+                                </span>
+                              )}
+                            </div>
                             <div className="text-[10px] text-slate-400">{bldg}</div>
                             {note && (
                               <div className="text-[10px] text-slate-300 mt-0.5 italic">
@@ -332,7 +352,8 @@ export const GuardSiteIntelDrawer: React.FC<GuardSiteIntelDrawerProps> = ({
                           <td className="py-2.5 px-2.5 whitespace-nowrap">
                             <span
                               className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
-                                status.includes('READY') || status.includes('LOCKED')
+                                status.toUpperCase().includes('READY') ||
+                                status.toUpperCase().includes('LOCKED')
                                   ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
                                   : 'bg-blue-950/80 text-blue-300 border-blue-500/40'
                               }`}

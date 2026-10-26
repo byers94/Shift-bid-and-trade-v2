@@ -19,6 +19,7 @@ import {
 import { SiteJsonImportModal } from './SiteJsonImportModal';
 import { GeofenceBoundaryEditorModal } from './GeofenceBoundaryEditorModal';
 import { SiteDocumentManager } from '../admin/SiteDocumentManager';
+import { ManageClientLoginsModal } from '../client/ClientPortal';
 import { validateSite, auditAllSites, SiteValidationResult } from '../../utils/siteValidation';
 import {
   computeSiteLifecycleStatus,
@@ -127,6 +128,7 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
   const [contractTypeFilter, setContractTypeFilter] = useState<string>('all');
   const [validationFilter, setValidationFilter] = useState<'all' | 'needs_attention' | 'missing_contact' | 'incomplete_orders' | 'ready'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'table' | 'roving_matrix'>('grid');
+  const [isClientLoginsModalOpen, setIsClientLoginsModalOpen] = useState(false);
 
   // Modal States
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -1052,6 +1054,15 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            type="button"
+            id="btn-manage-client-logins"
+            onClick={() => setIsClientLoginsModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/40 rounded-lg text-xs font-mono font-bold shadow-2xs transition-colors cursor-pointer"
+            title="View, generate, or reset isolated per-site Client Portal credentials"
+          >
+            [ 🔑 Manage Client Logins ]
+          </button>
           <button
             type="button"
             id="btn-open-site-json-import"
@@ -4715,6 +4726,12 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
           }}
         />
       )}
+
+      {/* Per-Site Client Portal Credentials Modal */}
+      <ManageClientLoginsModal
+        isOpen={isClientLoginsModalOpen}
+        onClose={() => setIsClientLoginsModalOpen(false)}
+      />
     </div>
   );
 };

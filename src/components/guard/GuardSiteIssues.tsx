@@ -57,7 +57,9 @@ export function loadStoredSiteIssues(): SiteIssue[] {
 export function saveStoredSiteIssues(issues: SiteIssue[]): void {
   try {
     localStorage.setItem(STORAGE_KEY_SITE_ISSUES, JSON.stringify(issues));
-    window.dispatchEvent(new CustomEvent(SYNC_EVENT_NAME));
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent(SYNC_EVENT_NAME));
+    }, 0);
   } catch {}
 }
 
@@ -75,7 +77,9 @@ export function loadStoredDarLogRefs(): DARLogReference[] {
 export function saveStoredDarLogRefs(logs: DARLogReference[]): void {
   try {
     localStorage.setItem(STORAGE_KEY_DAR_LOG_REFS, JSON.stringify(logs));
-    window.dispatchEvent(new CustomEvent(SYNC_EVENT_NAME));
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent(SYNC_EVENT_NAME));
+    }, 0);
   } catch {}
 }
 
@@ -97,19 +101,17 @@ export function useSiteIssuesStore() {
   }, []);
 
   const updateSiteIssues = useCallback((updater: SiteIssue[] | ((prev: SiteIssue[]) => SiteIssue[])) => {
-    setSiteIssuesState((prev) => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      saveStoredSiteIssues(next);
-      return next;
-    });
+    const current = loadStoredSiteIssues();
+    const next = typeof updater === 'function' ? updater(current) : updater;
+    saveStoredSiteIssues(next);
+    setSiteIssuesState(next);
   }, []);
 
   const updateDarLogs = useCallback((updater: DARLogReference[] | ((prev: DARLogReference[]) => DARLogReference[])) => {
-    setDarLogsState((prev) => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      saveStoredDarLogRefs(next);
-      return next;
-    });
+    const current = loadStoredDarLogRefs();
+    const next = typeof updater === 'function' ? updater(current) : updater;
+    saveStoredDarLogRefs(next);
+    setDarLogsState(next);
   }, []);
 
   return {

@@ -30,6 +30,7 @@ import { DispatchCommandDashboard } from './DispatchCommandDashboard';
 import { RosterMatrixView } from '../admin/RosterMatrixView';
 import { ResourceManagement } from '../admin/ResourceManagement';
 import { SiteIssueTracker } from '../admin/SiteIssueTracker';
+import { ManageClientLoginsModal } from '../client/ClientPortal';
 import { 
   ShieldCheck, 
   BookOpen, 
@@ -164,6 +165,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   const [showSidePanel, setShowSidePanel] = useState(true);
   const [isUserManagementOpen, setIsUserManagementOpen] = useState(false);
   const [userManagementTab, setUserManagementTab] = useState<'admins' | 'guards'>('admins');
+  const [isClientLoginsOpen, setIsClientLoginsOpen] = useState(false);
   const [isBidsModalOpen, setIsBidsModalOpen] = useState(false);
   const [selectedBidsShiftId, setSelectedBidsShiftId] = useState<string | null>(null);
   const [isAutoFillModalOpen, setIsAutoFillModalOpen] = useState(false);
@@ -231,11 +233,11 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         </button>
 
         {/* Center-Right View Switcher */}
-        <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-xs font-bold shrink-0">
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar bg-slate-950 p-0.5 rounded-lg border border-slate-800 text-xs font-bold shrink-0">
           <button
             type="button"
             onClick={() => setActiveView('ops')}
-            className={`px-2 py-1 rounded-md transition-colors cursor-pointer ${
+            className={`px-2 py-1 rounded-md transition-colors whitespace-nowrap cursor-pointer ${
               activeView === 'ops'
                 ? 'bg-blue-600 text-white font-black'
                 : 'text-slate-400 hover:text-white'
@@ -246,13 +248,24 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
           <button
             type="button"
             onClick={() => setActiveView('guard')}
-            className={`px-2 py-1 rounded-md transition-colors cursor-pointer ${
+            className={`px-2 py-1 rounded-md transition-colors whitespace-nowrap cursor-pointer ${
               activeView === 'guard'
                 ? 'bg-blue-600 text-white font-black'
                 : 'text-slate-400 hover:text-white'
             }`}
           >
             Guard
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveView('client')}
+            className={`px-2 py-1 rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+              activeView === 'client'
+                ? 'bg-blue-600 text-white font-black'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            🏢 Client
           </button>
         </div>
 
@@ -329,6 +342,16 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
           </div>
 
           <div className="hidden md:flex items-center gap-2">
+            {/* Manage Per-Site Client Portal Logins Button */}
+            <button
+              id="open-client-logins-btn"
+              onClick={() => setIsClientLoginsOpen(true)}
+              className="px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 bg-amber-500/20 border border-amber-400/50 hover:bg-amber-500/30 text-amber-200 shadow-xs cursor-pointer"
+              title="Manage Per-Site Client Portal Logins & PINs"
+            >
+              <span>[ 🔑 Manage Client Logins ]</span>
+            </button>
+
             {/* User & Access Management Button */}
             <button
               id="open-user-management-btn"
@@ -1453,6 +1476,17 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
                 type="button"
                 onClick={() => {
                   setShowSessionModal(false);
+                  setIsClientLoginsOpen(true);
+                }}
+                className="w-full py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 font-mono font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <span>[ 🔑 Manage Client Logins ]</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSessionModal(false);
                   if (onLock) onLock();
                   setActiveView('guard');
                 }}
@@ -1464,6 +1498,11 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
           </div>
         </div>
       )}
+
+      <ManageClientLoginsModal
+        isOpen={isClientLoginsOpen}
+        onClose={() => setIsClientLoginsOpen(false)}
+      />
     </main>
   );
 };

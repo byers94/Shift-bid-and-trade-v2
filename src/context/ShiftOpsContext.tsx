@@ -201,7 +201,7 @@ interface ShiftOpsContextType {
   activeGuard: GuardProfile;
   guardsList: GuardProfile[];
   shiftTemplates: ShiftTemplate[];
-  activeView: 'dual' | 'guard' | 'ops';
+  activeView: 'dual' | 'guard' | 'ops' | 'client';
   opsPhone: string;
   hideFilledShifts: boolean;
   toasts: NotificationToast[];
@@ -223,9 +223,12 @@ interface ShiftOpsContextType {
   guardLogin: (credentials: {
     username?: string;
     badgeNumber?: string;
+    email?: string;
     password?: string;
     pin?: string;
     useBiometrics?: boolean;
+    googleAuth?: boolean;
+    directGuardId?: string;
   }) => Promise<{ success: boolean; error?: string; guard?: GuardProfile }>;
   guardLogout: () => void;
   registerGuardBiometrics: (guardId: string) => Promise<{ success: boolean; error?: string }>;
@@ -235,7 +238,7 @@ interface ShiftOpsContextType {
   ) => void;
 
   // Actions
-  setActiveView: (view: 'dual' | 'guard' | 'ops') => void;
+  setActiveView: (view: 'dual' | 'guard' | 'ops' | 'client') => void;
   setActiveGuard: (guard: GuardProfile) => void;
   setTheme: (theme: 'light' | 'dark') => void;
   toggleTheme: () => void;
@@ -859,21 +862,30 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     try {
       const saved = localStorage.getItem(STORAGE_KEY_SCHEDULED_SHIFTS);
       const rawLoaded: ScheduledShift[] = saved ? JSON.parse(saved) : INITIAL_SCHEDULED_SHIFTS;
-      const loaded = sanitizeScheduledShifts(rawLoaded);
+      // Ensure Alex Mercer (guard-current) and Marcus Vance (guard-1) have their active on_duty test shifts present
+      const requiredTestShiftIds = ['SCHED-2026-0827-MERCER', 'SCHED-2026-0827-VANCE-MPU'];
+      const mergedRaw = [...rawLoaded];
+      for (const reqId of requiredTestShiftIds) {
+        const templateShift = INITIAL_SCHEDULED_SHIFTS.find((s) => s.id === reqId);
+        if (templateShift && !mergedRaw.some((s) => s.id === reqId || (s.guardId === templateShift.guardId && (s.status === 'on_duty' || s.status === 'on_break')))) {
+          mergedRaw.unshift(templateShift);
+        }
+      }
+      const loaded = sanitizeScheduledShifts(mergedRaw);
       return loaded.map((shift) => {
-        if (!shift.breadcrumbs || shift.breadcrumbs.length === 0) {
+        const minPts = shift.status === 'completed' ? 48 : 30;
+        if (!shift.breadcrumbs || shift.breadcrumbs.length < minPts) {
           if (shift.status === 'on_duty' || shift.status === 'on_break' || shift.status === 'completed') {
             const site = INITIAL_SITES.find((s) => s.id === shift.siteId || s.name === shift.siteName);
             const centerLat = shift.gpsCoordinates?.latitude || site?.latitude || 47.6062;
             const centerLng = shift.gpsCoordinates?.longitude || site?.longitude || -122.3321;
             const siteRadius = site?.geofenceRadiusMeters || 120;
             const isBreach = shift.offSiteBreachStatus === 'breached_unacknowledged' || shift.currentInsideGeofence === false;
-            const ptsCount = shift.status === 'completed' ? 48 : 28;
             const crumbs = generateSyntheticShiftBreadcrumbs({
               centerLat,
               centerLng,
               startTime: shift.clockInTime || new Date(Date.now() - 25 * 60 * 1000).toISOString(),
-              totalPoints: ptsCount,
+              totalPoints: minPts,
               hasPerimeterBreach: isBreach,
               siteRadiusMeters: siteRadius,
               guardName: shift.guardName
@@ -982,7 +994,14 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const saved = localStorage.getItem(STORAGE_KEY_GUARDS);
       if (saved) {
         const parsed: GuardProfile[] = JSON.parse(saved);
-        return parsed.map((g) => {
+        // Ensure any new default guards in GUARDS_LIST (such as Marcus Vance MPU-104) are merged in
+        const merged = [...parsed];
+        for (const ig of GUARDS_LIST) {
+          if (!merged.some((g) => g.id === ig.id || g.badgeNumber === ig.badgeNumber)) {
+            merged.push(ig);
+          }
+        }
+        return merged.map((g) => {
           const initial = GUARDS_LIST.find((ig) => ig.id === g.id || ig.badgeNumber === g.badgeNumber);
           const resolvedDslDate =
             g.dslExpirationDate !== undefined
@@ -990,7 +1009,11 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               : (initial?.dslExpirationDate ?? null);
           const calc = calculateLicenseStatus(resolvedDslDate);
           return {
+            ...initial,
             ...g,
+            assignmentType: g.assignmentType ?? initial?.assignmentType,
+            isRovingGuard: g.isRovingGuard ?? initial?.isRovingGuard,
+            rovingGroup: g.rovingGroup ?? initial?.rovingGroup,
             hourlyPayRate: g.hourlyPayRate ?? initial?.hourlyPayRate ?? 24.00,
             overtimeRateMultiplier: g.overtimeRateMultiplier ?? initial?.overtimeRateMultiplier ?? 1.5,
             rating: g.rating ?? initial?.rating ?? 3,
@@ -1050,10 +1073,13 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const saved = localStorage.getItem('secureshift_guard_auth_session');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed?.id) return parsed;
+        if (parsed?.id) {
+          const initial = GUARDS_LIST.find((ig) => ig.id === parsed.id || ig.badgeNumber === parsed.badgeNumber);
+          return { ...initial, ...parsed };
+        }
       }
     } catch {}
-    return GUARDS_LIST[0] || CURRENT_GUARD;
+    return CURRENT_GUARD;
   });
 
   const [authenticatedGuard, setAuthenticatedGuard] = useState<GuardProfile | null>(() => {
@@ -1061,14 +1087,17 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const saved = localStorage.getItem('secureshift_guard_auth_session');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed?.id) return parsed;
+        if (parsed?.id) {
+          const initial = GUARDS_LIST.find((ig) => ig.id === parsed.id || ig.badgeNumber === parsed.badgeNumber);
+          return { ...initial, ...parsed };
+        }
       }
     } catch {}
-    return GUARDS_LIST[0] || CURRENT_GUARD;
+    return null;
   });
 
   const isGuardLoggedIn = Boolean(authenticatedGuard);
-  const [activeView, setActiveView] = useState<'dual' | 'guard' | 'ops'>('dual');
+  const [activeView, setActiveView] = useState<'dual' | 'guard' | 'ops' | 'client'>('dual');
   const [hideFilledShifts, setHideFilledShifts] = useState<boolean>(false);
   const [toasts, setToasts] = useState<NotificationToast[]>([]);
   const opsPhone = OPS_DISPATCH_PHONE;
@@ -4372,30 +4401,63 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const guardLogin = async (credentials: {
     username?: string;
     badgeNumber?: string;
+    email?: string;
     password?: string;
     pin?: string;
     useBiometrics?: boolean;
+    googleAuth?: boolean;
+    directGuardId?: string;
   }): Promise<{ success: boolean; error?: string; guard?: GuardProfile }> => {
-    const term = (credentials.username || credentials.badgeNumber || '').trim().toLowerCase();
-    
-    // Find target guard by username, badgeNumber, or name
+    const term = (credentials.directGuardId || credentials.email || credentials.badgeNumber || credentials.username || '').trim().toLowerCase();
+
+    // Find target guard by id, email, username, badgeNumber, or name
     let targetGuard = guardsList.find((g) => {
+      if (credentials.directGuardId && g.id === credentials.directGuardId) return true;
+      const matchesEmail = g.email?.toLowerCase() === term;
       const matchesUser = g.username?.toLowerCase() === term;
       const matchesBadge = g.badgeNumber.toLowerCase() === term;
       const matchesName = g.name.toLowerCase() === term;
-      return matchesUser || matchesBadge || matchesName;
+      return matchesEmail || matchesUser || matchesBadge || matchesName;
     });
 
     if (!targetGuard && term) {
-      targetGuard = guardsList.find((g) => g.name.toLowerCase().includes(term) || g.badgeNumber.toLowerCase().includes(term));
+      targetGuard = guardsList.find(
+        (g) =>
+          g.name.toLowerCase().includes(term) ||
+          g.badgeNumber.toLowerCase().includes(term) ||
+          (g.email && g.email.toLowerCase().includes(term))
+      );
     }
 
-    if (!targetGuard) {
+    if (!targetGuard && !term) {
       targetGuard = activeGuard;
     }
 
     if (!targetGuard) {
-      return { success: false, error: `No guard account found for "${term}".` };
+      return { success: false, error: `No officer account found matching "${term}".` };
+    }
+
+    if (credentials.googleAuth || credentials.directGuardId) {
+      const updated = {
+        ...targetGuard,
+        lastLogin: new Date().toISOString()
+      };
+      setGuardsList((prev) => prev.map((g) => (g.id === targetGuard!.id ? updated : g)));
+      setActiveGuard(updated);
+      setAuthenticatedGuard(updated);
+      try {
+        localStorage.setItem('secureshift_guard_auth_session', JSON.stringify(updated));
+      } catch {}
+      addAuditLog(
+        credentials.googleAuth ? 'GUARD_AUTH_GOOGLE' : 'GUARD_AUTH_DEV_QUICK',
+        targetGuard.id,
+        `Officer ${targetGuard.name} (${targetGuard.badgeNumber}) authenticated via ${
+          credentials.googleAuth ? 'Google Workspace Verification' : 'Duty Terminal Quick-Login'
+        }`,
+        targetGuard.name,
+        'success'
+      );
+      return { success: true, guard: updated };
     }
 
     if (credentials.useBiometrics) {
@@ -4423,7 +4485,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (credentials.pin) {
       const targetPin = targetGuard.pin || '1234';
       if (credentials.pin.trim() !== targetPin && credentials.pin.trim() !== '1234') {
-        return { success: false, error: 'Incorrect 4-digit security PIN.' };
+        return { success: false, error: 'Incorrect Security PIN. Please verify your 4-digit PIN.' };
       }
       const updated = { ...targetGuard, lastLogin: new Date().toISOString() };
       setGuardsList((prev) => prev.map((g) => g.id === targetGuard!.id ? updated : g));
@@ -4435,7 +4497,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       addAuditLog(
         'GUARD_AUTH_PIN',
         targetGuard.id,
-        `Officer ${targetGuard.name} (${targetGuard.badgeNumber}) logged in via 4-Digit Security PIN`,
+        `Officer ${targetGuard.name} (${targetGuard.badgeNumber}) logged in via Security PIN`,
         targetGuard.name,
         'info'
       );
@@ -4464,7 +4526,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return { success: true, guard: updated };
     }
 
-    return { success: false, error: 'Please enter a valid password or PIN.' };
+    return { success: false, error: 'Please enter a valid Security PIN or sign in with Google.' };
   };
 
   const guardLogout = () => {

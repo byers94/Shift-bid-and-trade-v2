@@ -7,7 +7,7 @@ export const INITIAL_ROVERS: RoverVehicle[] = [
     callSign: 'MPU-METRO-1',
     assignedGuardId: 'guard-1',
     assignedGuardName: 'Marcus Vance',
-    assignedGuardBadge: 'G-1082',
+    assignedGuardBadge: 'MPU-104',
     assignedGuardPhone: '+1 (555) 206-8812',
     rovingGroup: 'Metro',
     status: 'dwelling',

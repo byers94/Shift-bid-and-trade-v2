@@ -162,14 +162,24 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
   // Most recent activity DAR check-in for current guard
   const lastActivityReport = getLastActivityReportForGuard(activeGuard.id);
 
-  // Find assigned rover vehicle and dynamic route plan (support active shift, guard profile, or group assignment)
-  const assignedRover = getRoverForGuard(activeGuard.id) || (
-    activeClockedInShift?.assignedRoverId ? rovers.find(r => r.id === activeClockedInShift.assignedRoverId) : undefined
-  ) || (
-    activeClockedInShift?.rovingGroup ? getRoverByGroup(activeClockedInShift.rovingGroup) : undefined
-  ) || (
-    activeGuard.isRovingGuard ? getRoverByGroup(activeGuard.rovingGroup || 'Metro') : undefined
-  );
+  // Role-gate MPU assignment: Dedicated Site guards (e.g., Alex Mercer SEC-8842) never see MPU / roving cards
+  const isMpuGuard =
+    activeGuard.assignmentType === 'MPU' ||
+    (activeGuard.assignmentType !== 'DEDICATED_SITE' &&
+      (Boolean(activeGuard.isRovingGuard) ||
+        Boolean(activeClockedInShift?.isRovingShift) ||
+        Boolean(activeClockedInShift?.rovingGroup) ||
+        Boolean(activeClockedInShift?.assignedRoverId)));
+
+  // Find assigned MPU vehicle and dynamic patrol plan only when officer is an MPU guard
+  const assignedRover = isMpuGuard
+    ? getRoverForGuard(activeGuard.id) ||
+      (activeClockedInShift?.assignedRoverId
+        ? rovers.find((r) => r.id === activeClockedInShift.assignedRoverId)
+        : undefined) ||
+      (activeClockedInShift?.rovingGroup ? getRoverByGroup(activeClockedInShift.rovingGroup) : undefined) ||
+      (activeGuard.isRovingGuard ? getRoverByGroup(activeGuard.rovingGroup || 'Metro') : undefined)
+    : undefined;
   const activeRoverPlan = assignedRover ? roverPlans[assignedRover.id] : undefined;
   const currentRoverStop = activeRoverPlan && assignedRover 
     ? activeRoverPlan.stops[assignedRover.currentStopIndex] 
@@ -1084,8 +1094,8 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
             isRoverGuard={Boolean(assignedRover)} 
           />
 
-          {/* ROVER DYNAMIC ROUTE & GEOFENCE CIRCUIT (If Guard is assigned to a Rover) */}
-          {assignedRover && activeRoverPlan && (
+          {/* MPU DYNAMIC PATROL & GEOFENCE CIRCUIT (Only rendered if Guard is assigned to an MPU shift) */}
+          {isMpuGuard && assignedRover && activeRoverPlan && (
             <div className="bg-slate-900 text-white rounded-2xl p-4 border border-cyan-500/40 shadow-xl space-y-3.5">
               {/* Emergency Intercept High-Priority Alert */}
               {activeUnitIntercept && (
@@ -1147,30 +1157,30 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
                     </div>
                     <div>
                       <h3 className="text-xs font-black text-white flex items-center gap-1.5 flex-wrap">
-                        <span>Mobile Patrol Circuit: {assignedRover.unitNumber}</span>
+                        <span>MPU Patrol Circuit: {assignedRover.unitNumber}</span>
                         <span className="text-[10px] bg-cyan-950 text-cyan-300 border border-cyan-500/40 px-2 py-0.2 rounded font-mono font-bold">
                           {assignedRover.rovingGroup}
                         </span>
                       </h3>
                       <p className="text-[11px] text-slate-400 font-mono">
-                        Assigned Officer: <strong className="text-slate-200">{activeGuard.name}</strong> • Mobile Unit ID: {assignedRover.id}
+                        Assigned Officer: <strong className="text-slate-200">{activeGuard.name}</strong> • MPU ID: {assignedRover.id}
                       </p>
                     </div>
                   </div>
 
                   <div className="text-right font-mono">
-                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Circuit Progress</span>
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">MPU Progress</span>
                     <p className="text-xs font-black text-cyan-300">
                       Stop {assignedRover.currentStopIndex + 1} of {activeRoverPlan.stops.length} ({Math.round(((assignedRover.currentStopIndex) / activeRoverPlan.stops.length) * 100)}% Complete)
                     </p>
                   </div>
                 </div>
 
-                {/* Real-time route optimization factors bar */}
+                {/* Real-time MPU optimization factors bar */}
                 <div className="p-2 bg-slate-950/80 rounded-xl border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px]">
                   <div className="flex items-center gap-1.5 font-mono text-slate-300">
                     <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    <span className="text-slate-400">Route Logic:</span>
+                    <span className="text-slate-400">MPU Logic:</span>
                     <span className="font-bold text-cyan-300 capitalize">{(activeRoverPlan.optimizationMode || 'traffic_density_optimal').replace(/_/g, ' ')}</span>
                   </div>
 
@@ -1943,18 +1953,159 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
         onReleaseWakeLock={releaseWakeLock}
       />
 
-      {/* SHIFT 30S GPS BREADCRUMB TRAIL REVIEW MODAL */}
-      {isShiftTrailModalOpen && (
-        <ShiftBreadcrumbsModal
-          isOpen={isShiftTrailModalOpen}
-          onClose={() => setIsShiftTrailModalOpen(false)}
-          breadcrumbs={activeClockedInShift?.breadcrumbs || liveBreadcrumbs}
-          shift={activeClockedInShift}
-          site={sitesList.find((s) => s.name === activeClockedInShift?.siteName || s.id === activeClockedInShift?.siteId)}
-          guardName={activeGuard.name}
-          guardBadge={activeGuard.badgeNumber}
-        />
-      )}
+      {/* SHIFT 30S GPS BREADCRUMB TRAIL REVIEW MODAL (Mobile-Scrollable Fix #30 down to Fix #1) */}
+      {isShiftTrailModalOpen && (() => {
+        const trailFixes = activeClockedInShift?.breadcrumbs && activeClockedInShift.breadcrumbs.length > 0
+          ? activeClockedInShift.breadcrumbs
+          : liveBreadcrumbs;
+        const totalFixes = trailFixes.length;
+        const inGeofenceCount = trailFixes.filter((b) => b.inGeofence).length;
+        const compliancePct = totalFixes > 0 ? Math.round((inGeofenceCount / totalFixes) * 100) : 100;
+        const orderedFixesDescending = trailFixes
+          .map((crumb, idx) => ({ crumb, fixNumber: idx + 1 }))
+          .reverse();
+
+        return (
+          <div
+            id="guard-gps-breadcrumb-trail-modal-overlay"
+            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-3"
+          >
+            <div
+              id="guard-gps-breadcrumb-trail-modal"
+              className="max-h-[85vh] w-full max-w-md flex flex-col overflow-hidden bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl text-slate-100"
+            >
+              {/* Pinned Modal Header ("GPS Breadcrumb Trail" & summary stats) */}
+              <div className="shrink-0 p-3.5 bg-slate-950 border-b border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0">
+                      <Navigation className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-black text-white truncate">
+                          GPS Breadcrumb Trail
+                        </h3>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-700/60 shrink-0">
+                          {totalFixes} Fixes
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 font-mono truncate">
+                        {activeGuard.name} ({activeGuard.badgeNumber}) • {activeClockedInShift?.siteName || selectedSiteName}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    id="guard-close-gps-trail-top-btn"
+                    type="button"
+                    onClick={() => setIsShiftTrailModalOpen(false)}
+                    className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center text-xs font-bold shrink-0 cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Summary Stats Row */}
+                <div className="grid grid-cols-3 gap-2 text-[10px] font-mono">
+                  <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                    <span className="text-slate-400 block uppercase text-[9px]">Total Fixes</span>
+                    <span className="text-xs font-bold text-white">
+                      Fix #{totalFixes} → #1
+                    </span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                    <span className="text-slate-400 block uppercase text-[9px]">Geofence</span>
+                    <span className="text-xs font-bold text-emerald-400">
+                      {compliancePct}% ({inGeofenceCount}/{totalFixes})
+                    </span>
+                  </div>
+                  <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                    <span className="text-slate-400 block uppercase text-[9px]">Cadence</span>
+                    <span className="text-xs font-bold text-cyan-300">
+                      30s Continuous
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Dedicated Scrollable Body: Fix #30 down to Fix #1 */}
+              <div
+                id="guard-gps-breadcrumb-trail-scroll-body"
+                className="flex-1 overflow-y-auto overscroll-contain pr-1.5 space-y-2 py-2 max-h-[60vh] pl-3"
+              >
+                {orderedFixesDescending.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-slate-400">
+                    No GPS breadcrumb fixes recorded yet for this shift.
+                  </div>
+                ) : (
+                  orderedFixesDescending.map(({ crumb, fixNumber }) => {
+                    const isInside = crumb.inGeofence !== false && crumb.status !== 'breached';
+                    return (
+                      <div
+                        key={crumb.id || `fix-${fixNumber}`}
+                        className={`p-2.5 rounded-xl border text-xs font-mono transition-colors ${
+                          isInside
+                            ? 'bg-slate-950/90 border-slate-800 text-slate-200'
+                            : 'bg-rose-950/50 border-rose-500/50 text-rose-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-700/50 text-[10px] font-bold">
+                              Fix #{fixNumber}
+                            </span>
+                            <span className="text-[11px] text-slate-300 font-bold">
+                              {new Date(crumb.timestamp).toLocaleTimeString()}
+                            </span>
+                          </div>
+                          <span
+                            className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                              isInside
+                                ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-700/40'
+                                : 'bg-rose-950 text-rose-300 border border-rose-700/60'
+                            }`}
+                          >
+                            {isInside ? '✓ Inside Geofence' : '⚠️ Perimeter Breach'}
+                          </span>
+                        </div>
+
+                        <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-400">
+                          <span className="text-cyan-300">
+                            {crumb.latitude.toFixed(5)}, {crumb.longitude.toFixed(5)} (±{Math.round(crumb.accuracy ?? 5)}m)
+                          </span>
+                          <span>
+                            {crumb.distanceMeters ?? 14}m • {crumb.batteryLevel ?? 92}% Batt
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Pinned Close Footer */}
+              <div className="shrink-0 p-3 bg-slate-950 border-t border-slate-800 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => addBreadcrumbManually()}
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 text-xs font-mono font-bold cursor-pointer"
+                >
+                  + Log Instant Fix
+                </button>
+                <button
+                  id="guard-close-gps-trail-footer-btn"
+                  type="button"
+                  onClick={() => setIsShiftTrailModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold cursor-pointer"
+                >
+                  Close Trail ({totalFixes})
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 48-HOUR SHIFT HANDOFF (PASS-DOWN) MODAL */}
       <ShiftHandoffModal
