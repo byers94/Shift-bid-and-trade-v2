@@ -65,7 +65,8 @@ import { GeoCoordinates } from '../../utils/geo';
 import {
   GuardDARInFormAlertBanner,
   processGuardDARInfractionSubmission,
-  useSiteIssuesStore
+  useSiteIssuesStore,
+  UnifiedReportModalPrefill
 } from './GuardSiteIssues';
 import { IssueCategory } from '../../types/siteIssues';
 import { useShiftOps } from '../../context/ShiftOpsContext';
@@ -82,6 +83,7 @@ interface StandardReportingModalProps {
   initialReportType?: StandardReportType;
   initialActivityZone?: string;
   intervalSequence?: number;
+  initialPrefill?: UnifiedReportModalPrefill | null;
 }
 
 export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
@@ -95,16 +97,19 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
   gpsCoordinates,
   initialReportType = 'activity',
   initialActivityZone = 'North Perimeter & Facility Access Gates',
-  intervalSequence = 1
+  intervalSequence = 1,
+  initialPrefill = null
 }) => {
   // Active Report Category
-  const [reportType, setReportType] = useState<StandardReportType>(initialReportType);
+  const [reportType, setReportType] = useState<StandardReportType>(initialPrefill?.reportType || initialReportType);
   const { addAuditLog, showToast } = useShiftOps();
   const { siteIssues, darLogs, updateSiteIssues, updateDarLogs } = useSiteIssuesStore();
 
   // Common metadata
   const [locationName, setLocationName] = useState<string>(siteName);
   const [reportTime, setReportTime] = useState<string>(new Date().toTimeString().slice(0, 5));
+  const [trackOnWatchlist, setTrackOnWatchlist] = useState<boolean>(initialPrefill?.trackOnWatchlist ?? false);
+  const [existingTicketId, setExistingTicketId] = useState<string | undefined>(initialPrefill?.existingTicketId);
   
   // Mandatory Media State
   const [mediaList, setMediaList] = useState<ReportMediaAttachment[]>([]);
@@ -237,6 +242,50 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  // Synchronize modal tab and prefill fields when opened from Duty Terminal or Active Site Issues & Watchlist
+  useEffect(() => {
+    if (!isOpen) return;
+    setLocationName(siteName);
+    if (initialPrefill) {
+      setReportType(initialPrefill.reportType);
+      setTrackOnWatchlist(initialPrefill.trackOnWatchlist ?? true);
+      setExistingTicketId(initialPrefill.existingTicketId);
+
+      if (initialPrefill.reportType === 'maintenance') {
+        if (initialPrefill.unitOrLocation) setMaintLocation(initialPrefill.unitOrLocation);
+        if (initialPrefill.title) setMaintTitle(initialPrefill.title);
+        if (initialPrefill.notes) setMaintDescription(initialPrefill.notes);
+        if (initialPrefill.issueCategory === 'SAFETY_HAZARD') {
+          setMaintSafetyHazard(true);
+          setMaintSeverity('critical_safety_hazard');
+        }
+      } else if (initialPrefill.reportType === 'incident') {
+        if (initialPrefill.title) setIncTitle(initialPrefill.title);
+        if (initialPrefill.notes) {
+          setIncSummary(initialPrefill.notes);
+          setIncActionTaken(initialPrefill.notes);
+        }
+        if (initialPrefill.issueCategory === 'PARKING_VIOLATION') {
+          setIncCategory('parking_violation');
+          setNewPartyVehicle(initialPrefill.vehicleDetails || initialPrefill.unitOrLocation || '');
+          if (initialPrefill.unitOrLocation && !initialPrefill.vehicleDetails) {
+            setNewPartyAddress(initialPrefill.unitOrLocation);
+          }
+        } else if (initialPrefill.issueCategory === 'NOISE_COMPLAINT') {
+          setIncCategory('altercation_verbal');
+          setNewPartyAddress(initialPrefill.unitOrLocation || '');
+          if (initialPrefill.vehicleDetails) setNewPartyVehicle(initialPrefill.vehicleDetails);
+        } else {
+          if (initialPrefill.unitOrLocation) setNewPartyAddress(initialPrefill.unitOrLocation);
+          if (initialPrefill.vehicleDetails) setNewPartyVehicle(initialPrefill.vehicleDetails);
+        }
+      }
+    } else {
+      setReportType(initialReportType);
+      setExistingTicketId(undefined);
+    }
+  }, [isOpen, initialReportType, initialPrefill, siteName]);
 
   const stopCamera = useCallback(() => {
     if (videoRef.current && videoRef.current.srcObject) {
@@ -660,51 +709,83 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
     try {
       const mappedCategory: IssueCategory =
         reportType === 'maintenance'
-          ? maintSafetyHazard
+          ? maintSafetyHazard || maintSeverity === 'critical_safety_hazard'
             ? 'SAFETY_HAZARD'
             : 'MAINTENANCE'
           : reportType === 'incident'
-          ? incCategory === 'parking_violation'
+          ? incCategory === 'parking_violation' || incCategory === 'suspicious_vehicle'
             ? 'PARKING_VIOLATION'
             : incCategory === 'altercation_verbal'
             ? 'NOISE_COMPLAINT'
             : 'CHRONIC_LEASE_VIOLATION'
           : 'CHRONIC_LEASE_VIOLATION';
 
+      const incidentPrimaryKey =
+        newPartyAddress.trim() ||
+        newPartyVehicle.trim() ||
+        partiesList.find((p) => p.address)?.address ||
+        partiesList.find((p) => p.vehicleInfo)?.vehicleInfo ||
+        incTitle.trim();
+
       const targetKeyInput =
         reportType === 'activity'
           ? zoneChecked
           : reportType === 'maintenance'
           ? maintLocation
-          : incTitle;
+          : incidentPrimaryKey;
+
+      const secondaryKeys =
+        reportType === 'incident'
+          ? [
+              newPartyAddress,
+              newPartyVehicle,
+              incTitle,
+              ...partiesList.map((p) => p.address || ''),
+              ...partiesList.map((p) => p.vehicleInfo || '')
+            ].filter((k) => Boolean(k && k.trim()))
+          : [];
 
       const targetNotes =
         reportType === 'activity'
           ? activityNotes
           : reportType === 'maintenance'
           ? maintDescription
-          : incSummary;
+          : incActionTaken.trim() || incSummary.trim() || incTimeline.trim();
 
-      processGuardDARInfractionSubmission({
-        siteId: activeShift?.siteId || locationName,
-        siteName: locationName,
-        category: mappedCategory,
-        rawKeyValue: targetKeyInput,
-        unitOrLocation: targetKeyInput,
-        title: reportType === 'maintenance' ? maintTitle : reportType === 'incident' ? incTitle : zoneChecked,
-        notes: targetNotes,
-        photoUrl: mediaList[0]?.dataUrl,
-        guardName: guard.name,
-        badgeNumber: guard.badgeNumber,
-        shiftId: activeShift?.id,
-        shiftName: activeShift?.postRole || 'Active Shift',
-        existingLogs: darLogs,
-        siteIssues,
-        updateDarLogs,
-        updateSiteIssues,
-        addAuditLog,
-        showToast
-      });
+      if (reportType === 'maintenance' || reportType === 'incident') {
+        processGuardDARInfractionSubmission({
+          siteId: activeShift?.siteId || locationName,
+          siteName: locationName,
+          category: mappedCategory,
+          rawKeyValue: targetKeyInput,
+          secondaryKeyValues: secondaryKeys,
+          existingTicketId,
+          forceTrackOnWatchlist: reportType === 'maintenance' ? true : trackOnWatchlist,
+          unitOrLocation: targetKeyInput,
+          vehicleDetails:
+            reportType === 'incident'
+              ? newPartyVehicle.trim() || partiesList.find((p) => p.vehicleInfo)?.vehicleInfo
+              : undefined,
+          title:
+            reportType === 'maintenance'
+              ? maintTitle
+              : reportType === 'incident'
+              ? incTitle
+              : zoneChecked,
+          notes: targetNotes,
+          photoUrl: mediaList[0]?.url || mediaList[0]?.dataUrl,
+          guardName: guard.name,
+          badgeNumber: guard.badgeNumber,
+          shiftId: activeShift?.id,
+          shiftName: activeShift?.postRole || 'Active Shift',
+          existingLogs: darLogs,
+          siteIssues,
+          updateDarLogs,
+          updateSiteIssues,
+          addAuditLog,
+          showToast
+        });
+      }
 
       onSubmitReport(payload);
       setTimeout(() => {
@@ -725,49 +806,43 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
         id="standard-reporting-modal-container" 
         className="relative w-full max-w-4xl max-h-[92vh] flex flex-col bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden text-slate-100 my-auto"
       >
-        {/* Modal Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 bg-slate-900/90 sticky top-0 z-20">
-          <div className="flex items-center gap-3">
-            <div className={`p-2.5 rounded-xl ${
-              reportType === 'activity' 
-                ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30' 
-                : reportType === 'maintenance' 
-                  ? 'bg-amber-600/20 text-amber-400 border border-amber-500/30' 
-                  : escalatedToEmergency
-                    ? 'bg-red-600/30 text-red-400 border border-red-500/50 animate-pulse'
-                    : 'bg-orange-600/20 text-orange-400 border border-orange-500/30'
-            }`}>
-              {reportType === 'activity' && <FileText className="w-5 h-5" />}
-              {reportType === 'maintenance' && <Wrench className="w-5 h-5" />}
-              {reportType === 'incident' && (escalatedToEmergency ? <Siren className="w-5 h-5" /> : <ShieldAlert className="w-5 h-5" />)}
+        {/* Modal Header - Clean Responsive 2-Row Stack */}
+        <div className="flex flex-col gap-1.5 px-4 py-3 border-b border-slate-800 bg-slate-950 sticky top-0 z-20">
+          {/* Row 1: Back Button + Title on Left, Compact Officer Pill on Right */}
+          <div className="flex items-center justify-between gap-2 w-full">
+            <div className="flex items-center gap-2 min-w-0">
+              <button
+                type="button"
+                id="close-report-modal-btn"
+                onClick={onClose}
+                disabled={isSubmitting}
+                className="px-2 py-1 rounded-md bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white transition-colors shrink-0 cursor-pointer text-sm font-bold leading-none"
+                title="Back to Duty Terminal"
+              >
+                ←
+              </button>
+              <h2 className="text-base font-bold text-white whitespace-nowrap">
+                Officer Duty Report
+              </h2>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold tracking-tight text-white">
-                  Officer Duty Report
-                </h2>
-                <span className="px-2 py-0.5 text-xs font-semibold rounded-md bg-slate-800 text-slate-300 border border-slate-700">
-                  {guard.name} ({guard.badgeNumber})
-                </span>
-                {escalatedToEmergency && reportType === 'incident' && (
-                  <span className="px-2 py-0.5 text-xs font-black rounded-md bg-red-600/30 text-red-300 border border-red-500/40 uppercase tracking-wide animate-pulse">
-                    🚨 911 / EMS Escalated
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-400">
-                Standard shift duty log • Mandatory photo/video verification required
-              </p>
-            </div>
+
+            <span className="text-[11px] font-medium px-2.5 py-1 rounded-md bg-slate-900 border border-slate-700 text-slate-300 shrink-0 whitespace-nowrap">
+              {guard.name} ({guard.badgeNumber})
+            </span>
           </div>
 
-          <button
-            id="close-report-modal-btn"
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {/* Row 2: Subtitle + Conditional EMS / 911 Escalated Alert Badge */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <p className="text-xs text-slate-400">
+              Standard shift duty log • Mandatory photo/video verification
+            </p>
+
+            {escalatedToEmergency && reportType === 'incident' && (
+              <div className="w-full sm:w-auto mt-1 sm:mt-0 px-2.5 py-1 rounded bg-red-950/90 border border-red-500/70 text-red-200 text-xs font-bold flex items-center justify-center gap-1.5 animate-pulse">
+                <span>🚨 EMS / 911 ESCALATED — PRIORITY CAD LINK ACTIVE</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Report Type Selector Tabs */}
@@ -1378,10 +1453,87 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                   required
                 />
                 <GuardDARInFormAlertBanner
-                  siteId="ALL"
-                  category={incCategory === 'parking_violation' ? 'PARKING_VIOLATION' : 'CHRONIC_LEASE_VIOLATION'}
+                  siteId={activeShift?.siteId || locationName || 'ALL'}
+                  category={
+                    incCategory === 'parking_violation' || incCategory === 'suspicious_vehicle'
+                      ? 'PARKING_VIOLATION'
+                      : incCategory === 'altercation_verbal'
+                      ? 'NOISE_COMPLAINT'
+                      : 'CHRONIC_LEASE_VIOLATION'
+                  }
                   rawKeyValue={incTitle}
                 />
+              </div>
+
+              {/* Property Correlation & Site Watchlist Inputs (Unit / Resident Address & Vehicle Plate) */}
+              <div className="p-3.5 rounded-xl bg-slate-800/90 border border-amber-500/40 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span className="text-xs font-bold text-amber-200 uppercase tracking-wide">
+                      Chronic Infraction Correlation &amp; Watchlist Lookup
+                    </span>
+                  </div>
+
+                  <label className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-amber-950/70 border border-amber-500/50 cursor-pointer hover:bg-amber-900/60 transition-colors">
+                    <input
+                      type="checkbox"
+                      id="inc-track-on-watchlist-chk"
+                      checked={trackOnWatchlist}
+                      onChange={(e) => setTrackOnWatchlist(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded text-amber-500 focus:ring-amber-500 bg-slate-900 border-amber-500/60"
+                    />
+                    <span className="text-[11px] font-bold text-amber-200 font-mono">
+                      [ 📌 Track on Site Watchlist ]
+                    </span>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-200 mb-1 flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Unit / Resident Address</span>
+                    </label>
+                    <input
+                      type="text"
+                      id="inc-unit-address-input"
+                      value={newPartyAddress}
+                      onChange={(e) => setNewPartyAddress(e.target.value)}
+                      placeholder="e.g. Apt #402 / Bldg 3"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                    <GuardDARInFormAlertBanner
+                      siteId={activeShift?.siteId || locationName || 'ALL'}
+                      category={
+                        incCategory === 'altercation_verbal'
+                          ? 'NOISE_COMPLAINT'
+                          : 'CHRONIC_LEASE_VIOLATION'
+                      }
+                      rawKeyValue={newPartyAddress}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-200 mb-1 flex items-center gap-1.5">
+                      <Car className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Vehicle Make / Model / Plate #</span>
+                    </label>
+                    <input
+                      type="text"
+                      id="inc-vehicle-plate-input"
+                      value={newPartyVehicle}
+                      onChange={(e) => setNewPartyVehicle(e.target.value)}
+                      placeholder="e.g. 2018 Silver Honda Civic, WA #ABC-1234"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                    <GuardDARInFormAlertBanner
+                      siteId={activeShift?.siteId || locationName || 'ALL'}
+                      category="PARKING_VIOLATION"
+                      rawKeyValue={newPartyVehicle}
+                    />
+                  </div>
+                </div>
               </div>
 
               <div>
@@ -1869,6 +2021,11 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                           placeholder="e.g. 2018 Silver Honda Civic, WA #ABC-1234"
                           className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none"
                         />
+                        <GuardDARInFormAlertBanner
+                          siteId={activeShift?.siteId || locationName || 'ALL'}
+                          category="PARKING_VIOLATION"
+                          rawKeyValue={newPartyVehicle}
+                        />
                       </div>
 
                       <div>
@@ -1896,6 +2053,15 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                           onChange={(e) => setNewPartyAddress(e.target.value)}
                           placeholder="e.g. Apt #402 / Bldg 3"
                           className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none"
+                        />
+                        <GuardDARInFormAlertBanner
+                          siteId={activeShift?.siteId || locationName || 'ALL'}
+                          category={
+                            incCategory === 'altercation_verbal'
+                              ? 'NOISE_COMPLAINT'
+                              : 'CHRONIC_LEASE_VIOLATION'
+                          }
+                          rawKeyValue={newPartyAddress}
                         />
                       </div>
                     </div>

@@ -62,9 +62,36 @@ export const DEFAULT_CHRONIC_ESCALATION_RULES: ChronicEscalationRule[] = [
  */
 export function normalizeInfractionKey(rawKeyValue: string): string {
   if (!rawKeyValue) return '';
-  const strippedPrefixes = rawKeyValue
-    .trim()
-    .replace(/^(?:apartment|apt|unit|space|stall|spot|plate|lic|license|suite|ste|room|rm)\.?\s*#?\s*/i, '');
+  const trimmed = rawKeyValue.trim();
+
+  // 1. Extract explicit Unit / Apt / Suite / Room number even when followed by "/ Bldg 3" etc.
+  const unitMatch = trimmed.match(
+    /\b(?:apartment|apt|unit|suite|ste|room|rm)\.?\s*#?\s*([0-9]{1,5}[a-z]?)\b/i
+  );
+  if (unitMatch && unitMatch[1]) {
+    return unitMatch[1].toUpperCase();
+  }
+
+  // 2. Extract License Plate when prefixed by State #, Plate:, or standard hyphenated plate format
+  const prefixedPlateMatch = trimmed.match(
+    /(?:plate|lic|license|tag|\b[a-z]{2}\s*#)\s*:?\s*#?\s*([a-z0-9]{2,4}[-\s][a-z0-9]{2,5})\b/i
+  );
+  if (prefixedPlateMatch && prefixedPlateMatch[1]) {
+    return prefixedPlateMatch[1].replace(/[#\-\s:.,/\\]/g, '').toUpperCase();
+  }
+
+  const standalonePlateMatch = trimmed.match(
+    /\b([a-z]{2,3}-\d{3,4}[a-z]?|[a-z]{2}-\d{3,4}[a-z]?)\b/i
+  );
+  if (standalonePlateMatch && standalonePlateMatch[1]) {
+    return standalonePlateMatch[1].replace(/[#\-\s:.,/\\]/g, '').toUpperCase();
+  }
+
+  // 3. Fallback: strip leading unit/plate/location prefix and normalize punctuation
+  const strippedPrefixes = trimmed.replace(
+    /^(?:apartment|apt|unit|space|stall|spot|plate|lic|license|suite|ste|room|rm)\.?\s*#?\s*/i,
+    ''
+  );
 
   return strippedPrefixes
     .replace(/[#\-\s:.,/\\]/g, '')
@@ -72,13 +99,17 @@ export function normalizeInfractionKey(rawKeyValue: string): string {
 }
 
 export function inferMatchKeyType(rawKeyValue: string, category?: IssueCategory | string): InfractionMatchKey {
-  if (category === 'PARKING_VIOLATION' || /plate|lic/i.test(rawKeyValue)) {
+  if (
+    category === 'PARKING_VIOLATION' ||
+    /plate|lic|\b[a-z]{2}\s*#\s*[a-z0-9]{2,4}[-\s][a-z0-9]{2,5}|\b[a-z]{2,3}-\d{3,4}/i.test(rawKeyValue)
+  ) {
     return 'LICENSE_PLATE';
   }
   if (
     category === 'NOISE_COMPLAINT' ||
     category === 'CHRONIC_LEASE_VIOLATION' ||
-    /^(?:apt|apartment|unit|suite|ste|rm|room|\d+[a-z]?$)/i.test(rawKeyValue.trim())
+    /\b(?:apt|apartment|unit|suite|ste|rm|room)\s*\.?\s*#?\s*\d+/i.test(rawKeyValue.trim()) ||
+    /^\d+[a-z]?$/i.test(rawKeyValue.trim())
   ) {
     return 'UNIT_NUMBER';
   }
@@ -90,21 +121,46 @@ function doesSiteMatch(targetSiteId: string, candidateSiteId?: string, candidate
   const normTarget = targetSiteId.trim().toLowerCase();
   if (candidateSiteId && candidateSiteId.trim().toLowerCase() === normTarget) return true;
   if (candidateSiteName && candidateSiteName.trim().toLowerCase() === normTarget) return true;
+  if (candidateSiteName && candidateSiteName.toLowerCase().includes(normTarget)) return true;
+  return false;
+}
+
+function keysOverlap(normA: string, normB: string): boolean {
+  if (!normA || !normB) return false;
+  if (normA === normB) return true;
+  if (normA.length >= 4 && normB.length >= 4) {
+    if (normA.includes(normB) || normB.includes(normA)) return true;
+  }
   return false;
 }
 
 function doesLogMatchNormalizedKey(log: DARLogReference, normalizedKey: string): boolean {
   if (!normalizedKey) return false;
-  if (log.matchKeyValue && normalizeInfractionKey(log.matchKeyValue) === normalizedKey) {
+  const logKeyNorm = log.matchKeyValue ? normalizeInfractionKey(log.matchKeyValue) : '';
+  if (keysOverlap(logKeyNorm, normalizedKey)) {
     return true;
   }
-  if (log.unitOrLocation && normalizeInfractionKey(log.unitOrLocation) === normalizedKey) {
+  const logLocNorm = log.unitOrLocation ? normalizeInfractionKey(log.unitOrLocation) : '';
+  if (keysOverlap(logLocNorm, normalizedKey)) {
     return true;
   }
   // Check if notes contain the exact unit/plate token
-  const normNotes = normalizeInfractionKey(log.notes || '');
+  const normNotes = (log.notes || '').replace(/[#\-\s:.,/\\]/g, '').toUpperCase();
   if (normalizedKey.length >= 3 && normNotes.includes(normalizedKey)) {
     return true;
+  }
+  return false;
+}
+
+function doesTicketMatchNormalizedKey(ticket: SiteIssue, normalizedKey: string): boolean {
+  if (!normalizedKey) return false;
+  const ticketKeyNorm = ticket.matchKeyValue ? normalizeInfractionKey(ticket.matchKeyValue) : '';
+  if (keysOverlap(ticketKeyNorm, normalizedKey)) return true;
+  const ticketLocNorm = ticket.unitOrLocation ? normalizeInfractionKey(ticket.unitOrLocation) : '';
+  if (keysOverlap(ticketLocNorm, normalizedKey)) return true;
+  if (ticket.vehicleDetails) {
+    const vehicleNorm = normalizeInfractionKey(ticket.vehicleDetails);
+    if (keysOverlap(vehicleNorm, normalizedKey)) return true;
   }
   return false;
 }
@@ -145,8 +201,8 @@ export function evaluateInfractionHistory(
   const rollingWindowMs = (rule.rollingWindowDays || 7) * 24 * 60 * 60 * 1000;
   const nowMs = Date.now();
 
-  // 1. Filter existingLogs matching siteId and normalized key within rollingWindowDays (default 7 days)
-  const matchingWindowLogs = existingLogs.filter((log) => {
+  // 1. Filter existingLogs matching siteId (with fallback across sites if none at current siteId) and normalized key within rollingWindowDays
+  let matchingWindowLogs = existingLogs.filter((log) => {
     const siteMatches =
       !log.siteId && !log.siteName
         ? true
@@ -160,14 +216,30 @@ export function evaluateInfractionHistory(
     return nowMs - logTimeMs <= rollingWindowMs;
   });
 
-  // 2. Active Ticket Lookup: check openTickets (status !== 'RESOLVED') at siteId with matching matchKeyValue
-  const activeTicket = openTickets.find(
+  if (matchingWindowLogs.length === 0 && siteId !== 'ALL') {
+    matchingWindowLogs = existingLogs.filter((log) => {
+      if (!doesLogMatchNormalizedKey(log, normalizedKey)) return false;
+      const logTimeMs = new Date(log.timestamp).getTime();
+      if (Number.isNaN(logTimeMs)) return true;
+      return nowMs - logTimeMs <= rollingWindowMs;
+    });
+  }
+
+  // 2. Active Ticket Lookup: check openTickets (status !== 'RESOLVED') at siteId (with cross-site fallback)
+  let activeTicket = openTickets.find(
     (ticket) =>
       ticket.status !== 'RESOLVED' &&
       doesSiteMatch(siteId, ticket.siteId, ticket.siteName) &&
-      (normalizeInfractionKey(ticket.matchKeyValue) === normalizedKey ||
-        normalizeInfractionKey(ticket.unitOrLocation) === normalizedKey)
+      doesTicketMatchNormalizedKey(ticket, normalizedKey)
   );
+
+  if (!activeTicket && siteId !== 'ALL') {
+    activeTicket = openTickets.find(
+      (ticket) =>
+        ticket.status !== 'RESOLVED' &&
+        doesTicketMatchNormalizedKey(ticket, normalizedKey)
+    );
+  }
 
   // Combine and deduplicate logs from matchingWindowLogs + activeTicket.linkedDarLogs
   const combinedLogsMap = new Map<string, DARLogReference>();
@@ -230,6 +302,69 @@ export function evaluateInfractionHistory(
 const hoursAgoIso = (hours: number) => new Date(Date.now() - hours * 3600 * 1000).toISOString();
 
 export const INITIAL_CROSS_SHIFT_DAR_LOGS: DARLogReference[] = [
+  // Apt #402 / Bldg 3 seed logs (for instant correlation when typing "Apt #402 / Bldg 3" or "Apt 402")
+  {
+    darId: 'dar-log-402-a',
+    shiftId: 'shift-hist-402a',
+    shiftName: 'Night Shift (22:00 - 06:00)',
+    timestamp: hoursAgoIso(46),
+    guardName: 'Officer Carlos Silva',
+    badgeNumber: 'SEC-118',
+    category: 'NOISE_COMPLAINT',
+    notes: 'Noise Complaint & balcony disturbance at Apt #402 / Bldg 3 at 23:15. Issued verbal warning to resident.',
+    siteId: 'site-1',
+    siteName: 'Port Authority - Pier 7',
+    unitOrLocation: 'Apt #402 / Bldg 3',
+    matchKeyType: 'UNIT_NUMBER',
+    matchKeyValue: '402'
+  },
+  {
+    darId: 'dar-log-402-b',
+    shiftId: 'shift-hist-402b',
+    shiftName: 'Swing Shift (14:00 - 22:00)',
+    timestamp: hoursAgoIso(19),
+    guardName: 'Officer Elena Rostova',
+    badgeNumber: 'SEC-204',
+    category: 'CHRONIC_LEASE_VIOLATION',
+    notes: 'Repeat corridor disturbance & unauthorized guest access reported at Apt #402 / Bldg 3.',
+    siteId: 'site-1',
+    siteName: 'Port Authority - Pier 7',
+    unitOrLocation: 'Apt #402 / Bldg 3',
+    matchKeyType: 'UNIT_NUMBER',
+    matchKeyValue: '402'
+  },
+  // Vehicle Plate WA #ABC-1234 seed logs
+  {
+    darId: 'dar-log-abc1234-a',
+    shiftId: 'shift-hist-1234a',
+    shiftName: 'Night Shift (22:00 - 06:00)',
+    timestamp: hoursAgoIso(38),
+    guardName: 'Officer Carlos Silva',
+    badgeNumber: 'SEC-118',
+    category: 'PARKING_VIOLATION',
+    notes: '2018 Silver Honda Civic (WA #ABC-1234) parked in restricted loading zone / fire lane. Warning tag #1 placed.',
+    siteId: 'site-1',
+    siteName: 'Port Authority - Pier 7',
+    unitOrLocation: 'WA #ABC-1234 / North Loading Zone',
+    matchKeyType: 'LICENSE_PLATE',
+    matchKeyValue: 'ABC1234'
+  },
+  // Building B, North Gate Entrance maintenance seed log
+  {
+    darId: 'dar-log-northgate-a',
+    shiftId: 'shift-hist-ng1',
+    shiftName: 'Night Shift (22:00 - 06:00)',
+    timestamp: hoursAgoIso(28),
+    guardName: 'Officer Elena Rostova',
+    badgeNumber: 'SEC-204',
+    category: 'MAINTENANCE',
+    notes: 'Overhead security floodlight flickering and keypad latch sticking at Building B, North Gate Entrance.',
+    siteId: 'site-1',
+    siteName: 'Port Authority - Pier 7',
+    unitOrLocation: 'Building B, North Gate Entrance',
+    matchKeyType: 'LOCATION_ASSET',
+    matchKeyValue: 'BUILDINGBNORTHGATEENTRANCE'
+  },
   // Unit 304 at Midtown Commercial Lofts (site-12) AND Port Authority - Pier 7 (site-1) — 2 prior incidents in past 7 days so typing "Apt 304" or "304" triggers 3rd-strike chronic escalation or links to active ticket
   {
     darId: 'dar-log-304-a',

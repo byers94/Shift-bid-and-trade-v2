@@ -136,6 +136,17 @@ export const CATEGORY_LABELS: Record<IssueCategory, string> = {
 // 3. GUARD TERMINAL - LIVE IN-FORM DAR ALERT BANNER & PROCESSOR
 // ============================================================================
 
+export interface UnifiedReportModalPrefill {
+  reportType: 'activity' | 'maintenance' | 'incident';
+  existingTicketId?: string;
+  unitOrLocation?: string;
+  vehicleDetails?: string;
+  issueCategory?: IssueCategory;
+  title?: string;
+  notes?: string;
+  trackOnWatchlist?: boolean;
+}
+
 export interface GuardDARInFormAlertBannerProps {
   siteId: string;
   siteName?: string;
@@ -147,13 +158,21 @@ export interface GuardDARInFormAlertBannerProps {
   onEvaluationChange?: (result: ReturnType<typeof evaluateInfractionHistory> & { matchKeyValue: string }) => void;
 }
 
+const formatShortSightingDate = (isoString: string): string => {
+  const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return isoString;
+  const monthDay = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${monthDay}, ${timeStr}`;
+};
+
 export const GuardDARInFormAlertBanner: React.FC<GuardDARInFormAlertBannerProps> = ({
   siteId,
   category,
   rawKeyValue,
   existingLogs,
   openTickets,
-  debounceMs = 250,
+  debounceMs = 200,
   onEvaluationChange
 }) => {
   const { siteIssues, darLogs } = useSiteIssuesStore();
@@ -189,32 +208,71 @@ export const GuardDARInFormAlertBanner: React.FC<GuardDARInFormAlertBannerProps>
     return null;
   }
 
+  const isMaintenanceMode = category === 'MAINTENANCE' || category === 'SAFETY_HAZARD';
+
   return (
-    <div className="bg-amber-950/80 border border-amber-500/60 p-3 rounded-lg mt-2 text-xs">
-      <div className="flex items-center gap-1.5 font-bold text-amber-300">
-        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0"/>
-        <span>
-          {isChronic 
-            ? `CHRONIC ISSUE ALERT (${matchCount} Previous Reports in Past 7 Days)` 
-            : `PRIOR INCIDENT NOTE (${matchCount} Report in Past 7 Days)`}
-        </span>
+    <div className="bg-amber-950/90 border border-amber-500/70 p-3 rounded-xl mt-2 text-xs shadow-lg">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 font-bold text-amber-300">
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>
+            {isMaintenanceMode
+              ? `PRIOR REPORT / ACTIVE ISSUE ALERT (${matchCount} Prior Report${matchCount === 1 ? '' : 's'})`
+              : isChronic
+              ? `CHRONIC ISSUE ALERT (${matchCount} Previous Reports in Past 7 Days)`
+              : `CHRONIC ISSUE / PRIOR SIGHTING ALERT (${matchCount} Prior Report in Past 7 Days)`}
+          </span>
+        </div>
+
+        {activeTicket && (
+          <span
+            className={`px-2 py-0.5 rounded font-mono text-[10px] font-black uppercase border ${
+              activeTicket.status === 'PENDING_VERIFICATION'
+                ? 'bg-cyan-950 text-cyan-300 border-cyan-500/60'
+                : 'bg-amber-900/80 text-amber-200 border-amber-400/60'
+            }`}
+          >
+            Ticket #{activeTicket.id} • Status: {activeTicket.status}
+          </span>
+        )}
       </div>
-      <p className="text-slate-300 mt-1">
-        <span className="font-semibold text-white">{matchKeyValue}</span> was previously reported at this property across prior shifts:
+
+      <p className="text-slate-200 mt-1">
+        <span className="font-bold text-white">{debouncedKey.trim() || matchKeyValue}</span>{' '}
+        {activeTicket
+          ? `matches active Watchlist Ticket "${activeTicket.title}" (${activeTicket.status}):`
+          : 'was previously reported at this property across prior shifts:'}
       </p>
-      <ul className="mt-1.5 space-y-1 text-slate-400 bg-slate-950/60 p-2 rounded border border-slate-800">
-        {priorIncidents.slice(-2).map(log => (
-          <li key={log.darId} className="flex flex-col">
-            <span className="text-amber-200/90 font-medium">
-              • {new Date(log.timestamp).toLocaleString()} — {log.category} ({log.guardName})
-            </span>
-            <span className="text-slate-400 pl-2 italic">"{log.notes}"</span>
-          </li>
-        ))}
-      </ul>
+
+      {priorIncidents.length > 0 && (
+        <ul className="mt-1.5 space-y-1.5 text-slate-300 bg-slate-950/75 p-2.5 rounded-lg border border-amber-500/30">
+          {priorIncidents.slice(-3).map((log) => {
+            const catLabel =
+              CATEGORY_LABELS[log.category as IssueCategory] ||
+              String(log.category).replace(/_/g, ' ');
+            const shiftLabel = log.shiftName ? ` [${log.shiftName.split(' (')[0]}]` : '';
+            return (
+              <li key={log.darId} className="flex flex-col gap-0.5">
+                <span className="text-amber-200 font-semibold">
+                  • {formatShortSightingDate(log.timestamp)} — {catLabel} (Logged by {log.guardName}
+                  {shiftLabel})
+                </span>
+                {log.notes && (
+                  <span className="text-slate-400 pl-3 italic text-[11px]">"{log.notes}"</span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
       <div className="mt-2 text-amber-200 font-semibold flex items-center justify-between">
         <span>
-          ⚠️ Submitting this report will automatically {activeTicket ? `update Ticket #${activeTicket.id}` : 'escalate to a Chronic Issue Ticket'} and alert Command CAD.
+          ⚠️ Submitting this report will automatically{' '}
+          {activeTicket
+            ? `append to Ticket #${activeTicket.id} (Recurrence ${activeTicket.recurrenceCount + 1}x)`
+            : 'synchronize with Active Site Issues & Watchlist'}{' '}
+          and alert Command CAD.
         </span>
       </div>
     </div>
@@ -226,6 +284,9 @@ export function processGuardDARInfractionSubmission(params: {
   siteName: string;
   category: IssueCategory;
   rawKeyValue: string;
+  secondaryKeyValues?: string[];
+  existingTicketId?: string;
+  forceTrackOnWatchlist?: boolean;
   unitOrLocation: string;
   vehicleDetails?: string;
   title?: string;
@@ -251,6 +312,9 @@ export function processGuardDARInfractionSubmission(params: {
     siteName,
     category,
     rawKeyValue,
+    secondaryKeyValues = [],
+    existingTicketId,
+    forceTrackOnWatchlist = false,
     unitOrLocation,
     vehicleDetails,
     title,
@@ -268,17 +332,51 @@ export function processGuardDARInfractionSubmission(params: {
     showToast
   } = params;
 
-  const matchKeyValue = normalizeInfractionKey(rawKeyValue || unitOrLocation);
-  const matchKeyType: InfractionMatchKey = inferMatchKeyType(rawKeyValue || unitOrLocation, category);
   const openTickets = siteIssues.filter((t) => t.status !== 'RESOLVED');
 
-  const evaluation = evaluateInfractionHistory(
+  // Check primary key and any secondary keys (e.g., Unit # + Vehicle Plate + Title)
+  const candidateKeys = [rawKeyValue, ...secondaryKeyValues, unitOrLocation].filter(
+    (k) => Boolean(k && k.trim())
+  );
+
+  let effectiveRawKey = rawKeyValue || unitOrLocation;
+  let evaluation = evaluateInfractionHistory(
     siteId,
     category,
-    rawKeyValue || unitOrLocation,
+    effectiveRawKey,
     existingLogs,
     openTickets
   );
+
+  for (const candidate of candidateKeys) {
+    const candEval = evaluateInfractionHistory(siteId, category, candidate, existingLogs, openTickets);
+    if (
+      candEval.activeTicket ||
+      candEval.priorIncidents.length > evaluation.priorIncidents.length
+    ) {
+      evaluation = candEval;
+      effectiveRawKey = candidate;
+      if (candEval.activeTicket) break;
+    }
+  }
+
+  // If an explicit existingTicketId was passed (e.g. from [+ Log Repeat Sighting]), ensure we link directly to it
+  if (existingTicketId && !evaluation.activeTicket) {
+    const explicitTicket = siteIssues.find((t) => t.id === existingTicketId);
+    if (explicitTicket) {
+      evaluation = {
+        ...evaluation,
+        isChronic: true,
+        matchCount: Math.max(evaluation.matchCount, explicitTicket.recurrenceCount),
+        activeTicket: explicitTicket,
+        suggestedAction: 'AUTO_LINK_TICKET'
+      };
+      effectiveRawKey = explicitTicket.unitOrLocation || explicitTicket.matchKeyValue;
+    }
+  }
+
+  const matchKeyValue = normalizeInfractionKey(effectiveRawKey) || effectiveRawKey.trim();
+  const matchKeyType: InfractionMatchKey = inferMatchKeyType(effectiveRawKey, category);
 
   const nowIso = new Date().toISOString();
   const newDarLog: DARLogReference = {
@@ -293,7 +391,7 @@ export function processGuardDARInfractionSubmission(params: {
     photoUrl,
     siteId,
     siteName,
-    unitOrLocation: unitOrLocation || rawKeyValue,
+    unitOrLocation: unitOrLocation || effectiveRawKey,
     matchKeyType,
     matchKeyValue
   };
@@ -352,7 +450,10 @@ export function processGuardDARInfractionSubmission(params: {
         'warning'
       );
     }
-  } else if (evaluation.suggestedAction === 'CREATE_CHRONIC_TICKET') {
+  } else if (
+    evaluation.suggestedAction === 'CREATE_CHRONIC_TICKET' ||
+    (forceTrackOnWatchlist && evaluation.priorIncidents.length >= 1)
+  ) {
     const recurrenceCount = evaluation.priorIncidents.length + 1;
     const autoTicketId = `ISS-${Math.floor(1050 + Math.random() * 8900)}`;
     const ticketTitle =
@@ -377,7 +478,7 @@ export function processGuardDARInfractionSubmission(params: {
       category,
       status: 'OPEN',
       title: ticketTitle,
-      unitOrLocation: unitOrLocation || rawKeyValue,
+      unitOrLocation: unitOrLocation || effectiveRawKey,
       vehicleDetails: vehicleDetails?.trim() || undefined,
       matchKeyType,
       matchKeyValue,
@@ -397,7 +498,7 @@ export function processGuardDARInfractionSubmission(params: {
       addAuditLog(
         `[CHRONIC ESCALATION] ${matchKeyValue} at ${siteName} auto-escalated (${recurrenceCount}x sightings) via report by ${guardName}`,
         'system',
-        `[SITE ISSUE] OPEN — ${ticketTitle} (${unitOrLocation || rawKeyValue}) at ${siteName} by ${guardName}`,
+        `[SITE ISSUE] OPEN — ${ticketTitle} (${unitOrLocation || effectiveRawKey}) at ${siteName} by ${guardName}`,
         `${guardName} (${badgeNumber})`,
         'danger'
       );
@@ -411,11 +512,15 @@ export function processGuardDARInfractionSubmission(params: {
       );
     }
   } else {
-    // Standard 1st or 2nd sighting or direct maintenance/safety ticket
-    if (category === 'MAINTENANCE' || category === 'SAFETY_HAZARD') {
+    // Standard 1st sighting or direct maintenance/safety ticket or explicit [📌 Track on Site Watchlist] toggle
+    if (
+      category === 'MAINTENANCE' ||
+      category === 'SAFETY_HAZARD' ||
+      forceTrackOnWatchlist
+    ) {
       const manualTicketId = `ISS-${Math.floor(1050 + Math.random() * 8900)}`;
       const ticketTitle =
-        title?.trim() || `${CATEGORY_LABELS[category]} — ${unitOrLocation || rawKeyValue}`;
+        title?.trim() || `${CATEGORY_LABELS[category]} — ${unitOrLocation || effectiveRawKey}`;
 
       updatedOrCreatedTicket = {
         id: manualTicketId,
@@ -424,7 +529,7 @@ export function processGuardDARInfractionSubmission(params: {
         category,
         status: 'OPEN',
         title: ticketTitle,
-        unitOrLocation: unitOrLocation || rawKeyValue,
+        unitOrLocation: unitOrLocation || effectiveRawKey,
         vehicleDetails: vehicleDetails?.trim() || undefined,
         matchKeyType,
         matchKeyValue,
@@ -453,10 +558,18 @@ export function processGuardDARInfractionSubmission(params: {
 
       if (addAuditLog) {
         addAuditLog(
-          `[SITE ISSUE] OPEN — ${ticketTitle} (${unitOrLocation || rawKeyValue}) at ${siteName} by ${guardName}`,
+          `[SITE ISSUE] OPEN — ${ticketTitle} (${unitOrLocation || effectiveRawKey}) at ${siteName} by ${guardName}`,
           'system',
-          `[SITE ISSUE] OPEN — ${ticketTitle} (${unitOrLocation || rawKeyValue}) at ${siteName} by ${guardName}`,
+          `[SITE ISSUE] OPEN — ${ticketTitle} (${unitOrLocation || effectiveRawKey}) at ${siteName} by ${guardName}`,
           `${guardName} (${badgeNumber})`,
+          'info'
+        );
+      }
+
+      if (showToast) {
+        showToast(
+          `Added to Site Watchlist (#${manualTicketId})`,
+          `${ticketTitle} is now tracked on Active Site Issues & Watchlist.`,
           'info'
         );
       }
@@ -477,11 +590,13 @@ export function processGuardDARInfractionSubmission(params: {
 interface GuardSiteIssuesProps {
   siteId?: string;
   siteName?: string;
+  onOpenUnifiedReportModal?: (prefill: UnifiedReportModalPrefill) => void;
 }
 
 export const GuardSiteIssues: React.FC<GuardSiteIssuesProps> = ({
   siteId: propSiteId,
-  siteName: propSiteName
+  siteName: propSiteName,
+  onOpenUnifiedReportModal
 }) => {
   const {
     activeGuard,
@@ -719,6 +834,22 @@ export const GuardSiteIssues: React.FC<GuardSiteIssuesProps> = ({
   };
 
   const handleOpenRepeatSightingModal = (ticket: SiteIssue) => {
+    if (onOpenUnifiedReportModal) {
+      const isMaint = ticket.category === 'MAINTENANCE' || ticket.category === 'SAFETY_HAZARD';
+      onOpenUnifiedReportModal({
+        reportType: isMaint ? 'maintenance' : 'incident',
+        existingTicketId: ticket.id,
+        unitOrLocation: ticket.unitOrLocation,
+        vehicleDetails:
+          ticket.vehicleDetails ||
+          (ticket.matchKeyType === 'LICENSE_PLATE' ? ticket.matchKeyValue : ''),
+        issueCategory: ticket.category,
+        title: ticket.title,
+        notes: `Observed repeat ${CATEGORY_LABELS[ticket.category].toLowerCase()} at ${ticket.unitOrLocation} during patrol sweep.`,
+        trackOnWatchlist: true
+      });
+      return;
+    }
     setRepeatSightingTicket(ticket);
     setSightingNotes(
       `Observed repeat ${CATEGORY_LABELS[ticket.category].toLowerCase()} at ${ticket.unitOrLocation} during patrol sweep.`
@@ -874,7 +1005,16 @@ export const GuardSiteIssues: React.FC<GuardSiteIssuesProps> = ({
 
           <button
             type="button"
-            onClick={() => setIsDarFormOpen(true)}
+            onClick={() => {
+              if (onOpenUnifiedReportModal) {
+                onOpenUnifiedReportModal({
+                  reportType: 'incident',
+                  trackOnWatchlist: true
+                });
+              } else {
+                setIsDarFormOpen(true);
+              }
+            }}
             className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-sans font-black text-[11px] flex items-center gap-1 cursor-pointer shadow-sm transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />

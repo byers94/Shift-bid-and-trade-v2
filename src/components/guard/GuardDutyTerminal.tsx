@@ -71,7 +71,7 @@ import { getCurrentLocation, calculateDistance, GeoCoordinates, formatDistance, 
 import { playBreakOverAlertSound } from '../../utils/audioAlert';
 import { GuardPanicButton } from './GuardPanicButton';
 import { ShiftHandoffModal, ShiftHandoffAcknowledgment } from './ShiftHandoffModal';
-import { GuardSiteIssues } from './GuardSiteIssues';
+import { GuardSiteIssues, UnifiedReportModalPrefill } from './GuardSiteIssues';
 
 interface GuardDutyTerminalProps {
   onOpenAlertPrefs?: () => void;
@@ -158,6 +158,7 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
   const [reportModalType, setReportModalType] = useState<StandardReportType>('activity');
   const [reportInitialZone, setReportInitialZone] = useState<string>('North Facility Perimeter & Access Gate');
+  const [reportModalPrefill, setReportModalPrefill] = useState<UnifiedReportModalPrefill | null>(null);
 
   // Most recent activity DAR check-in for current guard
   const lastActivityReport = getLastActivityReportForGuard(activeGuard.id);
@@ -1077,6 +1078,7 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
             activeShift={activeClockedInShift}
             lastActivityReport={lastActivityReport}
             onOpenReportModal={(type) => {
+              setReportModalPrefill(null);
               setReportModalType(type);
               setIsReportModalOpen(true);
             }}
@@ -1086,6 +1088,11 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
           <GuardSiteIssues
             siteId={activeClockedInShift.siteId}
             siteName={activeClockedInShift.siteName}
+            onOpenUnifiedReportModal={(prefill) => {
+              setReportModalPrefill(prefill);
+              setReportModalType(prefill.reportType);
+              setIsReportModalOpen(true);
+            }}
           />
 
           {/* Time-Specific Tasks & Amenity Lockouts Schedule */}
@@ -1397,6 +1404,7 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
             guard={activeGuard}
             reports={standardReports}
             onOpenNewReportModal={(type) => {
+              setReportModalPrefill(null);
               setReportModalType(type || 'activity');
               setIsReportModalOpen(true);
             }}
@@ -1456,7 +1464,14 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
           </div>
 
           {/* Active Site Issues & Shift Pass-Down Watchlist */}
-          <GuardSiteIssues siteName={selectedSiteName} />
+          <GuardSiteIssues
+            siteName={selectedSiteName}
+            onOpenUnifiedReportModal={(prefill) => {
+              setReportModalPrefill(prefill);
+              setReportModalType(prefill.reportType);
+              setIsReportModalOpen(true);
+            }}
+          />
 
           {/* Today's Scheduled Shifts Quick-Select (if any) */}
           {guardTodayShifts.length > 0 && (
@@ -1894,7 +1909,10 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
       {/* STANDARD SHIFT REPORTING MODAL (ACTIVITY, MAINTENANCE, INCIDENT) */}
       <StandardReportingModal
         isOpen={isReportModalOpen}
-        onClose={() => setIsReportModalOpen(false)}
+        onClose={() => {
+          setIsReportModalOpen(false);
+          setReportModalPrefill(null);
+        }}
         guard={activeGuard}
         activeShift={activeClockedInShift}
         siteName={activeClockedInShift?.siteName || selectedSiteName}
@@ -1902,6 +1920,7 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
         gpsCoordinates={pendingGpsCoords}
         initialReportType={reportModalType}
         initialActivityZone={reportInitialZone}
+        initialPrefill={reportModalPrefill}
         intervalSequence={lastActivityReport?.activityDetails?.intervalSequence ? lastActivityReport.activityDetails.intervalSequence + 1 : 1}
         onSubmitReport={(reportData) => {
           submitStandardReport(reportData);
