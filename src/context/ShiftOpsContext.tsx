@@ -201,7 +201,7 @@ interface ShiftOpsContextType {
   activeGuard: GuardProfile;
   guardsList: GuardProfile[];
   shiftTemplates: ShiftTemplate[];
-  activeView: 'dual' | 'guard' | 'ops' | 'client';
+  activeView: 'dual' | 'guard' | 'ops' | 'client' | 'resident';
   opsPhone: string;
   hideFilledShifts: boolean;
   toasts: NotificationToast[];
@@ -238,7 +238,7 @@ interface ShiftOpsContextType {
   ) => void;
 
   // Actions
-  setActiveView: (view: 'dual' | 'guard' | 'ops' | 'client') => void;
+  setActiveView: (view: 'dual' | 'guard' | 'ops' | 'client' | 'resident') => void;
   setActiveGuard: (guard: GuardProfile) => void;
   setTheme: (theme: 'light' | 'dark') => void;
   toggleTheme: () => void;
@@ -1097,7 +1097,7 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   });
 
   const isGuardLoggedIn = Boolean(authenticatedGuard);
-  const [activeView, setActiveView] = useState<'dual' | 'guard' | 'ops' | 'client'>('dual');
+  const [activeView, setActiveView] = useState<'dual' | 'guard' | 'ops' | 'client' | 'resident'>('dual');
   const [hideFilledShifts, setHideFilledShifts] = useState<boolean>(false);
   const [toasts, setToasts] = useState<NotificationToast[]>([]);
   const opsPhone = OPS_DISPATCH_PHONE;

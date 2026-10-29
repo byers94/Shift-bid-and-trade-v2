@@ -98,12 +98,14 @@ interface SiteDirectoryProps {
   onNavigateToShifts?: (siteName?: string) => void;
   onNavigateToGuards?: (siteName?: string) => void;
   onCreateShiftForSite?: (site: SiteProfile) => void;
+  onConfigurePortals?: (siteId: string) => void;
 }
 
 export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
   onNavigateToShifts,
   onNavigateToGuards,
-  onCreateShiftForSite
+  onCreateShiftForSite,
+  onConfigurePortals
 }) => {
   const { 
     sitesList, 
@@ -1054,6 +1056,17 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
+          {onConfigurePortals && (
+            <button
+              type="button"
+              id="btn-open-unified-portal-config-from-directory"
+              onClick={() => onConfigurePortals(sitesList[0]?.id || 'site-12')}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40 rounded-lg text-xs font-mono font-bold shadow-2xs transition-colors cursor-pointer"
+              title="Open Unified Client & Resident Portal Configuration Console"
+            >
+              [ ⚙️ Portals &amp; Access Config ]
+            </button>
+          )}
           <button
             type="button"
             id="btn-manage-client-logins"
@@ -2206,6 +2219,21 @@ export const SiteDirectory: React.FC<SiteDirectoryProps> = ({
                     >
                       <Compass className="w-3.5 h-3.5 text-blue-600" />
                       <span>Boundary</span>
+                    </button>
+                    <button
+                      type="button"
+                      id={`btn-configure-portals-${site.id}`}
+                      onClick={() => {
+                        if (onConfigurePortals) {
+                          onConfigurePortals(site.id);
+                        } else {
+                          setIsClientLoginsModalOpen(true);
+                        }
+                      }}
+                      className="px-2 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 rounded-lg text-xs font-mono font-bold shadow-xs flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Configure Client Portal Credentials & Resident Portal Services for this property"
+                    >
+                      <span>[ ⚙️ Configure Portals ]</span>
                     </button>
                     <button
                       type="button"

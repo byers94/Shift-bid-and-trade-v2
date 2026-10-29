@@ -22,6 +22,7 @@ import {
   Clock,
   FileText,
 } from 'lucide-react';
+import { useResidentGuestPassesStore } from '../resident/ResidentPortal';
 
 export interface GuardSiteIntelDrawerProps {
   isOpen?: boolean;
@@ -40,6 +41,7 @@ export const GuardSiteIntelDrawer: React.FC<GuardSiteIntelDrawerProps> = ({
 }) => {
   const { sitesList, activeClockedInShift, activeGuard, addAuditLog, showToast } =
     useShiftOps();
+  useResidentGuestPassesStore();
 
   const resolvedSite = useMemo(() => {
     if (site) return site;
@@ -407,11 +409,16 @@ export const GuardSiteIntelDrawer: React.FC<GuardSiteIntelDrawerProps> = ({
                   const plate = row.cols[3] || 'PLATE-TBD';
                   const status = row.cols[4] || 'DO_NOT_TOW';
                   const notes = row.cols[5] || '';
+                  const isGuestPass = status.includes('AUTHORIZED GUEST PASS') || stall.toLowerCase().includes('guest');
 
                   return (
                     <div
                       key={`${permit}-${idx}`}
-                      className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                      className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+                        isGuestPass
+                          ? 'bg-emerald-950/30 border-emerald-500/50'
+                          : 'bg-slate-950 border-slate-800'
+                      }`}
                     >
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -430,7 +437,13 @@ export const GuardSiteIntelDrawer: React.FC<GuardSiteIntelDrawerProps> = ({
                         )}
                       </div>
 
-                      <span className="px-2.5 py-1 rounded-lg bg-emerald-950/90 border border-emerald-500/40 text-emerald-300 font-mono font-black text-[10px] uppercase shrink-0 self-start sm:self-center">
+                      <span
+                        className={`px-2.5 py-1 rounded-lg font-mono font-black text-[10px] uppercase shrink-0 self-start sm:self-center border ${
+                          isGuestPass
+                            ? 'bg-emerald-500/20 border-emerald-400/60 text-emerald-200 shadow-sm shadow-emerald-500/20'
+                            : 'bg-emerald-950/90 border-emerald-500/40 text-emerald-300'
+                        }`}
+                      >
                         {status}
                       </span>
                     </div>

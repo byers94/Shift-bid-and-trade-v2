@@ -3,6 +3,7 @@ import { ShiftOpsProvider, useShiftOps } from './context/ShiftOpsContext';
 import { GuardView } from './components/guard/GuardView';
 import { OpsAdminView } from './components/ops/OpsAdminView';
 import { ClientPortal } from './components/client/ClientPortal';
+import { ResidentPortal } from './components/resident/ResidentPortal';
 import { ToastContainer } from './components/common/ToastContainer';
 import { CallReceiptBanner } from './components/ops/CallReceiptBanner';
 import { 
@@ -45,7 +46,7 @@ interface AdminAuthGateProps {
   adminBadge: string;
 }
 
-function getTargetViewFromUrl(): 'guard' | 'ops' | 'dual' | 'client' | null {
+function getTargetViewFromUrl(): 'guard' | 'ops' | 'dual' | 'client' | 'resident' | null {
   if (typeof window === 'undefined') return null;
   const path = window.location.pathname.toLowerCase();
   const hash = window.location.hash.toLowerCase().replace('#', '');
@@ -80,6 +81,15 @@ function getTargetViewFromUrl(): 'guard' | 'ops' | 'dual' | 'client' | null {
     return 'client';
   }
 
+  if (
+    path === '/resident' ||
+    path.startsWith('/resident/') ||
+    hash === 'resident' ||
+    viewParam === 'resident'
+  ) {
+    return 'resident';
+  }
+
   if (path === '/guard' || path.startsWith('/guard/') || hash === 'guard' || viewParam === 'guard') {
     return 'guard';
   }
@@ -91,7 +101,7 @@ function getTargetViewFromUrl(): 'guard' | 'ops' | 'dual' | 'client' | null {
   return null;
 }
 
-function updateBrowserRoute(view: 'guard' | 'ops' | 'dual' | 'client') {
+function updateBrowserRoute(view: 'guard' | 'ops' | 'dual' | 'client' | 'resident') {
   if (typeof window === 'undefined') return;
   try {
     const targetPath =
@@ -101,6 +111,8 @@ function updateBrowserRoute(view: 'guard' | 'ops' | 'dual' | 'client') {
         ? '/guard'
         : view === 'client'
         ? '/client'
+        : view === 'resident'
+        ? '/resident'
         : '/dual';
     if (window.location.pathname !== targetPath) {
       window.history.replaceState({ view }, '', targetPath);
@@ -287,7 +299,7 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const handleSwitchView = (view: 'guard' | 'ops' | 'dual' | 'client') => {
+  const handleSwitchView = (view: 'guard' | 'ops' | 'dual' | 'client' | 'resident') => {
     if (view === 'guard') {
       setActiveView('guard');
       updateBrowserRoute('guard');
@@ -297,6 +309,12 @@ const AppContent: React.FC = () => {
     if (view === 'client') {
       setActiveView('client');
       updateBrowserRoute('client');
+      return;
+    }
+
+    if (view === 'resident') {
+      setActiveView('resident');
+      updateBrowserRoute('resident');
       return;
     }
 
@@ -400,6 +418,20 @@ const AppContent: React.FC = () => {
           >
             <span>[ 🏢 Client Portal ]</span>
           </button>
+
+          {/* Resident Portal */}
+          <button
+            id="view-mode-resident-btn"
+            onClick={() => handleSwitchView('resident')}
+            className={`px-3 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
+              activeView === 'resident'
+                ? 'bg-indigo-600 text-white shadow-xs ring-1 ring-indigo-400/50'
+                : 'text-indigo-300 hover:text-white hover:bg-slate-800/50'
+            }`}
+            title="Unit-Locked Resident Security, Guest Parking & Officer Feedback Portal"
+          >
+            <span>[ 🏠 Resident Portal ]</span>
+          </button>
         </div>
 
         {/* Action icons, Theme Switcher & Lock Button */}
@@ -472,7 +504,7 @@ const AppContent: React.FC = () => {
       </header>
 
       {/* Main Workspace Frame */}
-      <div className="flex-1 flex overflow-hidden w-full h-full relative">
+      <div className="flex-1 min-h-0 flex overflow-hidden w-full h-full relative">
         {/* DUAL SPLIT VIEW (Side-by-side Guard + Protected Ops) */}
         {activeView === 'dual' && (
           <div className="flex w-full h-full overflow-hidden">
@@ -519,6 +551,13 @@ const AppContent: React.FC = () => {
         {activeView === 'client' && (
           <div className="flex-1 flex flex-col h-full overflow-hidden">
             <ClientPortal />
+          </div>
+        )}
+
+        {/* RESIDENT PORTAL VIEW (Unit-Locked Resident Security & Parking Portal) */}
+        {activeView === 'resident' && (
+          <div className="min-h-0 flex-1 flex flex-col h-full overflow-y-auto">
+            <ResidentPortal />
           </div>
         )}
       </div>

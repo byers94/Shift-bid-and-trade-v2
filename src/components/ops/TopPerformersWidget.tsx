@@ -55,6 +55,9 @@ import { ROLE_WEIGHTS } from '../../utils/asrScoring';
 import { CoachingSchedulingCalendarModal } from './CoachingSchedulingCalendarModal';
 import { AdminReviewAlternateProposalModal } from './AdminReviewAlternateProposalModal';
 import { CoachingPerformanceDashboard } from './CoachingPerformanceDashboard';
+import { useModeratedReviewsStore, ModeratedGuardReview } from '../resident/ResidentPortal';
+import { useSiteIssuesStore } from '../guard/GuardSiteIssues';
+import { normalizeInfractionKey } from '../../utils/chronicDetectionEngine';
 
 interface TopPerformersWidgetProps {
   onNavigateToGuardDirectory?: (guardId?: string) => void;
@@ -80,8 +83,164 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
     acceptAlternateCoaching,
     getLeaderboard,
     getGuardPerformance,
-    shifts
+    shifts,
+    showToast,
+    addAuditLog,
+    logAdminAction
   } = useShiftOps();
+
+  const {
+    pendingReviews,
+    dismissedReviews,
+    markReviewStatus,
+    restoreDemoPendingReviews
+  } = useModeratedReviewsStore();
+
+  const { darLogs, siteIssues } = useSiteIssuesStore();
+  const [isModerationQueueExpanded, setIsModerationQueueExpanded] = useState<boolean>(true);
+  const [showDismissedArchive, setShowDismissedArchive] = useState<boolean>(false);
+
+  // Automated Retaliation Warning Check: Cross-check pending Resident review against DAR/Infraction logs & Watchlist tickets within past 7 days
+  const evaluateRetaliationRisk = (review: ModeratedGuardReview): {
+    isFlagged: boolean;
+    citationSummary?: string;
+    citedUnit: string;
+  } => {
+    const rawUnit = review.unitNumber || review.submittedBy.replace(/Resident\s*[—-]\s*/i, '').trim();
+    if (review.role !== 'RESIDENT' || !rawUnit) {
+      return { isFlagged: false, citedUnit: rawUnit || '' };
+    }
+    const normUnit = normalizeInfractionKey(rawUnit);
+    if (!normUnit) return { isFlagged: false, citedUnit: rawUnit };
+
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+    // 1. Check DAR infraction logs from past 7 days
+    const matchingDar = darLogs.find((log) => {
+      const logTime = new Date(log.timestamp).getTime();
+      if (logTime < sevenDaysAgo) return false;
+      const sameSite = !review.siteId || log.siteId === review.siteId || log.siteName === review.siteName;
+      if (!sameSite) return false;
+      const isTargetCategory =
+        log.category === 'NOISE_COMPLAINT' ||
+        log.category === 'PARKING_VIOLATION' ||
+        log.category === 'CHRONIC_LEASE_VIOLATION';
+      const logUnitNorm = normalizeInfractionKey(log.unitOrLocation || log.matchKeyValue || '');
+      return isTargetCategory && logUnitNorm === normUnit;
+    });
+
+    if (matchingDar) {
+      return {
+        isFlagged: true,
+        citedUnit: rawUnit,
+        citationSummary: `${matchingDar.category.replace(/_/g, ' ')} logged by ${matchingDar.guardName} (${matchingDar.notes})`
+      };
+    }
+
+    // 2. Check Watchlist / Site Issues tickets from past 7 days
+    const matchingIssue = siteIssues.find((issue) => {
+      const issueTime = new Date(issue.updatedAt || issue.createdAt).getTime();
+      if (issueTime < sevenDaysAgo) return false;
+      const sameSite = !review.siteId || issue.siteId === review.siteId || issue.siteName === review.siteName;
+      if (!sameSite) return false;
+      const isTargetCat =
+        issue.category === 'NOISE_COMPLAINT' ||
+        issue.category === 'PARKING_VIOLATION' ||
+        issue.category === 'CHRONIC_LEASE_VIOLATION';
+      return (
+        isTargetCat &&
+        (normalizeInfractionKey(issue.unitOrLocation || issue.matchKeyValue || '') === normUnit ||
+          normalizeInfractionKey(issue.title).includes(normUnit))
+      );
+    });
+
+    if (matchingIssue) {
+      return {
+        isFlagged: true,
+        citedUnit: rawUnit,
+        citationSummary: `Watchlist Ticket ${matchingIssue.id}: ${matchingIssue.title}`
+      };
+    }
+
+    return { isFlagged: false, citedUnit: rawUnit };
+  };
+
+  const handleVerifyAndPublishReview = (review: ModeratedGuardReview) => {
+    markReviewStatus(review.id, 'VERIFIED', 'Command CAD Supervisor');
+    const published = addSiteFeedback({
+      guardId: review.guardId,
+      guardName: review.guardName,
+      siteName: review.siteName,
+      reviewerName: review.submittedBy,
+      reviewerTitle: review.role === 'PROPERTY_MANAGER' ? 'Property Manager (3x Weight)' : `Resident (${review.unitNumber || 'Verified Unit'} • 1x Weight)`,
+      reviewerRole: review.reviewerRole,
+      rating: review.rating,
+      comment: review.comment,
+      date: new Date().toISOString().split('T')[0],
+      tags: review.tags && review.tags.length > 0 ? review.tags : [review.role === 'PROPERTY_MANAGER' ? 'PM Commendation (3x)' : 'Verified Resident Feedback (1x)'],
+      isVerifiedClient: true
+    });
+
+    // If Dossier modal is open for this guard, refresh it
+    if (selectedGuardForDossier && selectedGuardForDossier.id === review.guardId) {
+      setTimeout(() => {
+        const updatedPerf = getGuardPerformance(review.guardId);
+        const gProfile = guardsList.find((g) => g.id === review.guardId);
+        if (gProfile && updatedPerf) {
+          setSelectedGuardForDossier({ ...gProfile, ...updatedPerf });
+        }
+      }, 50);
+    }
+
+    addAuditLog(
+      'Guard Review Verified & Published to ASR',
+      'system',
+      `Supervisor verified ${review.rating}★ review (${review.weight}x Weight, Role: ${review.role}) from ${review.submittedBy} for Officer ${review.guardName} (${review.guardBadge}). Published as ${published.id}.`,
+      'Command CAD Supervisor',
+      'success'
+    );
+    logAdminAction({
+      type: 'feedback_logged',
+      title: 'Moderated Review Published to ASR',
+      description: `Verified & published ${review.rating}★ (${review.weight}x) review from ${review.submittedBy} for Officer ${review.guardName} (${review.guardBadge})`,
+      adminName: 'Command CAD Supervisor',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'emerald'
+    });
+    showToast(
+      'Verified & Published to ASR Score',
+      `${review.rating}★ review (${review.weight}x weight) published to Officer ${review.guardName}'s ASR score and Dossier.`,
+      'success'
+    );
+  };
+
+  const handleDismissProtectGuard = (review: ModeratedGuardReview, isRetaliationFlagged: boolean) => {
+    const note = isRetaliationFlagged
+      ? `Dismissed under Guard Protection Firewall: Retaliation risk flagged for ${review.unitNumber || review.submittedBy}`
+      : `Dismissed by Supervisor as unfounded / non-actionable`;
+    markReviewStatus(review.id, 'DISMISSED', 'Command CAD Supervisor', note);
+
+    addAuditLog(
+      'Malicious / Retaliatory Review Dismissed (Guard Protected)',
+      'system',
+      `Supervisor dismissed ${review.rating}★ review from ${review.submittedBy} targeting Officer ${review.guardName} (${review.guardBadge}). Reason: ${note}. Zero ASR penalty applied.`,
+      'Command CAD Supervisor',
+      'warning'
+    );
+    logAdminAction({
+      type: 'feedback_logged',
+      title: 'Retaliatory Review Dismissed (Guard Protected)',
+      description: `Protected ${review.guardName} (${review.guardBadge}) from unfounded ${review.rating}★ review by ${review.submittedBy} (${note})`,
+      adminName: 'Command CAD Supervisor',
+      adminBadge: 'OPS-CMD-01',
+      badgeVariant: 'amber'
+    });
+    showToast(
+      'Review Dismissed — Guard Protected',
+      `Archived ${review.rating}★ review from ${review.submittedBy}. Officer ${review.guardName}'s ASR score remains 100% protected.`,
+      'info'
+    );
+  };
 
   const [sortMetric, setSortMetric] = useState<SortMetric>('composite');
   const [timeframe, setTimeframe] = useState<TimeframeFilter>('all');
@@ -754,6 +913,197 @@ export const TopPerformersWidget: React.FC<TopPerformersWidgetProps> = ({
           </div>
         </div>
       </div>
+
+      {/* ====================================================================
+          COMMAND CAD — PENDING FEEDBACK MODERATION QUEUE (GUARD PROTECTION FIREWALL)
+         ==================================================================== */}
+      {!compact && (
+        <div className="bg-slate-900 border border-indigo-500/40 rounded-xl overflow-hidden shadow-lg">
+          <div
+            onClick={() => setIsModerationQueueExpanded(!isModerationQueueExpanded)}
+            className="w-full px-4 py-3 bg-gradient-to-r from-slate-950 via-indigo-950/60 to-slate-950 flex flex-wrap items-center justify-between gap-3 cursor-pointer hover:bg-slate-900/90 transition-colors"
+          >
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <span className="px-2.5 py-1 rounded-lg bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 text-xs font-black tracking-wide flex items-center gap-1.5">
+                🛡️ Pending Feedback Moderation Queue ({pendingReviews.length})
+              </span>
+              <span className="text-xs text-slate-300 font-medium">
+                Guard Protection Firewall • Holds Resident (<strong className="text-white">1x</strong>) &amp; Property Manager (<strong className="text-amber-300">3x</strong>) reviews prior to ASR Leaderboard impact
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {dismissedReviews.length > 0 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowDismissedArchive(!showDismissedArchive);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-semibold"
+                >
+                  {showDismissedArchive ? 'Hide' : 'View'} Protected Archive ({dismissedReviews.length})
+                </button>
+              )}
+              {pendingReviews.length === 0 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    restoreDemoPendingReviews();
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 text-[11px] font-bold"
+                >
+                  Reset Demo Queue
+                </button>
+              )}
+              {isModerationQueueExpanded ? (
+                <ChevronUp className="w-4 h-4 text-slate-400" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              )}
+            </div>
+          </div>
+
+          {isModerationQueueExpanded && (
+            <div className="p-4 space-y-3 bg-slate-900/95 border-t border-slate-800">
+              {pendingReviews.length === 0 ? (
+                <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center justify-between gap-3 text-xs text-slate-400">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>
+                      All pending Resident (1x) and Property Manager (3x) reviews have been moderated. Submit new feedback via the Resident Portal or Client Portal to test live moderation.
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {pendingReviews.map((review) => {
+                    const retaliationCheck = evaluateRetaliationRisk(review);
+                    return (
+                      <div
+                        key={review.id}
+                        className={`p-4 rounded-xl border transition-all space-y-3 ${
+                          retaliationCheck.isFlagged
+                            ? 'bg-rose-950/25 border-rose-500/50 shadow-md shadow-rose-950/30'
+                            : 'bg-slate-950/85 border-slate-800'
+                        }`}
+                      >
+                        {/* Automated Retaliation Warning Badge */}
+                        {retaliationCheck.isFlagged && (
+                          <div className="p-3 rounded-lg bg-gradient-to-r from-rose-600/25 via-amber-600/20 to-rose-950/40 border border-rose-500/60 flex items-start gap-2.5">
+                            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                            <div className="space-y-0.5">
+                              <div className="text-xs sm:text-sm font-black text-rose-200 tracking-tight">
+                                ⚠️ RETALIATION RISK FLAGGED: Submitting Unit ({retaliationCheck.citedUnit}) was cited for an infraction prior to filing this {review.rating}★ review.
+                              </div>
+                              {retaliationCheck.citationSummary && (
+                                <div className="text-[11px] text-amber-200/90 font-medium">
+                                  Matched Citation within 7 Days: <span className="font-mono text-white">{retaliationCheck.citationSummary}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-black text-white">
+                                Target Officer: {review.guardName} ({review.guardBadge})
+                              </span>
+                              <span className="text-xs text-slate-400">• {review.siteName}</span>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border ${
+                                  review.role === 'PROPERTY_MANAGER'
+                                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                                    : 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                                }`}
+                              >
+                                {review.role === 'PROPERTY_MANAGER'
+                                  ? '🏢 PROPERTY_MANAGER (3x Weight)'
+                                  : `🏠 RESIDENT (${review.unitNumber || 'Unit'}) (1x Weight)`}
+                              </span>
+                              <span className="flex items-center gap-0.5 text-amber-400 text-xs font-black bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded">
+                                {'★'.repeat(review.rating)}
+                                <span className="text-slate-600">{'★'.repeat(5 - review.rating)}</span>
+                                <span className="ml-1 text-white">({review.rating}/5)</span>
+                              </span>
+                            </div>
+
+                            <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">
+                              &ldquo;{review.comment}&rdquo;
+                            </p>
+
+                            <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-400">
+                              <span>
+                                Submitted by: <strong className="text-slate-200">{review.submittedBy}</strong>
+                              </span>
+                              {review.relatedCallId && (
+                                <span>
+                                  • Linked Call: <strong className="font-mono text-indigo-300">{review.relatedCallId}</strong>
+                                </span>
+                              )}
+                              <span>• Status: <strong className="text-amber-300">PENDING_MODERATION</strong></span>
+                            </div>
+                          </div>
+
+                          {/* Supervisor Moderation Actions */}
+                          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleVerifyAndPublishReview(review)}
+                              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 transition-colors cursor-pointer"
+                            >
+                              <Check className="w-4 h-4" />
+                              ✓ Verify &amp; Publish to ASR Score
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDismissProtectGuard(review, retaliationCheck.isFlagged)}
+                              className="px-3.5 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/35 text-rose-200 border border-rose-500/40 text-xs font-black flex items-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                              <Ban className="w-4 h-4 text-rose-400" />
+                              🚫 Dismiss / Protect Guard
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Dismissed / Protected Archive Drawer */}
+              {showDismissedArchive && dismissedReviews.length > 0 && (
+                <div className="pt-3 border-t border-slate-800 space-y-2">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Archived / Dismissed Reviews (Zero ASR Impact)
+                  </div>
+                  {dismissedReviews.map((rev) => (
+                    <div
+                      key={rev.id}
+                      className="p-3 rounded-lg bg-slate-950/60 border border-slate-800/80 flex items-center justify-between gap-3 text-xs opacity-75"
+                    >
+                      <div>
+                        <span className="font-bold text-slate-300">
+                          {rev.guardName} ({rev.rating}★ by {rev.submittedBy})
+                        </span>{' '}
+                        — <span className="text-slate-400">&ldquo;{rev.comment}&rdquo;</span>
+                        {rev.moderationNote && (
+                          <div className="text-[10px] text-rose-300 mt-0.5">{rev.moderationNote}</div>
+                        )}
+                      </div>
+                      <span className="px-2 py-0.5 rounded bg-rose-500/15 text-rose-300 border border-rose-500/30 text-[10px] font-bold shrink-0">
+                        PROTECTED / DISMISSED
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Filter and Search Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-neutral-900 p-3.5 rounded-xl border border-neutral-200 dark:border-neutral-800">

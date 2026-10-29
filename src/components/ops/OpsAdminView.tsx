@@ -31,6 +31,8 @@ import { RosterMatrixView } from '../admin/RosterMatrixView';
 import { ResourceManagement } from '../admin/ResourceManagement';
 import { SiteIssueTracker } from '../admin/SiteIssueTracker';
 import { ManageClientLoginsModal } from '../client/ClientPortal';
+import { ResidentPortalConfigModal } from '../resident/ResidentPortal';
+import { PortalsAccessConfigConsole, PortalsAccessConfigModal } from './PortalsAccessConfigConsole';
 import { 
   ShieldCheck, 
   BookOpen, 
@@ -123,7 +125,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   const isDarkMode = theme === 'dark';
 
   const [activeMainTab, setActiveMainTabState] = useState<
-    'command_dashboard' | 'site_issues' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'resources_training' | 'audit_terminal'
+    'command_dashboard' | 'site_issues' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'resources_training' | 'portals_access_config' | 'audit_terminal'
   >(() => {
     try {
       const saved = localStorage.getItem(STORAGE_OPS_MAIN_TAB_KEY);
@@ -147,6 +149,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         saved === 'top_performers' || 
         saved === 'coaching_analytics' ||
         saved === 'resources_training' ||
+        saved === 'portals_access_config' ||
         saved === 'audit_terminal'
       ) {
         return saved as any;
@@ -155,7 +158,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
     return 'command_dashboard';
   });
 
-  const setActiveMainTab = (tab: 'command_dashboard' | 'site_issues' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'resources_training' | 'audit_terminal') => {
+  const setActiveMainTab = (tab: 'command_dashboard' | 'site_issues' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'resources_training' | 'portals_access_config' | 'audit_terminal') => {
     setActiveMainTabState(tab);
     try {
       localStorage.setItem(STORAGE_OPS_MAIN_TAB_KEY, tab);
@@ -166,6 +169,9 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   const [isUserManagementOpen, setIsUserManagementOpen] = useState(false);
   const [userManagementTab, setUserManagementTab] = useState<'admins' | 'guards'>('admins');
   const [isClientLoginsOpen, setIsClientLoginsOpen] = useState(false);
+  const [isResidentConfigOpen, setIsResidentConfigOpen] = useState(false);
+  const [portalConfigTargetSiteId, setPortalConfigTargetSiteId] = useState<string | null>(null);
+  const [isUnifiedPortalConfigModalOpen, setIsUnifiedPortalConfigModalOpen] = useState(false);
   const [isBidsModalOpen, setIsBidsModalOpen] = useState(false);
   const [selectedBidsShiftId, setSelectedBidsShiftId] = useState<string | null>(null);
   const [isAutoFillModalOpen, setIsAutoFillModalOpen] = useState(false);
@@ -267,6 +273,17 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
           >
             🏢 Client
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveView('resident')}
+            className={`px-2 py-1 rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+              activeView === 'resident'
+                ? 'bg-blue-600 text-white font-black'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            🏠 Resident
+          </button>
         </div>
 
         {/* Far-Right Utility Cluster */}
@@ -327,6 +344,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
                    activeMainTab === 'guard_directory' ? 'Guard Directory' :
                    activeMainTab === 'top_performers' ? 'Top Performers' :
                    activeMainTab === 'coaching_analytics' ? 'Coaching & QA' :
+                   activeMainTab === 'portals_access_config' ? 'Portals & Access Config' :
                    activeMainTab === 'audit_terminal' ? 'Audit Terminal' : 'Overview'}
                 </span>
               </nav>
@@ -342,6 +360,30 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
           </div>
 
           <div className="hidden md:flex items-center gap-2">
+            {/* Unified Portals & Access Config High-Visibility Header Button */}
+            <button
+              id="open-portals-access-config-header-btn"
+              onClick={() => setActiveMainTab('portals_access_config')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer ${
+                activeMainTab === 'portals_access_config'
+                  ? 'bg-emerald-500 text-slate-950 font-black border border-emerald-300'
+                  : 'bg-emerald-500/20 border border-emerald-400/50 hover:bg-emerald-500/30 text-emerald-200'
+              }`}
+              title="Open Unified Client & Resident Portal Configuration Console"
+            >
+              <span>[ ⚙️ Portals &amp; Access Config ]</span>
+            </button>
+
+            {/* Resident Portal Multi-Tenant Feature Toggles Config Button */}
+            <button
+              id="open-resident-portal-config-btn"
+              onClick={() => setIsResidentConfigOpen(true)}
+              className="px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 bg-indigo-500/20 border border-indigo-400/50 hover:bg-indigo-500/30 text-indigo-200 shadow-xs cursor-pointer"
+              title="Configure Resident Portal Feature Toggles per Site (Multi-Tenant SaaS Config)"
+            >
+              <span>[ ⚙️ Resident Portal Config ]</span>
+            </button>
+
             {/* Manage Per-Site Client Portal Logins Button */}
             <button
               id="open-client-logins-btn"
@@ -1022,6 +1064,19 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
           </button>
 
           <button
+            id="tab-portals-access-config-btn"
+            type="button"
+            onClick={() => setActiveMainTab('portals_access_config')}
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              activeMainTab === 'portals_access_config'
+                ? 'bg-emerald-500 text-slate-950 font-black shadow-xs'
+                : 'text-emerald-300 hover:text-emerald-200 hover:bg-slate-700 dark:hover:bg-slate-800 border border-emerald-500/30'
+            }`}
+          >
+            <span>[ ⚙️ Portals &amp; Access Config ]</span>
+          </button>
+
+          <button
             id="tab-audit-terminal-btn"
             type="button"
             onClick={() => setActiveMainTab('audit_terminal')}
@@ -1318,6 +1373,10 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
             <SiteDirectory 
               onNavigateToShifts={() => setActiveMainTab('operations')}
               onNavigateToGuards={() => setActiveMainTab('guard_directory')}
+              onConfigurePortals={(siteId) => {
+                setPortalConfigTargetSiteId(siteId);
+                setActiveMainTab('portals_access_config');
+              }}
             />
           </div>
         )}
@@ -1352,6 +1411,12 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         {activeMainTab === 'resources_training' && (
           <div className="p-4 lg:p-6 max-w-7xl mx-auto w-full">
             <ResourceManagement adminName={adminName} adminBadge={adminBadge} />
+          </div>
+        )}
+
+        {activeMainTab === 'portals_access_config' && (
+          <div className="p-4 lg:p-6 max-w-7xl mx-auto w-full">
+            <PortalsAccessConfigConsole initialSiteId={portalConfigTargetSiteId} />
           </div>
         )}
 
@@ -1476,6 +1541,28 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
                 type="button"
                 onClick={() => {
                   setShowSessionModal(false);
+                  setActiveMainTab('portals_access_config');
+                }}
+                className="w-full py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-emerald-500/40 text-emerald-300 font-mono font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <span>[ ⚙️ Portals &amp; Access Config ]</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSessionModal(false);
+                  setIsResidentConfigOpen(true);
+                }}
+                className="w-full py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-indigo-500/40 text-indigo-300 font-mono font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <span>[ ⚙️ Resident Portal Config ]</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSessionModal(false);
                   setIsClientLoginsOpen(true);
                 }}
                 className="w-full py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-amber-300 font-mono font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
@@ -1502,6 +1589,17 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
       <ManageClientLoginsModal
         isOpen={isClientLoginsOpen}
         onClose={() => setIsClientLoginsOpen(false)}
+      />
+
+      <ResidentPortalConfigModal
+        isOpen={isResidentConfigOpen}
+        onClose={() => setIsResidentConfigOpen(false)}
+      />
+
+      <PortalsAccessConfigModal
+        isOpen={isUnifiedPortalConfigModalOpen}
+        onClose={() => setIsUnifiedPortalConfigModalOpen(false)}
+        initialSiteId={portalConfigTargetSiteId}
       />
     </main>
   );

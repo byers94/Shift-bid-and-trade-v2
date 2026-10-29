@@ -23,7 +23,8 @@ import {
   Copy,
   Check,
   Terminal,
-  AlertCircle
+  AlertCircle,
+  Star
 } from 'lucide-react';
 import { useShiftOps } from '../../context/ShiftOpsContext';
 import {
@@ -41,6 +42,7 @@ import {
   saveAllSiteDocuments,
   subscribeToSiteDocumentUpdates
 } from '../../types/resources';
+import { useModeratedReviewsStore } from '../resident/ResidentPortal';
 
 // ============================================================================
 // 1. STRICT PER-SITE CLIENT AUTHENTICATION CREDENTIALS & SESSION STORE
@@ -162,6 +164,156 @@ export function saveActiveClientSessionSiteId(siteId: string | null): void {
       window.dispatchEvent(new CustomEvent(CLIENT_CREDENTIALS_SYNC_EVENT));
     }, 0);
   } catch {}
+}
+
+export interface ClientPortalSiteConfig {
+  siteId: string; // 'GLOBAL_DEFAULT' or site.id
+  allowVacantUnitBulkUpload: boolean;
+  allowSpecialWatchDirectives: boolean;
+  allowClientIssueVerification: boolean;
+  allowOfficerReviews: boolean;
+  showAmenityLockoutFeed: boolean;
+  updatedAt: string;
+  updatedBy?: string;
+}
+
+export const DEFAULT_CLIENT_PORTAL_SITE_CONFIG: ClientPortalSiteConfig = {
+  siteId: 'GLOBAL_DEFAULT',
+  allowVacantUnitBulkUpload: true,
+  allowSpecialWatchDirectives: true,
+  allowClientIssueVerification: true,
+  allowOfficerReviews: true,
+  showAmenityLockoutFeed: true,
+  updatedAt: new Date().toISOString(),
+  updatedBy: 'System Default'
+};
+
+const STORAGE_KEY_CLIENT_PORTAL_CONFIG = 'secureshift_client_portal_config_v1';
+const CLIENT_PORTAL_CONFIG_SYNC_EVENT = 'secureshift:client-portal-config-sync';
+
+function loadClientPortalConfigMap(): Record<string, ClientPortalSiteConfig> {
+  if (typeof window === 'undefined') {
+    return { GLOBAL_DEFAULT: { ...DEFAULT_CLIENT_PORTAL_SITE_CONFIG } };
+  }
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY_CLIENT_PORTAL_CONFIG);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        return {
+          GLOBAL_DEFAULT: { ...DEFAULT_CLIENT_PORTAL_SITE_CONFIG, ...(parsed.GLOBAL_DEFAULT || {}) },
+          ...parsed
+        };
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to parse client portal config:', e);
+  }
+  return {
+    GLOBAL_DEFAULT: { ...DEFAULT_CLIENT_PORTAL_SITE_CONFIG }
+  };
+}
+
+function saveClientPortalConfigMap(map: Record<string, ClientPortalSiteConfig>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY_CLIENT_PORTAL_CONFIG, JSON.stringify(map));
+    window.dispatchEvent(new CustomEvent(CLIENT_PORTAL_CONFIG_SYNC_EVENT));
+  } catch (e) {
+    console.warn('Failed to save client portal config:', e);
+  }
+}
+
+export function useClientPortalConfigStore() {
+  const [configMap, setConfigMap] = useState<Record<string, ClientPortalSiteConfig>>(() =>
+    loadClientPortalConfigMap()
+  );
+
+  useEffect(() => {
+    const handleSync = () => {
+      setConfigMap(loadClientPortalConfigMap());
+    };
+    window.addEventListener(CLIENT_PORTAL_CONFIG_SYNC_EVENT, handleSync);
+    window.addEventListener('storage', handleSync);
+    return () => {
+      window.removeEventListener(CLIENT_PORTAL_CONFIG_SYNC_EVENT, handleSync);
+      window.removeEventListener('storage', handleSync);
+    };
+  }, []);
+
+  const getClientSiteConfig = useCallback(
+    (siteId?: string): ClientPortalSiteConfig => {
+      const globalDefault = configMap.GLOBAL_DEFAULT || DEFAULT_CLIENT_PORTAL_SITE_CONFIG;
+      if (!siteId || siteId === 'GLOBAL_DEFAULT') {
+        return globalDefault;
+      }
+      const siteOverride = configMap[siteId];
+      if (!siteOverride) {
+        return { ...globalDefault, siteId };
+      }
+      return {
+        ...globalDefault,
+        ...siteOverride,
+        siteId
+      };
+    },
+    [configMap]
+  );
+
+  const updateClientSiteConfig = useCallback(
+    (siteId: string, updates: Partial<ClientPortalSiteConfig>, updatedBy = 'Admin') => {
+      const latest = loadClientPortalConfigMap();
+      const base =
+        latest[siteId] || latest.GLOBAL_DEFAULT || DEFAULT_CLIENT_PORTAL_SITE_CONFIG;
+      const nextConfig: ClientPortalSiteConfig = {
+        ...base,
+        ...updates,
+        siteId,
+        updatedAt: new Date().toISOString(),
+        updatedBy
+      };
+      const nextMap = {
+        ...latest,
+        [siteId]: nextConfig
+      };
+      saveClientPortalConfigMap(nextMap);
+      setConfigMap(nextMap);
+      return nextConfig;
+    },
+    []
+  );
+
+  const applyClientConfigToAllSites = useCallback(
+    (sourceConfig: ClientPortalSiteConfig, siteIds: string[], updatedBy = 'Admin') => {
+      const now = new Date().toISOString();
+      const nextMap: Record<string, ClientPortalSiteConfig> = {
+        GLOBAL_DEFAULT: {
+          ...sourceConfig,
+          siteId: 'GLOBAL_DEFAULT',
+          updatedAt: now,
+          updatedBy
+        }
+      };
+      siteIds.forEach((id) => {
+        nextMap[id] = {
+          ...sourceConfig,
+          siteId: id,
+          updatedAt: now,
+          updatedBy
+        };
+      });
+      saveClientPortalConfigMap(nextMap);
+      setConfigMap(nextMap);
+    },
+    []
+  );
+
+  return {
+    configMap,
+    getClientSiteConfig,
+    updateClientSiteConfig,
+    applyClientConfigToAllSites
+  };
 }
 
 export function useClientCredentialsStore(
@@ -1054,6 +1206,7 @@ export function parseVacantUnitUploadBuffer(
 export const ClientPortal: React.FC = () => {
   const {
     sitesList,
+    guardsList,
     updateSite,
     scheduledShifts,
     activeClockedInShift,
@@ -1156,6 +1309,9 @@ export const ClientPortal: React.FC = () => {
   // ==========================================================================
   // LIVE COVERAGE STATUS & AMENITY LOCKOUT COUNTER FOR AUTHENTICATED PROPERTY
   // ==========================================================================
+  const { getClientSiteConfig } = useClientPortalConfigStore();
+  const clientSiteConfig = getClientSiteConfig(selectedSite.id);
+
   const liveCoverageInfo = useMemo(() => {
     const onDutyShift =
       (activeClockedInShift &&
@@ -1752,6 +1908,72 @@ export const ClientPortal: React.FC = () => {
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [uploadedFileType, setUploadedFileType] = useState<'csv' | 'pdf' | 'txt'>('csv');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Property Manager Officer Feedback / Commendation (3x Weight) Modal State
+  const { submitReviewForModeration } = useModeratedReviewsStore();
+  const [showPmFeedbackModal, setShowPmFeedbackModal] = useState(false);
+  const [pmSelectedGuardId, setPmSelectedGuardId] = useState<string>('guard-current');
+  const [pmRating, setPmRating] = useState<number>(5);
+  const [pmComment, setPmComment] = useState<string>('');
+  const [pmSelectedTags, setPmSelectedTags] = useState<string[]>(['Above & Beyond', 'Rapid Response']);
+
+  const siteAssignedGuards = useMemo(() => {
+    const shiftGuardIds = new Set(
+      scheduledShifts
+        .filter(
+          (s) =>
+            s.siteId === selectedSite.id ||
+            s.siteName.toLowerCase() === selectedSite.name.toLowerCase()
+        )
+        .map((s) => s.guardId)
+    );
+    const matches = guardsList.filter(
+      (g) => shiftGuardIds.has(g.id) || g.id === 'guard-current' || g.id === 'guard-1'
+    );
+    return matches.length > 0 ? matches : guardsList;
+  }, [scheduledShifts, selectedSite, guardsList]);
+
+  const handleSubmitPmReview = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pmComment.trim()) {
+      showToast('Review Comment Required', 'Please enter feedback or commendation notes for the officer.', 'warning');
+      return;
+    }
+    const targetGuard =
+      guardsList.find((g) => g.id === pmSelectedGuardId) || siteAssignedGuards[0] || guardsList[0];
+
+    submitReviewForModeration({
+      guardId: targetGuard.id,
+      guardName: targetGuard.name,
+      guardBadge: targetGuard.badgeNumber,
+      siteId: selectedSite.id,
+      siteName: selectedSite.name,
+      rating: pmRating,
+      comment: pmComment.trim(),
+      submittedBy: `${defaultPmName} (Property Manager)`,
+      role: 'PROPERTY_MANAGER',
+      reviewerRole: 'property_manager',
+      weight: 3,
+      tags: pmSelectedTags.length > 0 ? pmSelectedTags : ['Property Manager Commendation (3x)']
+    });
+
+    addAuditLog(
+      'Client PM Officer Review Queued for Moderation (3x Weight)',
+      'system',
+      `[CLIENT PORTAL] ${defaultPmName} (${selectedSite.name}) submitted a ${pmRating}★ review (3x Weight) for Officer ${targetGuard.name} (${targetGuard.badgeNumber}). Status: PENDING_MODERATION.`,
+      defaultPmName,
+      'info'
+    );
+
+    showToast(
+      'PM Feedback Queued for Moderation (3x Weight)',
+      `Your ${pmRating}★ evaluation for Officer ${targetGuard.name} has been routed to Command CAD Moderation.`,
+      'success'
+    );
+
+    setShowPmFeedbackModal(false);
+    setPmComment('');
+  };
 
   const parsedIncomingUnits = useMemo(() => {
     if (!bulkRawInput.trim()) return [];
@@ -2492,6 +2714,18 @@ export const ClientPortal: React.FC = () => {
                   )}
                 </div>
 
+                {clientSiteConfig.allowOfficerReviews && (
+                  <button
+                    id="btn-client-submit-officer-feedback"
+                    type="button"
+                    onClick={() => setShowPmFeedbackModal(true)}
+                    className="px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-mono text-xs font-black cursor-pointer transition-colors inline-flex items-center gap-1.5"
+                  >
+                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                    <span>[ ⭐ Submit Officer Feedback / Commendation (3x Weight) ]</span>
+                  </button>
+                )}
+
                 <button
                   id="btn-client-portal-sign-out"
                   type="button"
@@ -2526,17 +2760,19 @@ export const ClientPortal: React.FC = () => {
                 </div>
               </div>
 
-              <div className="sm:border-l border-slate-800 sm:pl-3.5 space-y-0.5">
-                <div className="text-[10px] font-mono uppercase text-slate-400 font-bold">
-                  Today&apos;s Amenity Lockouts
+              {clientSiteConfig.showAmenityLockoutFeed && (
+                <div className="sm:border-l border-slate-800 sm:pl-3.5 space-y-0.5">
+                  <div className="text-[10px] font-mono uppercase text-slate-400 font-bold">
+                    Today&apos;s Amenity Lockouts
+                  </div>
+                  <div className="text-sm font-black text-emerald-400 font-mono flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>
+                      {completedLockoutsCount}/{lockoutFeedItems.length} Completed
+                    </span>
+                  </div>
                 </div>
-                <div className="text-sm font-black text-emerald-400 font-mono flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>
-                    {completedLockoutsCount}/{lockoutFeedItems.length} Completed
-                  </span>
-                </div>
-              </div>
+              )}
             </div>
           </div>
 
@@ -2573,18 +2809,20 @@ export const ClientPortal: React.FC = () => {
               [ 📋 Vacant Units &amp; Site Intel ]
             </button>
 
-            <button
-              id="client-tab-directives-btn"
-              type="button"
-              onClick={() => setActiveSubTab('DIRECTIVES')}
-              className={`px-3.5 py-2 rounded-xl font-mono text-xs font-black whitespace-nowrap transition-all cursor-pointer shrink-0 ${
-                activeSubTab === 'DIRECTIVES'
-                  ? 'bg-blue-600 text-white shadow-sm ring-1 ring-blue-400'
-                  : 'bg-slate-950 text-slate-300 hover:text-white border border-slate-800'
-              }`}
-            >
-              [ 🎯 Special Watch Directives ({siteDirectives.length}) ]
-            </button>
+            {clientSiteConfig.allowSpecialWatchDirectives && (
+              <button
+                id="client-tab-directives-btn"
+                type="button"
+                onClick={() => setActiveSubTab('DIRECTIVES')}
+                className={`px-3.5 py-2 rounded-xl font-mono text-xs font-black whitespace-nowrap transition-all cursor-pointer shrink-0 ${
+                  activeSubTab === 'DIRECTIVES'
+                    ? 'bg-blue-600 text-white shadow-sm ring-1 ring-blue-400'
+                    : 'bg-slate-950 text-slate-300 hover:text-white border border-slate-800'
+                }`}
+              >
+                [ 🎯 Special Watch Directives ({siteDirectives.length}) ]
+              </button>
+            )}
 
             <button
               id="client-tab-patrol-feed-btn"
@@ -2788,15 +3026,16 @@ export const ClientPortal: React.FC = () => {
 
                       <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800">
                         <div className="flex flex-wrap items-center gap-2">
-                          {(issue.status === 'OPEN' || issue.status === 'CLIENT_NOTIFIED') && (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenMarkAddressed(issue)}
-                              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-black text-xs shadow-sm cursor-pointer transition-colors"
-                            >
-                              [ ✓ Mark Addressed — Request Guard Verification ]
-                            </button>
-                          )}
+                          {clientSiteConfig.allowClientIssueVerification &&
+                            (issue.status === 'OPEN' || issue.status === 'CLIENT_NOTIFIED') && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenMarkAddressed(issue)}
+                                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-black text-xs shadow-sm cursor-pointer transition-colors"
+                              >
+                                [ ✓ Mark Addressed — Request Guard Verification ]
+                              </button>
+                            )}
 
                           {isLeaseOrNoiseOrParking && (
                             <button
@@ -2945,14 +3184,16 @@ export const ClientPortal: React.FC = () => {
 
                 {/* Action Cluster: Bulk Import CSV/PDF + Manual Add Unit */}
                 <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-                  <button
-                    id="btn-bulk-import-vacant-units"
-                    type="button"
-                    onClick={() => setShowBulkImportModal(true)}
-                    className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-mono font-black text-xs cursor-pointer transition-colors shadow-xs"
-                  >
-                    [ 📤 Bulk Import CSV / PDF ]
-                  </button>
+                  {clientSiteConfig.allowVacantUnitBulkUpload && (
+                    <button
+                      id="btn-bulk-import-vacant-units"
+                      type="button"
+                      onClick={() => setShowBulkImportModal(true)}
+                      className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-mono font-black text-xs cursor-pointer transition-colors shadow-xs"
+                    >
+                      [ 📤 Bulk Import CSV / PDF ]
+                    </button>
+                  )}
 
                   <button
                     id="btn-manual-add-vacant-unit"
@@ -3314,36 +3555,52 @@ export const ClientPortal: React.FC = () => {
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {parkingExemptions.map((item) => (
-                  <div
-                    key={item.permitId}
-                    className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3"
-                  >
-                    <div className="space-y-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-500/40 font-mono font-black text-xs">
-                          {item.licensePlate}
-                        </span>
-                        <span className="font-bold text-xs text-white">
-                          {item.makeModel}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-slate-400">
-                        {item.unitOrVendor} • <span className="text-emerald-300 font-mono">{item.expirationDate}</span>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleRemoveParkingExemption(item.permitId, item.licensePlate)
-                      }
-                      className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-rose-950 text-slate-400 hover:text-rose-300 border border-slate-800 font-mono text-[10px] font-bold shrink-0 cursor-pointer"
+                {parkingExemptions.map((item) => {
+                  const isResidentGuestPass =
+                    item.status.includes('AUTHORIZED GUEST PASS') ||
+                    item.unitOrVendor.toLowerCase().includes('guest');
+                  return (
+                    <div
+                      key={item.permitId}
+                      className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 ${
+                        isResidentGuestPass
+                          ? 'bg-emerald-950/25 border-emerald-500/40'
+                          : 'bg-slate-950 border-slate-800'
+                      }`}
                     >
-                      [ Remove ]
-                    </button>
-                  </div>
-                ))}
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-500/40 font-mono font-black text-xs">
+                            {item.licensePlate}
+                          </span>
+                          <span className="font-bold text-xs text-white">
+                            {item.makeModel}
+                          </span>
+                          {isResidentGuestPass && (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono text-[10px] font-black">
+                              {item.status.includes('🟢')
+                                ? item.status
+                                : `🟢 AUTHORIZED GUEST PASS (${item.unitOrVendor})`}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-400">
+                          {item.unitOrVendor} • <span className="text-emerald-300 font-mono">{item.expirationDate}</span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleRemoveParkingExemption(item.permitId, item.licensePlate)
+                        }
+                        className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-rose-950 text-slate-400 hover:text-rose-300 border border-slate-800 font-mono text-[10px] font-bold shrink-0 cursor-pointer"
+                      >
+                        [ Remove ]
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </section>
@@ -3526,80 +3783,92 @@ export const ClientPortal: React.FC = () => {
         {/* ================================================================= */}
         {activeSubTab === 'PATROL_FEED' && (
           <section id="client-tab-patrol-feed-panel" className="space-y-5">
+            {clientSiteConfig.showAmenityLockoutFeed && (
+              <div className="bg-slate-900 text-slate-100 rounded-2xl p-4 sm:p-5 border border-slate-800 shadow-md space-y-3.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div>
+                    <h3 className="text-base font-black text-white flex items-center gap-2">
+                      <Lock className="w-4 h-4 text-emerald-400" />
+                      <span>Time-Specific Amenity Lockouts &amp; Curfews</span>
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Scheduled nightly facility closures, pool/terrace lockups, and perimeter security checks at {selectedSite.name}.
+                    </p>
+                  </div>
+                  <span className="px-3 py-1 rounded-full bg-emerald-950 border border-emerald-500/40 text-emerald-300 font-mono text-xs font-black">
+                    {completedLockoutsCount}/{lockoutFeedItems.length} Completed Today
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {lockoutFeedItems.map((item) => (
+                    <div
+                      key={item.task.id}
+                      className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-500/40 font-mono font-black text-xs">
+                          Scheduled {item.task.scheduledTime}
+                        </span>
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full font-mono text-[10px] font-black uppercase border ${
+                            item.status === 'COMPLETED'
+                              ? 'bg-emerald-950 text-emerald-300 border-emerald-500/50'
+                              : 'bg-slate-800 text-slate-300 border-slate-700'
+                          }`}
+                        >
+                          {item.status}
+                        </span>
+                      </div>
+
+                      <div>
+                        <div className="text-xs font-black text-white">
+                          {item.task.locationZone} — {item.task.title}
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          {item.notes}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-900">
+                        <span>
+                          Officer Badge: <strong className="text-blue-300">{item.guardBadge}</strong>
+                        </span>
+                        {item.completedAt && (
+                          <span className="text-emerald-400">
+                            Verified at{' '}
+                            {new Date(item.completedAt).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="bg-slate-900 text-slate-100 rounded-2xl p-4 sm:p-5 border border-slate-800 shadow-md space-y-3.5">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h3 className="text-base font-black text-white flex items-center gap-2">
-                    <Lock className="w-4 h-4 text-emerald-400" />
-                    <span>Time-Specific Amenity Lockouts &amp; Curfews</span>
+                    <ShieldCheck className="w-4 h-4 text-blue-400" />
+                    <span>Verified Patrol Check-Ins &amp; Daily Activity Reports (DAR)</span>
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Scheduled nightly facility closures, pool/terrace lockups, and perimeter security checks at {selectedSite.name}.
+                    Chronological executive feed of verified patrol sweeps, activity logs, and incident summaries for {selectedSite.name}.
                   </p>
                 </div>
-                <span className="px-3 py-1 rounded-full bg-emerald-950 border border-emerald-500/40 text-emerald-300 font-mono text-xs font-black">
-                  {completedLockoutsCount}/{lockoutFeedItems.length} Completed Today
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {lockoutFeedItems.map((item) => (
-                  <div
-                    key={item.task.id}
-                    className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-500/40 font-mono font-black text-xs">
-                        Scheduled {item.task.scheduledTime}
-                      </span>
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full font-mono text-[10px] font-black uppercase border ${
-                          item.status === 'COMPLETED'
-                            ? 'bg-emerald-950 text-emerald-300 border-emerald-500/50'
-                            : 'bg-slate-800 text-slate-300 border-slate-700'
-                        }`}
-                      >
-                        {item.status}
-                      </span>
-                    </div>
-
-                    <div>
-                      <div className="text-xs font-black text-white">
-                        {item.task.locationZone} — {item.task.title}
-                      </div>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        {item.notes}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-900">
-                      <span>
-                        Officer Badge: <strong className="text-blue-300">{item.guardBadge}</strong>
-                      </span>
-                      {item.completedAt && (
-                        <span className="text-emerald-400">
-                          Verified at{' '}
-                          {new Date(item.completedAt).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-slate-900 text-slate-100 rounded-2xl p-4 sm:p-5 border border-slate-800 shadow-md space-y-3.5">
-              <div>
-                <h3 className="text-base font-black text-white flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-blue-400" />
-                  <span>Verified Patrol Check-Ins &amp; Daily Activity Reports (DAR)</span>
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Chronological executive feed of verified patrol sweeps, activity logs, and incident summaries for {selectedSite.name}.
-                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowPmFeedbackModal(true)}
+                  className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-mono text-xs font-black flex items-center gap-1.5 shrink-0 cursor-pointer shadow-lg shadow-amber-500/20"
+                >
+                  <Star className="w-4 h-4 fill-slate-950" />
+                  <span>[ ⭐ Submit Officer Feedback / Commendation (3x Weight) ]</span>
+                </button>
               </div>
 
               <div className="space-y-3">
@@ -3960,6 +4229,156 @@ export const ClientPortal: React.FC = () => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================= */}
+      {/* MODAL: PROPERTY MANAGER OFFICER FEEDBACK / COMMENDATION (3x WEIGHT) */}
+      {/* ================================================================= */}
+      {showPmFeedbackModal && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl text-white">
+            <div className="px-5 py-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                  <Star className="w-5 h-5 fill-amber-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-white">
+                    Submit Officer Feedback / Commendation (3x Weight)
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    {selectedSite.name} • Auto-tagged as PROPERTY_MANAGER (3x ASR Weight)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPmFeedbackModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitPmReview} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
+                  Select Assigned Officer ({selectedSite.name})
+                </label>
+                <select
+                  value={pmSelectedGuardId}
+                  onChange={(e) => setPmSelectedGuardId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white"
+                >
+                  {siteAssignedGuards.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      Officer {g.name} ({g.badgeNumber}) — {g.status || 'Active Security Officer'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
+                  Star Rating (1 to 5 Stars • 3x Executive Weight)
+                </label>
+                <div className="flex items-center gap-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setPmRating(star)}
+                      className={`flex-1 py-2.5 rounded-xl border font-black text-sm flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                        star <= pmRating
+                          ? 'bg-amber-500/20 border-amber-400 text-amber-300'
+                          : 'bg-slate-950 border-slate-800 text-slate-500'
+                      }`}
+                    >
+                      <span>{star}</span>
+                      <Star
+                        className={`w-4 h-4 ${
+                          star <= pmRating ? 'fill-amber-400 text-amber-400' : 'text-slate-600'
+                        }`}
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
+                  Commendation &amp; Performance Tags
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    'Above & Beyond',
+                    'Rapid Response',
+                    'De-Escalation',
+                    'Detailed DAR Logs',
+                    'Amenity Lockup Excellence',
+                    'Needs Coaching'
+                  ].map((tag) => {
+                    const active = pmSelectedTags.includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() =>
+                          setPmSelectedTags((prev) =>
+                            prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+                          )
+                        }
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+                          active
+                            ? 'bg-indigo-500/25 border-indigo-400 text-indigo-200'
+                            : 'bg-slate-950 border-slate-800 text-slate-400'
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
+                  Property Manager Review / Commendation *
+                </label>
+                <textarea
+                  rows={3}
+                  value={pmComment}
+                  onChange={(e) => setPmComment(e.target.value)}
+                  placeholder="Write your official Property Manager commendation or performance evaluation..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                  required
+                />
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-slate-400">
+                Tagged with <strong className="text-amber-300">role: &apos;PROPERTY_MANAGER&apos;</strong>,{' '}
+                <strong className="text-amber-300">weight: 3</strong>, and{' '}
+                <strong className="text-indigo-300">status: &apos;PENDING_MODERATION&apos;</strong> for Command CAD verification.
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPmFeedbackModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black shadow-lg shadow-amber-500/20 cursor-pointer"
+                >
+                  Submit PM Review (3x Weight)
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

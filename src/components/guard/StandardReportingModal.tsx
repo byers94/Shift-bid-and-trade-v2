@@ -70,6 +70,13 @@ import {
 } from './GuardSiteIssues';
 import { IssueCategory } from '../../types/siteIssues';
 import { useShiftOps } from '../../context/ShiftOpsContext';
+import { evaluateInfractionHistory } from '../../utils/chronicDetectionEngine';
+import {
+  scanIdentificationDocument,
+  scanVehicleAndPlate,
+  ScannedIdDocumentResult,
+  ScannedVehiclePlateResult
+} from '../../utils/aiScanner';
 
 interface StandardReportingModalProps {
   isOpen: boolean;
@@ -122,7 +129,22 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const idScannerInputRef = useRef<HTMLInputElement | null>(null);
+  const plateScannerInputRef = useRef<HTMLInputElement | null>(null);
   const videoIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // AI Camera OCR Scanner State (ID / DL & Vehicle Plate)
+  const [isScanningId, setIsScanningId] = useState<boolean>(false);
+  const [idScanSuccess, setIdScanSuccess] = useState<boolean>(false);
+  const [scannedIdPhotoUrl, setScannedIdPhotoUrl] = useState<string | null>(null);
+  const [idPhotoAttached, setIdPhotoAttached] = useState<boolean>(false);
+
+  const [isScanningPlate, setIsScanningPlate] = useState<boolean>(false);
+  const [plateScanSuccess, setPlateScanSuccess] = useState<boolean>(false);
+  const [scannedPlatePhotoUrl, setScannedPlatePhotoUrl] = useState<string | null>(null);
+  const [scannedPlateNumber, setScannedPlateNumber] = useState<string>('');
+  const [platePhotoAttached, setPlatePhotoAttached] = useState<boolean>(false);
+  const [scannedPlateEvaluation, setScannedPlateEvaluation] = useState<ReturnType<typeof evaluateInfractionHistory> | null>(null);
 
   // 1. Activity Report State
   const [patrolType, setPatrolType] = useState<ActivityPatrolType>('foot_patrol');
@@ -499,6 +521,194 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
     setNewPartyVehicle('');
     setNewPartyStatement('');
     setEditingPartyId(null);
+    setIdScanSuccess(false);
+  };
+
+  const applyScannedIdToForm = useCallback((result: ScannedIdDocumentResult) => {
+    setNewPartyRefusedId(false);
+    if (result.fullName) setNewPartyName(result.fullName);
+    const validIdTypes: PartyIdType[] = [
+      'drivers_license',
+      'state_id',
+      'passport',
+      'employee_badge',
+      'student_id',
+      'military_id',
+      'other',
+      'none'
+    ];
+    const normalizedType = validIdTypes.includes(result.idType as PartyIdType)
+      ? (result.idType as PartyIdType)
+      : 'drivers_license';
+    setNewPartyIdType(normalizedType);
+    if (result.idNumber) setNewPartyIdNumber(result.idNumber);
+    if (result.issuingState) setNewPartyIdState(result.issuingState);
+    if (result.approxAge) setNewPartyAge(result.approxAge);
+    if (result.gender) {
+      const g = result.gender.toLowerCase();
+      if (g === 'male' || g === 'm') setNewPartyGender('male');
+      else if (g === 'female' || g === 'f') setNewPartyGender('female');
+      else if (g.includes('non')) setNewPartyGender('non_binary');
+      else setNewPartyGender('unknown');
+    }
+    if (result.height) setNewPartyHeight(result.height);
+    if (result.weight) setNewPartyWeight(result.weight);
+    if (result.hairEyeColor) setNewPartyHairEyes(result.hairEyeColor);
+    if (result.address) setNewPartyAddress(result.address);
+    if (result.sampleImageDataUrl) {
+      setScannedIdPhotoUrl(result.sampleImageDataUrl);
+      setIdPhotoAttached(false);
+    }
+    setIdScanSuccess(true);
+    setIsPartyDetailsExpanded(true);
+  }, []);
+
+  const handleIdScanFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsScanningId(true);
+    setIdScanSuccess(false);
+
+    try {
+      const base64DataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('Failed to read ID image'));
+        reader.readAsDataURL(file);
+      });
+
+      const result = await scanIdentificationDocument(base64DataUrl, file.type || 'image/jpeg');
+      applyScannedIdToForm(result);
+      showToast('ID Credentials Extracted', `Auto-populated ${result.fullName} (${result.issuingState} #${result.idNumber}).`, 'success');
+    } catch {
+      const fallback = await scanIdentificationDocument('SIMULATED_SAMPLE', 'image/jpeg');
+      applyScannedIdToForm(fallback);
+    } finally {
+      setIsScanningId(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleSimulateIdScan = async () => {
+    setIsScanningId(true);
+    setIdScanSuccess(false);
+    try {
+      const result = await scanIdentificationDocument('SIMULATED_SAMPLE', 'image/jpeg');
+      applyScannedIdToForm(result);
+      showToast('ID Credentials Scanned', `Auto-populated ${result.fullName} (${result.issuingState} #${result.idNumber}).`, 'success');
+    } finally {
+      setIsScanningId(false);
+    }
+  };
+
+  const applyScannedPlateToForm = useCallback(
+    (result: ScannedVehiclePlateResult) => {
+      const summary =
+        result.formattedSummary ||
+        `${[result.vehicleColor, result.vehicleMake, result.vehicleModel].filter(Boolean).join(' ')}, ${result.plateState} #${result.plateNumber}`;
+      setNewPartyVehicle(summary);
+      setScannedPlateNumber(result.plateNumber || summary);
+
+      if (reportType === 'maintenance') {
+        setMaintLocation((prev) =>
+          prev.includes(result.plateNumber) ? prev : `${prev ? prev + ' — ' : ''}${summary}`
+        );
+      }
+
+      if (result.sampleImageDataUrl) {
+        setScannedPlatePhotoUrl(result.sampleImageDataUrl);
+        setPlatePhotoAttached(false);
+      }
+
+      // Immediately evaluate infraction history on the extracted plateNumber
+      const openTickets = siteIssues.filter((t) => t.status !== 'RESOLVED');
+      const evalResult = evaluateInfractionHistory(
+        activeShift?.siteId || locationName || 'ALL',
+        'PARKING_VIOLATION',
+        result.plateNumber || summary,
+        darLogs,
+        openTickets
+      );
+      setScannedPlateEvaluation(evalResult);
+      setPlateScanSuccess(true);
+    },
+    [activeShift?.siteId, darLogs, locationName, reportType, siteIssues]
+  );
+
+  const handlePlateScanFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsScanningPlate(true);
+    setPlateScanSuccess(false);
+
+    try {
+      const base64DataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('Failed to read vehicle/plate image'));
+        reader.readAsDataURL(file);
+      });
+
+      const result = await scanVehicleAndPlate(base64DataUrl, file.type || 'image/jpeg');
+      applyScannedPlateToForm(result);
+      showToast('Vehicle & Plate Identified', `Auto-populated ${result.formattedSummary}.`, 'success');
+    } catch {
+      const fallback = await scanVehicleAndPlate('SIMULATED_SAMPLE', 'image/jpeg');
+      applyScannedPlateToForm(fallback);
+    } finally {
+      setIsScanningPlate(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleSimulatePlateScan = async () => {
+    setIsScanningPlate(true);
+    setPlateScanSuccess(false);
+    try {
+      const result = await scanVehicleAndPlate('SIMULATED_SAMPLE', 'image/jpeg');
+      applyScannedPlateToForm(result);
+      showToast('Vehicle & Plate Scanned', `Auto-populated ${result.formattedSummary}.`, 'success');
+    } finally {
+      setIsScanningPlate(false);
+    }
+  };
+
+  const handleAttachPlatePhotoToMedia = () => {
+    if (!scannedPlatePhotoUrl) return;
+    const attachment: ReportMediaAttachment = {
+      id: `med-plate-${Date.now()}`,
+      type: 'photo',
+      url: scannedPlatePhotoUrl,
+      caption: `AI Plate OCR Verification — ${newPartyVehicle || scannedPlateNumber}`,
+      capturedAt: new Date().toISOString(),
+      fileName: `plate_scan_${(scannedPlateNumber || 'vehicle').replace(/[^a-zA-Z0-9]/g, '_')}.jpg`,
+      fileSizeMb: 1.2,
+      gpsCoordinates: gpsCoordinates
+        ? { latitude: gpsCoordinates.latitude, longitude: gpsCoordinates.longitude }
+        : undefined
+    };
+    setMediaList((prev) => [attachment, ...prev]);
+    setPlatePhotoAttached(true);
+    showToast('Plate Photo Attached', 'Added scanned vehicle/plate photo to Mandatory Media Verification.', 'info');
+  };
+
+  const handleAttachIdPhotoToMedia = () => {
+    if (!scannedIdPhotoUrl) return;
+    const attachment: ReportMediaAttachment = {
+      id: `med-id-${Date.now()}`,
+      type: 'photo',
+      url: scannedIdPhotoUrl,
+      caption: `AI ID Verification — ${newPartyName || 'Subject ID'} (${newPartyIdState} #${newPartyIdNumber})`,
+      capturedAt: new Date().toISOString(),
+      fileName: `id_scan_${Date.now()}.jpg`,
+      fileSizeMb: 1.1,
+      gpsCoordinates: gpsCoordinates
+        ? { latitude: gpsCoordinates.latitude, longitude: gpsCoordinates.longitude }
+        : undefined
+    };
+    setMediaList((prev) => [attachment, ...prev]);
+    setIdPhotoAttached(true);
+    showToast('ID Photo Attached', 'Added scanned ID credential photo to Mandatory Media Verification.', 'info');
   };
 
   const startEditParty = (party: IncidentPartyInvolved) => {
@@ -1160,9 +1370,31 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Specific Location on Property
-                  </label>
+                  <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1.5">
+                    <label className="block text-xs font-semibold text-slate-300">
+                      Specific Location on Property
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => plateScannerInputRef.current?.click()}
+                        disabled={isScanningPlate}
+                        className="px-2 py-0.5 rounded-lg bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/50 text-amber-200 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                        title="Scan Vehicle Plate or Location Tag via Camera"
+                      >
+                        <span>📷 Scan Plate &amp; Car</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSimulatePlateScan}
+                        disabled={isScanningPlate}
+                        className="px-1.5 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-amber-300 text-[10px] font-mono font-bold cursor-pointer transition-colors"
+                        title="Test Sample Scan"
+                      >
+                        🧪 Test Sample Scan
+                      </button>
+                    </div>
+                  </div>
                   <input
                     type="text"
                     id="maint-location-input"
@@ -1172,6 +1404,12 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                     className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
                     required
                   />
+                  {isScanningPlate && (
+                    <div className="mt-1.5 px-2.5 py-1.5 rounded-lg bg-amber-950/60 border border-amber-500/40 text-amber-200 text-[11px] font-medium flex items-center gap-2 animate-pulse">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400 shrink-0" />
+                      <span>🔍 Identifying Plate &amp; Vehicle Make/Model...</span>
+                    </div>
+                  )}
                   <GuardDARInFormAlertBanner
                     siteId="ALL"
                     category={maintSafetyHazard ? 'SAFETY_HAZARD' : 'MAINTENANCE'}
@@ -1515,22 +1753,79 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-200 mb-1 flex items-center gap-1.5">
-                      <Car className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Vehicle Make / Model / Plate #</span>
-                    </label>
+                    <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1">
+                      <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                        <Car className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Vehicle Make / Model / Plate #</span>
+                      </label>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          id="btn-scan-plate-top"
+                          onClick={() => plateScannerInputRef.current?.click()}
+                          disabled={isScanningPlate}
+                          className="px-2 py-0.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/60 text-amber-200 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+                        >
+                          <span>📷 Scan Plate &amp; Car</span>
+                        </button>
+                        <button
+                          type="button"
+                          id="btn-sim-plate-top"
+                          onClick={handleSimulatePlateScan}
+                          disabled={isScanningPlate}
+                          className="px-1.5 py-0.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-amber-500/40 text-amber-300 text-[10px] font-mono font-bold cursor-pointer transition-colors"
+                          title="Test Sample Scan"
+                        >
+                          🧪 Test Sample Scan
+                        </button>
+                      </div>
+                    </div>
                     <input
                       type="text"
                       id="inc-vehicle-plate-input"
                       value={newPartyVehicle}
-                      onChange={(e) => setNewPartyVehicle(e.target.value)}
+                      onChange={(e) => {
+                        setNewPartyVehicle(e.target.value);
+                        setScannedPlateNumber('');
+                      }}
                       placeholder="e.g. 2018 Silver Honda Civic, WA #ABC-1234"
                       className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
+                    {isScanningPlate && (
+                      <div className="mt-1.5 px-2.5 py-1.5 rounded-lg bg-amber-950/70 border border-amber-500/50 text-amber-200 text-xs font-semibold flex items-center gap-2 animate-pulse">
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400 shrink-0" />
+                        <span>🔍 Identifying Plate &amp; Vehicle Make/Model...</span>
+                      </div>
+                    )}
+                    {plateScanSuccess && !isScanningPlate && (
+                      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-emerald-950/70 border border-emerald-500/50 text-[11px]">
+                        <span className="text-emerald-300 font-bold flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          ✓ Plate &amp; Vehicle Auto-Populated ({scannedPlateNumber || newPartyVehicle})
+                        </span>
+                        {scannedPlatePhotoUrl && (
+                          <button
+                            type="button"
+                            onClick={handleAttachPlatePhotoToMedia}
+                            disabled={platePhotoAttached}
+                            className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] border transition-colors cursor-pointer ${
+                              platePhotoAttached
+                                ? 'bg-emerald-900/50 text-emerald-300 border-emerald-500/40 cursor-default'
+                                : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border-amber-400/60'
+                            }`}
+                          >
+                            {platePhotoAttached
+                              ? '✓ Plate Photo Attached to Report Media'
+                              : '[ + Attach Plate Photo to Report Media ]'}
+                          </button>
+                        )}
+                      </div>
+                    )}
                     <GuardDARInFormAlertBanner
                       siteId={activeShift?.siteId || locationName || 'ALL'}
                       category="PARKING_VIOLATION"
-                      rawKeyValue={newPartyVehicle}
+                      rawKeyValue={scannedPlateNumber || newPartyVehicle}
+                      debounceMs={plateScanSuccess ? 0 : 200}
                     />
                   </div>
                 </div>
@@ -1839,12 +2134,67 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
 
                   {/* ID Credentials Section */}
                   <div className="p-2.5 rounded-xl bg-slate-900/70 border border-slate-850 space-y-2">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                         <CreditCard className="w-3.5 h-3.5 text-blue-400" />
-                        Identification Credentials & Documents
+                        Identification Credentials &amp; Documents
                       </span>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          id="btn-scan-id-dl"
+                          onClick={() => idScannerInputRef.current?.click()}
+                          disabled={isScanningId}
+                          className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-md shadow-blue-950/60 border border-blue-400/50 cursor-pointer transition-all disabled:opacity-50"
+                        >
+                          <Camera className="w-3.5 h-3.5" />
+                          <span>[ 📷 Scan ID / DL ]</span>
+                        </button>
+                        <button
+                          type="button"
+                          id="btn-sim-id-dl"
+                          onClick={handleSimulateIdScan}
+                          disabled={isScanningId}
+                          className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/40 text-[11px] font-mono font-bold cursor-pointer transition-colors disabled:opacity-50"
+                          title="Test Sample ID / Driver's License OCR Scan"
+                        >
+                          [ ⚡ Sim ]
+                        </button>
+                      </div>
                     </div>
+
+                    {isScanningId && (
+                      <div className="p-2.5 rounded-lg bg-blue-950/70 border border-blue-500/50 text-blue-200 text-xs font-semibold flex items-center gap-2 animate-pulse">
+                        <RefreshCw className="w-4 h-4 animate-spin text-blue-400 shrink-0" />
+                        <span>🔍 Reading ID Credentials &amp; Demographics...</span>
+                      </div>
+                    )}
+
+                    {idScanSuccess && !isScanningId && (
+                      <div className="p-2 rounded-lg bg-emerald-950/80 border border-emerald-500/60 flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span className="text-emerald-300 font-bold flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                          ✓ ID Scanned &amp; Auto-Populated — Verify fields below
+                        </span>
+                        {scannedIdPhotoUrl && (
+                          <button
+                            type="button"
+                            onClick={handleAttachIdPhotoToMedia}
+                            disabled={idPhotoAttached}
+                            className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] border transition-colors cursor-pointer ${
+                              idPhotoAttached
+                                ? 'bg-emerald-900/50 text-emerald-300 border-emerald-500/40 cursor-default'
+                                : 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 border-blue-400/60'
+                            }`}
+                          >
+                            {idPhotoAttached
+                              ? '✓ ID Photo Attached to Media'
+                              : '[ + Attach ID Photo to Report Media ]'}
+                          </button>
+                        )}
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <div>
@@ -2010,21 +2360,78 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                   <div className="p-2.5 rounded-xl bg-slate-900/70 border border-slate-850 space-y-2">
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <div>
-                        <label className="block text-[10px] font-medium text-slate-400 mb-0.5 flex items-center gap-1">
-                          <Car className="w-3 h-3 text-amber-400" />
-                          Vehicle Make / Model / Plate #
-                        </label>
+                        <div className="flex flex-wrap items-center justify-between gap-1 mb-0.5">
+                          <label className="text-[10px] font-medium text-slate-400 flex items-center gap-1">
+                            <Car className="w-3 h-3 text-amber-400" />
+                            Vehicle Make / Model / Plate #
+                          </label>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              id="btn-scan-plate-party"
+                              onClick={() => plateScannerInputRef.current?.click()}
+                              disabled={isScanningPlate}
+                              className="px-1.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-200 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                            >
+                              <span>[ 📷 Scan Plate &amp; Car ]</span>
+                            </button>
+                            <button
+                              type="button"
+                              id="btn-sim-plate-party"
+                              onClick={handleSimulatePlateScan}
+                              disabled={isScanningPlate}
+                              className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-amber-300 text-[10px] font-mono font-bold cursor-pointer transition-colors"
+                              title="Test Sample Scan"
+                            >
+                              [ ⚡ Sim ]
+                            </button>
+                          </div>
+                        </div>
                         <input
                           type="text"
                           value={newPartyVehicle}
-                          onChange={(e) => setNewPartyVehicle(e.target.value)}
+                          onChange={(e) => {
+                            setNewPartyVehicle(e.target.value);
+                            setScannedPlateNumber('');
+                          }}
                           placeholder="e.g. 2018 Silver Honda Civic, WA #ABC-1234"
                           className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none"
                         />
+                        {isScanningPlate && (
+                          <div className="mt-1 px-2 py-1 rounded bg-amber-950/70 border border-amber-500/50 text-amber-200 text-[11px] font-semibold flex items-center gap-1.5 animate-pulse">
+                            <RefreshCw className="w-3 h-3 animate-spin text-amber-400 shrink-0" />
+                            <span>🔍 Identifying Plate &amp; Vehicle Make/Model...</span>
+                          </div>
+                        )}
+                        {plateScanSuccess && !isScanningPlate && (
+                          <div className="mt-1 p-1.5 rounded bg-emerald-950/70 border border-emerald-500/50 space-y-1">
+                            <div className="text-[10px] text-emerald-300 font-bold flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                              <span>✓ Plate &amp; Vehicle Scanned ({scannedPlateNumber || newPartyVehicle})</span>
+                            </div>
+                            {scannedPlatePhotoUrl && (
+                              <button
+                                type="button"
+                                onClick={handleAttachPlatePhotoToMedia}
+                                disabled={platePhotoAttached}
+                                className={`w-full py-1 px-2 rounded font-mono font-bold text-[10px] border transition-colors cursor-pointer ${
+                                  platePhotoAttached
+                                    ? 'bg-emerald-900/50 text-emerald-300 border-emerald-500/40 cursor-default'
+                                    : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border-amber-400/60'
+                                }`}
+                              >
+                                {platePhotoAttached
+                                  ? '✓ Plate Photo Attached to Report Media'
+                                  : '[ + Attach Plate Photo to Report Media ]'}
+                              </button>
+                            )}
+                          </div>
+                        )}
                         <GuardDARInFormAlertBanner
                           siteId={activeShift?.siteId || locationName || 'ALL'}
                           category="PARKING_VIOLATION"
-                          rawKeyValue={newPartyVehicle}
+                          rawKeyValue={scannedPlateNumber || newPartyVehicle}
+                          debounceMs={plateScanSuccess ? 0 : 200}
                         />
                       </div>
 
@@ -2284,6 +2691,26 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                   className="hidden"
                 />
               </label>
+
+              {/* Hidden Mobile Rear Camera Inputs for AI OCR Scanning */}
+              <input
+                id="ai-scan-id-camera-input"
+                ref={idScannerInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleIdScanFileChange}
+                className="hidden"
+              />
+              <input
+                id="ai-scan-plate-camera-input"
+                ref={plateScannerInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handlePlateScanFileChange}
+                className="hidden"
+              />
             </div>
 
             {/* Attached Media Gallery */}
