@@ -190,15 +190,13 @@ export function getSampleVehiclePlateScanResult(): ScannedVehiclePlateResult {
 
 /**
  * Shared client-side image compression & base64 stripping for both scanners:
- * 1. Loads the File into an HTML Image object.
- * 2. Draws it onto an offscreen <canvas> scaled down so the max width or height is 1200px
- *    (preserving aspect ratio so small text on IDs and license plates remains crisp).
- * 3. Exports canvas.toDataURL('image/jpeg', 0.88).
- * 4. Strips the "data:image/jpeg;base64," prefix via .split(',')[1] and returns the raw
- *    base64Data and mimeType: 'image/jpeg'.
+ * - For License Plates (scanType === 'plate'): Max dimension 800px, JPEG quality 0.70.
+ * - For IDs (scanType === 'id'): Max dimension 1000px, JPEG quality 0.75.
+ * Reduces mobile upload payload from 8MB+ down to ~100KB-180KB for 1-2s OCR latency.
  */
 export async function prepareImageForGemini(
-  file: File
+  file: File,
+  scanType: 'id' | 'plate' = 'id'
 ): Promise<{ base64Data: string; mimeType: string; dataUrl: string }> {
   return new Promise((resolve, reject) => {
     const objectUrl = URL.createObjectURL(file);
@@ -208,7 +206,9 @@ export async function prepareImageForGemini(
       try {
         URL.revokeObjectURL(objectUrl);
 
-        const MAX_DIMENSION = 1200;
+        const maxDimension = scanType === 'plate' ? 800 : 1000;
+        const jpegQuality = scanType === 'plate' ? 0.70 : 0.75;
+
         let width = img.naturalWidth || img.width;
         let height = img.naturalHeight || img.height;
 
@@ -217,13 +217,13 @@ export async function prepareImageForGemini(
           return;
         }
 
-        if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+        if (width > maxDimension || height > maxDimension) {
           if (width >= height) {
-            height = Math.round((height * MAX_DIMENSION) / width);
-            width = MAX_DIMENSION;
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
           } else {
-            width = Math.round((width * MAX_DIMENSION) / height);
-            height = MAX_DIMENSION;
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
           }
         }
 
@@ -238,7 +238,7 @@ export async function prepareImageForGemini(
         }
 
         ctx.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        const dataUrl = canvas.toDataURL('image/jpeg', jpegQuality);
         const base64Data = dataUrl.split(',')[1] || '';
 
         if (!base64Data) {
@@ -266,8 +266,8 @@ export async function prepareImageForGemini(
 }
 
 export const GEMINI_VISION_CASCADE_MODELS = [
-  'gemini-3.8-flash',
   'gemini-3.5-flash-lite',
+  'gemini-3.8-flash',
   'gemini-3.7-flash',
   'gemini-flash-latest'
 ] as const;
@@ -281,7 +281,6 @@ function sleepMs(ms: number): Promise<void> {
 
 export function stripLegacyGeminiSamplingParams<T extends Record<string, any>>(config: T): T {
   const sanitized = { ...config };
-  delete sanitized.temperature;
   delete sanitized.topP;
   delete sanitized.topK;
   delete sanitized.candidateCount;
@@ -548,7 +547,7 @@ export async function scanIdentificationDocument(
   file: File,
   onStatusUpdate?: (statusText: string) => void
 ): Promise<ScannedIdDocumentResult> {
-  const { base64Data, mimeType, dataUrl } = await prepareImageForGemini(file);
+  const { base64Data, mimeType, dataUrl } = await prepareImageForGemini(file, 'id');
 
   const rawPayload = await callGeminiScanWithCascade(
     '/api/gemini/scan-id',
@@ -628,7 +627,7 @@ export async function scanVehicleAndPlate(
   file: File,
   onStatusUpdate?: (statusText: string) => void
 ): Promise<ScannedVehiclePlateResult> {
-  const { base64Data, mimeType, dataUrl } = await prepareImageForGemini(file);
+  const { base64Data, mimeType, dataUrl } = await prepareImageForGemini(file, 'plate');
 
   const rawPayload = await callGeminiScanWithCascade(
     '/api/gemini/scan-plate',

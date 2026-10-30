@@ -33,6 +33,7 @@ import { SiteIssueTracker } from '../admin/SiteIssueTracker';
 import { ManageClientLoginsModal } from '../client/ClientPortal';
 import { ResidentPortalConfigModal } from '../resident/ResidentPortal';
 import { PortalsAccessConfigConsole, PortalsAccessConfigModal } from './PortalsAccessConfigConsole';
+import { ShiftAuditArchive } from '../cad/ShiftAuditArchive';
 import { 
   ShieldCheck, 
   BookOpen, 
@@ -125,12 +126,13 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   const isDarkMode = theme === 'dark';
 
   const [activeMainTab, setActiveMainTabState] = useState<
-    'command_dashboard' | 'site_issues' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'resources_training' | 'portals_access_config' | 'audit_terminal'
+    'command_dashboard' | 'shift_archive' | 'site_issues' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'resources_training' | 'portals_access_config' | 'audit_terminal'
   >(() => {
     try {
       const saved = localStorage.getItem(STORAGE_OPS_MAIN_TAB_KEY);
       if (
         saved === 'command_dashboard' ||
+        saved === 'shift_archive' ||
         saved === 'site_issues' ||
         saved === 'operations' || 
         saved === 'live_tracking' || 
@@ -158,7 +160,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
     return 'command_dashboard';
   });
 
-  const setActiveMainTab = (tab: 'command_dashboard' | 'site_issues' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'resources_training' | 'portals_access_config' | 'audit_terminal') => {
+  const setActiveMainTab = (tab: 'command_dashboard' | 'shift_archive' | 'site_issues' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'resources_training' | 'portals_access_config' | 'audit_terminal') => {
     setActiveMainTabState(tab);
     try {
       localStorage.setItem(STORAGE_OPS_MAIN_TAB_KEY, tab);
@@ -329,6 +331,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
                 <span className="text-blue-400/60">/</span>
                 <span className="text-blue-300 uppercase">
                   {activeMainTab === 'command_dashboard' ? 'Command & Supervisor Dashboard' :
+                   activeMainTab === 'shift_archive' ? 'Shift & Report Audit Archive' :
                    activeMainTab === 'operations' ? 'Shift & Trade Operations' :
                    activeMainTab === 'live_tracking' ? 'Live Guard Roster' :
                    activeMainTab === 'live_map' ? 'GPS Tactical Radar' :
@@ -689,6 +692,20 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
                 {pendingOrientationsCount}
               </span>
             )}
+          </button>
+
+          {/* Master Historical Shift & Report Audit Archive High-Visibility Tab */}
+          <button
+            id="tab-shift-archive-btn"
+            type="button"
+            onClick={() => setActiveMainTab('shift_archive')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              activeMainTab === 'shift_archive'
+                ? 'bg-amber-500 text-slate-950 font-black shadow-xs ring-1 ring-amber-300'
+                : 'bg-amber-500/15 text-amber-300 hover:text-white hover:bg-amber-500/30 border border-amber-500/40'
+            }`}
+          >
+            <span>[ 🗄️ Shift &amp; Report Archive ]</span>
           </button>
 
           <button
@@ -1155,6 +1172,12 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
               adminName={adminName}
               adminBadge={adminBadge}
             />
+          </div>
+        )}
+
+        {activeMainTab === 'shift_archive' && (
+          <div className="p-3 sm:p-4 lg:p-6 max-w-7xl mx-auto w-full">
+            <ShiftAuditArchive />
           </div>
         )}
 

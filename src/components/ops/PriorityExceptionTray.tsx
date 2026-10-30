@@ -51,13 +51,40 @@ export const PriorityExceptionTray: React.FC<PriorityExceptionTrayProps> = ({
     siteOrientations,
     standardReports,
     guardsList,
-    sitesList
+    sitesList,
+    shiftRecords
   } = useShiftOps();
   const { directives } = useClientDirectivesStore();
 
   const exceptions: PriorityExceptionItem[] = [];
 
-  // 0. Active Client Portal Special Watch / Pass-Down Directives
+  // 0a. Off-Site Clock-Out Payroll Rollback Alerts
+  shiftRecords
+    .filter(
+      (rec) =>
+        rec.status === 'OFF_SITE_CLOCKOUT_ROLLBACK' &&
+        !rec.timeAdjustmentAudit?.supervisorOverride?.originalHoursRestored
+    )
+    .slice(0, 3)
+    .forEach((rec) => {
+      const deductedMinutes = rec.timeAdjustmentAudit?.deductedMinutes ?? 28;
+      exceptions.push({
+        id: `exc-rollback-${rec.id}`,
+        category: 'critical_incident',
+        title: `🚨 [PAYROLL ROLLBACK] ${rec.guardName} (${rec.siteName})`,
+        subtitle: `🚨 [PAYROLL ROLLBACK] Guard ${rec.guardName} clocked out off-site from ${rec.siteName}. Paid time clipped by ${deductedMinutes}m to last on-site ping.`,
+        siteName: rec.siteName,
+        guardName: rec.guardName,
+        guardPhone: rec.guardPhone,
+        urgency: 'critical',
+        actionLabel: 'Audit Dossier',
+        onAction: () => {
+          if (onNavigateTab) onNavigateTab('shift_archive');
+        }
+      });
+    });
+
+  // 0b. Active Client Portal Special Watch / Pass-Down Directives
   directives
     .filter(d => d.status === 'ACTIVE')
     .slice(0, 3)

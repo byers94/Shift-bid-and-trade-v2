@@ -274,6 +274,10 @@ export type AdminActionType =
   | 'guard_late_break'
   | 'late_break_alert_acknowledged'
   | 'meal_break_duration_updated'
+  | 'payroll_rollback'
+  | 'shift_auto_clocked_out'
+  | 'shift_extended_30m'
+  | 'supervisor_timecard_override'
   | 'system_reset';
 
 export interface AdminAction {
@@ -1123,10 +1127,108 @@ export type ShiftDutyStatus =
   | 'on_duty'      // Guard has clocked in and actively working
   | 'on_break'     // Guard clocked in but currently on meal or rest break
   | 'completed'    // Guard completed shift and clocked out
+  | 'auto_clocked_out' // Shift automatically terminated after +30m warning timeout
+  | 'off_site_clockout_rollback' // Guard clocked out outside geofence, paid time rolled back to last on-site ping
   | 'late'         // Overdue for clock-in (> 15 min past scheduled start time)
   | 'missed'       // Shift was missed or unfulfilled
   | 'off_duty'     // Not currently on active shift
   | 'cancelled';
+
+export type ShiftRecordStatus =
+  | 'SCHEDULED'
+  | 'ACTIVE'
+  | 'ON_BREAK'
+  | 'COMPLETED'
+  | 'AUTO_CLOCKED_OUT'
+  | 'OFF_SITE_CLOCKOUT_ROLLBACK';
+
+export type ShiftBreadcrumbEventTag =
+  | 'CLOCK_IN'
+  | 'PATROL_PING'
+  | 'CHECKPOINT'
+  | 'BREAK'
+  | 'PERIMETER_EXIT'
+  | 'CLOCK_OUT';
+
+export interface ShiftRecordBreak {
+  id: string;
+  startTime: string;
+  endTime: string | null;
+  durationMinutes: number;
+  type: 'REST' | 'MEAL';
+  note?: string;
+}
+
+export interface ShiftRecordBreadcrumb {
+  timestamp: string;
+  lat: number;
+  lng: number;
+  accuracy: number;
+  insideGeofence: boolean;
+  event?: ShiftBreadcrumbEventTag;
+  distanceMeters?: number;
+  label?: string;
+}
+
+export interface SupervisorPayrollOverride {
+  approvedBy: string;
+  approvedByBadge?: string;
+  approvedAt?: string;
+  adjustedPayableClockOutTime?: string;
+  originalHoursRestored: boolean;
+  note: string;
+}
+
+export interface TimeAdjustmentAudit {
+  originalClockOutTime: string;
+  adjustedClockOutTime: string;
+  deductedMinutes: number;
+  reason: string;
+  timestamp: string;
+  exitCoordinates?: {
+    lat: number;
+    lng: number;
+    distanceMeters?: number;
+  };
+  supervisorOverride?: SupervisorPayrollOverride;
+}
+
+export interface ShiftRecord {
+  id: string;
+  guardId: string;
+  guardName: string;
+  guardBadge: string;
+  guardPhone?: string;
+  siteId: string;
+  siteName: string;
+  siteCode?: string;
+  siteAddress?: string;
+  date: string; // YYYY-MM-DD
+  postRole?: string;
+  scheduledStartTime: string;
+  scheduledEndTime: string;
+  actualClockInTime: string;
+  actualClockOutTime: string | null;
+  clockInLocation: { lat: number; lng: number; insideGeofence: boolean; accuracy?: number };
+  clockOutLocation: { lat: number; lng: number; insideGeofence: boolean; accuracy?: number; distanceMeters?: number } | null;
+  lastOnSitePingTimestamp: string | null; // Updated continuously on every GPS ping verified inside the site geofence
+  breaks: Array<ShiftRecordBreak>;
+  gpsBreadcrumbs: Array<ShiftRecordBreadcrumb>;
+  linkedReportIds: string[]; // references to DARs, Maintenance Reports, Flagged Incidents, and UoF filed during this shift
+  status: ShiftRecordStatus;
+  timeAdjustmentAudit?: TimeAdjustmentAudit;
+  // Additional payroll & audit metadata
+  scheduledHours?: number;
+  actualPayableHours?: number;
+  overtimeMinutes?: number;
+  isOvertimeFlagged?: boolean;
+  extensionHistory?: Array<{
+    extendedAt: string;
+    minutesAdded: number;
+    reason: string;
+  }>;
+  expirationWarningShownAt?: string | null;
+}
 
 export interface ShiftBreakRecord {
   id: string;
@@ -1173,6 +1275,26 @@ export interface ScheduledShift {
   clockOutTime?: string; // ISO timestamp
   actualHoursWorked?: number;
   breaks?: ShiftBreakRecord[];
+
+  // Granular ShiftRecord & Off-Site Rollback Engine Tracking
+  scheduledStartTime?: string;
+  scheduledEndTime?: string;
+  actualClockInTime?: string;
+  actualClockOutTime?: string | null;
+  clockInLocation?: { lat: number; lng: number; insideGeofence: boolean; accuracy?: number };
+  clockOutLocation?: { lat: number; lng: number; insideGeofence: boolean; accuracy?: number; distanceMeters?: number } | null;
+  lastOnSitePingTimestamp?: string | null;
+  gpsBreadcrumbs?: ShiftRecordBreadcrumb[];
+  linkedReportIds?: string[];
+  archiveStatus?: ShiftRecordStatus;
+  timeAdjustmentAudit?: TimeAdjustmentAudit;
+  expirationWarningShownAt?: string | null;
+  expirationDeadlineIso?: string | null;
+  extensionHistory?: Array<{
+    extendedAt: string;
+    minutesAdded: number;
+    reason: string;
+  }>;
   
   // Late tracking
   isLate?: boolean;

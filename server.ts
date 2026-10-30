@@ -9,8 +9,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const VISION_FALLBACK_MODELS = [
-  'gemini-3.8-flash',
   'gemini-3.5-flash-lite',
+  'gemini-3.8-flash',
   'gemini-3.7-flash',
   'gemini-flash-latest',
 ];
@@ -21,7 +21,6 @@ function sleepMs(ms: number): Promise<void> {
 
 function sanitizeGemini3Config(rawConfig: Record<string, any>): Record<string, any> {
   const cleaned = { ...rawConfig };
-  delete cleaned.temperature;
   delete cleaned.topP;
   delete cleaned.topK;
   delete cleaned.candidateCount;
@@ -168,7 +167,7 @@ function getOrderedCandidateModels(requestedModel?: string): string[] {
     requestedModel.includes('gemini-2.5') ||
     requestedModel.includes('gemini-2.0') ||
     requestedModel.includes('gemini-1.5')
-      ? 'gemini-3.8-flash'
+      ? 'gemini-3.5-flash-lite'
       : requestedModel;
 
   return Array.from(new Set([normalized, ...VISION_FALLBACK_MODELS]));
@@ -215,29 +214,47 @@ async function generateVisionContentWithFallback(
   responseSchema: Record<string, any>,
   singleAttempt = false
 ): Promise<GenerateContentResponse> {
-  const sanitizedConfig = sanitizeGemini3Config({
+  const fastOcrConfig = sanitizeGemini3Config({
     responseMimeType: 'application/json',
     responseSchema,
+    temperature: 0.1,
+    thinkingConfig: { thinkingBudget: 0 },
   });
 
   const callModel = async (modelName: string): Promise<GenerateContentResponse> => {
-    return await ai.models.generateContent({
-      model: modelName,
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType,
-              data: base64Data,
-            },
+    const contentsPayload = {
+      parts: [
+        {
+          inlineData: {
+            mimeType,
+            data: base64Data,
           },
-          {
-            text: prompt,
-          },
-        ],
-      },
-      config: sanitizedConfig,
-    });
+        },
+        {
+          text: prompt,
+        },
+      ],
+    };
+
+    try {
+      return await ai.models.generateContent({
+        model: modelName,
+        contents: contentsPayload,
+        config: fastOcrConfig,
+      });
+    } catch (err) {
+      const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+      // If a fallback model does not accept thinkingConfig, retry immediately without thinkingConfig
+      if (msg.includes('thinking') || msg.includes('invalid_argument')) {
+        const { thinkingConfig: _unused, ...fallbackConfig } = fastOcrConfig;
+        return await ai.models.generateContent({
+          model: modelName,
+          contents: contentsPayload,
+          config: fallbackConfig,
+        });
+      }
+      throw err;
+    }
   };
 
   if (singleAttempt && requestedModel) {

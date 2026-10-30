@@ -2514,11 +2514,18 @@ export const ClientPortal: React.FC = () => {
     return (
       <div
         id="client-portal-login-screen"
-        className="flex-1 h-full overflow-y-auto bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 p-4 sm:p-8 flex flex-col items-center justify-center"
+        className="flex-1 w-full min-h-0 overflow-y-auto overscroll-contain bg-slate-950 px-3 sm:px-6 pt-4 pb-32 text-slate-100"
       >
-        <div className="w-full max-w-md space-y-5">
+        <div className="w-full max-w-md mx-auto h-auto min-h-0 space-y-5">
+          {/* Top Portal Title Header */}
+          <div className="px-1 pt-1">
+            <div className="text-[11px] font-mono font-bold uppercase tracking-wider text-emerald-400">
+              Client Portal - Real-Time Security &amp; Patrol Visibility
+            </div>
+          </div>
+
           {/* Isolated Client Login Card (NO site selector dropdown) */}
-          <div className="bg-slate-900 text-white rounded-2xl p-6 sm:p-7 border border-slate-800 shadow-2xl space-y-5">
+          <div className="h-auto min-h-0 bg-slate-900 text-white rounded-2xl p-5 sm:p-7 border border-slate-800 shadow-2xl space-y-5">
             <div className="flex items-center gap-3">
               <div className="p-3 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 shrink-0">
                 <Building2 className="w-6 h-6" />
@@ -2604,13 +2611,13 @@ export const ClientPortal: React.FC = () => {
           {/* Collapsible Bottom Developer Test Credentials Drawer */}
           <div
             id="client-dev-credentials-drawer"
-            className="bg-slate-900/95 text-slate-200 rounded-2xl border border-slate-800 overflow-hidden shadow-lg"
+            className="h-auto min-h-0 bg-slate-900/95 text-slate-200 rounded-2xl border border-slate-800 shadow-lg"
           >
             <button
               id="btn-toggle-dev-test-credentials"
               type="button"
               onClick={() => setDevDrawerOpen(!devDrawerOpen)}
-              className="w-full px-4 py-3 bg-slate-950 hover:bg-slate-900 flex items-center justify-between text-xs font-mono font-bold text-amber-300 cursor-pointer transition-colors"
+              className="w-full px-4 py-3 bg-slate-950 hover:bg-slate-900 rounded-t-2xl flex items-center justify-between text-xs font-mono font-bold text-amber-300 cursor-pointer transition-colors"
             >
               <span className="flex items-center gap-2">
                 <Terminal className="w-3.5 h-3.5 text-amber-400" />
@@ -2631,7 +2638,7 @@ export const ClientPortal: React.FC = () => {
                 <p className="text-[11px] text-slate-400">
                   Sandbox testing helper: Click a property below to populate its isolated Username &amp; PIN:
                 </p>
-                <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                <div className="space-y-1.5">
                   {credentials.map((cred) => (
                     <button
                       key={cred.siteId}

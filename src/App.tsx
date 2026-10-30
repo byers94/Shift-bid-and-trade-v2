@@ -549,7 +549,7 @@ const AppContent: React.FC = () => {
 
         {/* CLIENT PORTAL VIEW (Operational Firewall Property Manager Console) */}
         {activeView === 'client' && (
-          <div className="flex-1 flex flex-col h-full overflow-hidden">
+          <div className="min-h-0 flex-1 flex flex-col h-full overflow-y-auto">
             <ClientPortal />
           </div>
         )}

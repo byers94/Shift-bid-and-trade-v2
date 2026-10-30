@@ -72,6 +72,7 @@ import { playBreakOverAlertSound } from '../../utils/audioAlert';
 import { GuardPanicButton } from './GuardPanicButton';
 import { ShiftHandoffModal, ShiftHandoffAcknowledgment } from './ShiftHandoffModal';
 import { GuardSiteIssues, UnifiedReportModalPrefill } from './GuardSiteIssues';
+import { evaluateShiftExpirationState, formatTimeAmPm } from '../../utils/shiftMonitor';
 
 interface GuardDutyTerminalProps {
   onOpenAlertPrefs?: () => void;
@@ -109,7 +110,9 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
     clearGeofenceBreach,
     escalateGeofenceBreach,
     addGpsBreadcrumb,
-    getShiftBreadcrumbs
+    getShiftBreadcrumbs,
+    extendActiveShift30m,
+    triggerShiftExpirationWarning
   } = useShiftOps();
 
   const handleAddBreadcrumb = useCallback(
@@ -232,6 +235,80 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
 
   // Live timer state
   const [elapsedSec, setElapsedSec] = useState<number>(0);
+
+  // Shift Expiration & +30m Extension Prompt States
+  const [shiftExpirationState, setShiftExpirationState] = useState(() =>
+    evaluateShiftExpirationState(activeClockedInShift)
+  );
+  const [isExtendPromptOpen, setIsExtendPromptOpen] = useState<boolean>(false);
+  const [extensionReasonInput, setExtensionReasonInput] = useState<string>(
+    'Active incident resolution / awaiting late relief officer hand-off'
+  );
+  const autoClockOutTriggeredRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!activeClockedInShift) {
+      setShiftExpirationState(evaluateShiftExpirationState(null));
+      autoClockOutTriggeredRef.current = null;
+      return;
+    }
+
+    const checkExpiration = () => {
+      const state = evaluateShiftExpirationState(activeClockedInShift, Date.now());
+      setShiftExpirationState(state);
+
+      if (
+        state.shouldAutoClockOut &&
+        autoClockOutTriggeredRef.current !== activeClockedInShift.id
+      ) {
+        autoClockOutTriggeredRef.current = activeClockedInShift.id;
+        clockOutGuard(activeGuard.id, {
+          terminationType: 'AUTO_EXPIRATION',
+          notes:
+            'Automated +30m Shift Expiration Clock-Out: Shift scheduled end warning was unacknowledged for 30 minutes.'
+        });
+      }
+    };
+
+    checkExpiration();
+    const timer = setInterval(checkExpiration, 1000);
+    return () => clearInterval(timer);
+  }, [activeClockedInShift, activeGuard.id, clockOutGuard]);
+
+  const handleConfirmExtendShift30m = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeClockedInShift) return;
+    extendActiveShift30m(
+      activeClockedInShift.id,
+      extensionReasonInput.trim() || 'Incident resolution / late relief hand-off'
+    );
+    setIsExtendPromptOpen(false);
+    autoClockOutTriggeredRef.current = null;
+  };
+
+  const handleSimulateOffSiteClockOutRollback = () => {
+    if (!activeClockedInShift) return;
+    const site = sitesList.find(
+      (s) => s.name === activeClockedInShift.siteName || s.id === activeClockedInShift.siteId
+    );
+    const baseLat = site?.latitude || 47.6062;
+    const baseLng = site?.longitude || -122.3321;
+    const offSiteCoords = {
+      latitude: baseLat + 420 / 111111,
+      longitude: baseLng - 420 / (111111 * Math.cos((baseLat * Math.PI) / 180)),
+      accuracy: 5.4
+    };
+    updateGuardGeofenceState(activeClockedInShift.id, {
+      inGeofence: false,
+      distanceMeters: 420,
+      currentGps: offSiteCoords
+    });
+    clockOutGuard(activeGuard.id, {
+      terminationType: 'MANUAL',
+      currentLocation: offSiteCoords,
+      notes: 'Guard clocked out while 420m outside property geofence.'
+    });
+  };
 
   // Active Break Timer States
   const currentActiveBreak = activeClockedInShift?.status === 'on_break'
@@ -517,6 +594,96 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
       {/* ACTIVE CLOCKED IN VIEW */}
       {activeClockedInShift ? (
         <div className="space-y-3 animate-in fade-in duration-200">
+
+          {/* SHIFT SCHEDULED END WARNING BANNER (+30m Auto Clock-Out Engine) */}
+          {shiftExpirationState.isScheduledEndReached && (
+            <div
+              id="shift-expiration-warning-banner"
+              className="p-4 rounded-2xl border-2 border-amber-500 bg-gradient-to-br from-amber-950/95 via-rose-950/90 to-slate-950 text-amber-100 shadow-xl shadow-rose-950/50 space-y-3 animate-in fade-in duration-200"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-2.5">
+                  <div className="p-2 rounded-xl bg-amber-500/20 border border-amber-400/50 text-amber-300 shrink-0 mt-0.5">
+                    <AlertTriangle className="w-5 h-5 animate-bounce" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-mono font-black uppercase tracking-wider px-2 py-0.5 rounded bg-rose-600 text-white">
+                        SHIFT EXPIRATION MONITOR
+                      </span>
+                      <span className="text-[11px] font-mono font-bold text-amber-300">
+                        Auto Clock-Out in {formatElapsedTimer(shiftExpirationState.secondsUntilAutoClockOut)}
+                      </span>
+                    </div>
+                    <p className="text-xs sm:text-sm font-extrabold text-white mt-1 leading-snug">
+                      ⚠️ Shift Scheduled End Reached. Are you staying late for incident resolution or late relief?
+                    </p>
+                    <p className="text-[11px] text-amber-200/90 mt-1">
+                      If unacknowledged after 30 minutes, your shift will automatically terminate. Last verified on-site GPS ping:{' '}
+                      <span className="font-mono font-bold text-emerald-300">
+                        {formatTimeAmPm(activeClockedInShift.lastOnSitePingTimestamp || activeClockedInShift.clockInTime)}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {isExtendPromptOpen ? (
+                <form onSubmit={handleConfirmExtendShift30m} className="p-3 rounded-xl bg-slate-950/80 border border-amber-500/40 space-y-2.5">
+                  <label className="block text-[11px] font-bold text-amber-200 uppercase tracking-wider">
+                    Reason for +30m Shift Extension / Incident Hand-Off:
+                  </label>
+                  <input
+                    type="text"
+                    value={extensionReasonInput}
+                    onChange={(e) => setExtensionReasonInput(e.target.value)}
+                    placeholder="e.g., Staying late for SPD incident report #INC-7731 or awaiting late relief officer..."
+                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-amber-400"
+                    required
+                  />
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsExtendPromptOpen(false)}
+                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black cursor-pointer shadow-sm"
+                    >
+                      Confirm +30m Extension
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  <button
+                    id="extend-shift-30m-btn"
+                    type="button"
+                    onClick={() => setIsExtendPromptOpen(true)}
+                    className="py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-md"
+                  >
+                    <span>[ + Extend Shift 30m / Incident Hand-Off ]</span>
+                  </button>
+                  <button
+                    id="expiration-clock-out-now-btn"
+                    type="button"
+                    onClick={() =>
+                      clockOutGuard(activeGuard.id, {
+                        terminationType: 'MANUAL',
+                        notes: 'Guard clocked out promptly upon Shift Scheduled End Warning.'
+                      })
+                    }
+                    className="py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-md"
+                  >
+                    <span>[ ⏹️ Clock Out Now ]</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Main Duty Status Banner */}
           <div className={`p-4 rounded-2xl border-2 shadow-lg transition-all ${
@@ -866,33 +1033,56 @@ export const GuardDutyTerminal: React.FC<GuardDutyTerminalProps> = ({ onNavigate
                   </div>
 
                   {/* Quick test simulation pills for demo verification */}
-                  <div className="mt-2 pt-1.5 border-t border-white/10 flex items-center justify-between gap-1 text-[9px]">
-                    <span className="text-slate-400 font-mono">GPS Test:</span>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleSimulateMoveOffSite(320)}
-                        className="px-1.5 py-0.5 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-700/60 text-rose-300 font-mono"
-                        title="Simulate guard stepping 320m outside site perimeter"
-                      >
-                        Walk Off-Site (320m)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSimulateReturnOnSite}
-                        className="px-1.5 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 text-emerald-300 font-mono"
-                        title="Simulate guard returning inside site perimeter"
-                      >
-                        Return On-Site
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleVerifyReturnOnSite}
-                        className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-mono"
-                        title="Poll live device GPS to verify location"
-                      >
-                        Check GPS
-                      </button>
+                  <div className="mt-2 pt-1.5 border-t border-white/10 space-y-1.5 text-[9px]">
+                    <div className="flex items-center justify-between gap-1 flex-wrap">
+                      <span className="text-slate-400 font-mono">Mid-Shift GPS:</span>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => handleSimulateMoveOffSite(320)}
+                          className="px-1.5 py-0.5 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-700/60 text-rose-300 font-mono cursor-pointer"
+                          title="Simulate guard stepping 320m outside site perimeter during shift (alerts CAD without terminating shift)"
+                        >
+                          Walk Off-Site (320m)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSimulateReturnOnSite}
+                          className="px-1.5 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 text-emerald-300 font-mono cursor-pointer"
+                          title="Simulate guard returning inside site perimeter"
+                        >
+                          Return On-Site
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleVerifyReturnOnSite}
+                          className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-mono cursor-pointer"
+                          title="Poll live device GPS to verify location"
+                        >
+                          Check GPS
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-1 flex-wrap pt-1 border-t border-white/5">
+                      <span className="text-amber-400/90 font-mono">End-of-Shift Test:</span>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => triggerShiftExpirationWarning(activeClockedInShift.id, false)}
+                          className="px-1.5 py-0.5 rounded bg-amber-950/80 hover:bg-amber-900 border border-amber-700/60 text-amber-300 font-mono cursor-pointer"
+                          title="Simulate reaching Scheduled Shift End Time to trigger warning banner"
+                        >
+                          ⚠️ Sim End Warning
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSimulateOffSiteClockOutRollback}
+                          className="px-1.5 py-0.5 rounded bg-rose-950/90 hover:bg-rose-900 border border-rose-600/70 text-rose-200 font-mono font-bold cursor-pointer"
+                          title="Simulate clocking out while outside geofence — triggers Off-Site Clock-Out Rollback to last on-site ping"
+                        >
+                          🛑 Off-Site Clock-Out Rollback
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>

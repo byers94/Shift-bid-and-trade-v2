@@ -82,8 +82,18 @@ import {
   DashboardPreset,
   DashboardTileVisibility,
   ALL_DASHBOARD_TILE_KEYS,
-  DEFAULT_DASHBOARD_PRESETS
+  DEFAULT_DASHBOARD_PRESETS,
+  ShiftRecord
 } from '../types/shift';
+import {
+  INITIAL_SHIFT_RECORDS,
+  ARCHIVE_LINKED_REPORTS
+} from '../data/mockShiftAuditData';
+import {
+  processContinuousShiftPing,
+  evaluateShiftTermination,
+  convertScheduledShiftToShiftRecord
+} from '../utils/shiftMonitor';
 import { generateSyntheticShiftBreadcrumbs } from '../utils/breadcrumbHelper';
 import {
   verifySiteGeofence,
@@ -579,6 +589,21 @@ interface ShiftOpsContextType {
       handoverSummary?: string; 
       equipmentReturned?: boolean;
       completionReport?: ShiftCompletionReport;
+      terminationType?: 'MANUAL' | 'AUTO_EXPIRATION';
+      currentLocation?: { latitude: number; longitude: number; accuracy?: number };
+    }
+  ) => void;
+  shiftRecords: ShiftRecord[];
+  extendActiveShift30m: (shiftId: string, reason: string) => void;
+  triggerShiftExpirationWarning: (shiftId: string, simulateTimeoutSoon?: boolean) => void;
+  overrideShiftRecordPayroll: (
+    shiftRecordId: string,
+    overrideData: {
+      adjustedClockOutTime: string;
+      originalHoursRestored: boolean;
+      note: string;
+      approvedBy: string;
+      approvedByBadge?: string;
     }
   ) => void;
   startGuardBreak: (guardId: string, breakType?: 'meal' | 'rest', note?: string, customDurationMinutes?: number) => void;
@@ -784,6 +809,7 @@ const STORAGE_KEY_AVAILABILITY_CHANGE_REQUESTS = 'secureshift_availability_chang
 const STORAGE_KEY_MEAL_BREAK_DURATION = 'secureshift_meal_break_duration_minutes_v1';
 const STORAGE_KEY_ORIENTATIONS = 'secureshift_site_orientations_v1';
 const STORAGE_KEY_DASHBOARD_CONFIG = 'secureshift_dashboard_config_v1';
+const STORAGE_KEY_SHIFT_RECORDS = 'secureshift_shift_records_archive_v1';
 
 let uniqueEntityCounter = 0;
 const generateUniqueSuffix = () => {
@@ -1189,8 +1215,14 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [standardReports, setStandardReports] = useState<StandardShiftReport[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_STANDARD_REPORTS);
-      const loaded: StandardShiftReport[] = saved ? JSON.parse(saved) : INITIAL_STANDARD_REPORTS;
-      return loaded.map((report) => {
+      const rawLoaded: StandardShiftReport[] = saved ? JSON.parse(saved) : INITIAL_STANDARD_REPORTS;
+      const mergedReports = [...rawLoaded];
+      for (const archRpt of ARCHIVE_LINKED_REPORTS) {
+        if (!mergedReports.some((r) => r.id === archRpt.id)) {
+          mergedReports.push(archRpt);
+        }
+      }
+      return mergedReports.map((report) => {
         if (!report.shiftBreadcrumbs || report.shiftBreadcrumbs.length === 0) {
           const centerLat = report.gpsCoordinates?.latitude || 47.6062;
           const centerLng = report.gpsCoordinates?.longitude || -122.3321;
@@ -1211,7 +1243,27 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return report;
       });
     } catch {
-      return INITIAL_STANDARD_REPORTS;
+      return [...ARCHIVE_LINKED_REPORTS, ...INITIAL_STANDARD_REPORTS];
+    }
+  });
+
+  // Historical Shift & Report Audit Archive State
+  const [shiftRecords, setShiftRecords] = useState<ShiftRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_SHIFT_RECORDS);
+      if (saved) {
+        const parsed: ShiftRecord[] = JSON.parse(saved);
+        const merged = [...parsed];
+        for (const initRec of INITIAL_SHIFT_RECORDS) {
+          if (!merged.some((r) => r.id === initRec.id)) {
+            merged.push(initRec);
+          }
+        }
+        return merged;
+      }
+      return INITIAL_SHIFT_RECORDS;
+    } catch {
+      return INITIAL_SHIFT_RECORDS;
     }
   });
 
@@ -2832,6 +2884,14 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       console.warn('Storage save failed for standardReports', e);
     }
   }, [standardReports]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_SHIFT_RECORDS, JSON.stringify(shiftRecords));
+    } catch (e) {
+      console.warn('Storage save failed for shiftRecords', e);
+    }
+  }, [shiftRecords]);
 
   // Automated Time-Sensitive Task Alert Engine
   useEffect(() => {
@@ -5426,6 +5486,23 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     // Save report to standardReports state first for immediate local view
     setStandardReports((prev) => [newReport, ...prev]);
 
+    // Link report ID to the guard's active shift
+    setScheduledShifts((prev) =>
+      prev.map((s) => {
+        if (
+          (newReport.shiftId && s.id === newReport.shiftId) ||
+          (!newReport.shiftId && s.guardId === newReport.guardId && (s.status === 'on_duty' || s.status === 'on_break'))
+        ) {
+          const existingIds = s.linkedReportIds || [];
+          return {
+            ...s,
+            linkedReportIds: existingIds.includes(newReport.id) ? existingIds : [...existingIds, newReport.id]
+          };
+        }
+        return s;
+      })
+    );
+
     // OFFLINE QUEUE HANDLING: If offline, buffer locally in localStorage queue
     if (!deviceIsConnected) {
       enqueueOfflineReport(newReport);
@@ -6720,6 +6797,8 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       handoverSummary?: string; 
       equipmentReturned?: boolean;
       completionReport?: ShiftCompletionReport;
+      terminationType?: 'MANUAL' | 'AUTO_EXPIRATION';
+      currentLocation?: { latitude: number; longitude: number; accuracy?: number };
     }
   ) => {
     const activeShift = scheduledShifts.find(
@@ -6733,6 +6812,8 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const nowIso = options?.completionReport?.checkOutTimestamp || new Date().toISOString();
     const guard = guardsList.find((g) => g.id === guardId) || activeGuard;
+    const site = sitesList.find((s) => s.id === activeShift.siteId || s.name === activeShift.siteName);
+    const terminationType = options?.terminationType || 'MANUAL';
 
     // Close any open breaks
     const updatedBreaks = (activeShift.breaks || []).map((b) => {
@@ -6743,23 +6824,79 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return b;
     });
 
-    const elapsedSeconds = getShiftElapsedSeconds(activeShift.clockInTime, nowIso, updatedBreaks);
-    const actualHoursWorked = Math.round((elapsedSeconds / 3600) * 10) / 10;
-    const finalBreadcrumbs = activeShift.breadcrumbs || [];
+    // Evaluate Shift Termination & Off-Site Clock-Out Rollback Rule (Applies ONLY at Shift Termination)
+    const terminationEval = evaluateShiftTermination({
+      shift: { ...activeShift, breaks: updatedBreaks },
+      site,
+      terminationType,
+      currentLocation: options?.currentLocation || options?.completionReport?.gpsCoordinates,
+      terminationTimestamp: nowIso
+    });
+
+    const finalBreadcrumbs = [...(activeShift.breadcrumbs || [])];
+    const terminationCrumb: GpsBreadcrumb = {
+      id: `crumb-term-${Date.now()}`,
+      latitude: terminationEval.clockOutLocation.lat,
+      longitude: terminationEval.clockOutLocation.lng,
+      accuracy: terminationEval.clockOutLocation.accuracy ?? 4.8,
+      timestamp: nowIso,
+      inGeofence: terminationEval.clockOutLocation.insideGeofence,
+      distanceMeters: terminationEval.clockOutLocation.distanceMeters ?? 15,
+      status: terminationEval.dutyStatus,
+      source: 'manual_sync',
+      parcelOrCheckpointName: terminationEval.isOffSiteRollback
+        ? `OFF-SITE CLOCK-OUT ATTEMPT (${terminationEval.clockOutLocation.distanceMeters || 240}m Outside Geofence)`
+        : terminationEval.isAutoClockOut
+        ? 'AUTO CLOCK-OUT (+30m Warning Timeout Expired On-Site)'
+        : 'On-Site Shift Clock-Out'
+    };
+    finalBreadcrumbs.push(terminationCrumb);
+
+    const shiftReportIds = standardReports
+      .filter((r) => r.shiftId === activeShift.id || (r.guardId === activeShift.guardId && r.siteName === activeShift.siteName && r.timestamp.startsWith(activeShift.date)))
+      .map((r) => r.id);
+    const combinedLinkedReportIds = Array.from(new Set([...(activeShift.linkedReportIds || []), ...shiftReportIds]));
 
     const updatedShift: ScheduledShift = {
       ...activeShift,
-      status: 'completed',
-      clockOutTime: nowIso,
-      clockOutNotes: options?.completionReport?.activitySummary || options?.notes || 'Shift completed and clocked out via Guard Terminal.',
-      handoverSummary: options?.completionReport?.activitySummary || options?.handoverSummary || 'Handover completed to relief officer. All posts secure.',
-      actualHoursWorked: Math.max(0.1, actualHoursWorked),
+      status: terminationEval.dutyStatus,
+      archiveStatus: terminationEval.archiveStatus,
+      clockOutTime: terminationEval.actualClockOutTime,
+      actualClockInTime: activeShift.actualClockInTime || activeShift.clockInTime,
+      actualClockOutTime: terminationEval.actualClockOutTime,
+      clockOutLocation: terminationEval.clockOutLocation,
+      lastOnSitePingTimestamp: terminationEval.lastOnSitePingTimestamp,
+      timeAdjustmentAudit: terminationEval.timeAdjustmentAudit,
+      linkedReportIds: combinedLinkedReportIds,
+      clockOutNotes:
+        options?.completionReport?.activitySummary ||
+        options?.notes ||
+        (terminationEval.isOffSiteRollback
+          ? terminationEval.timeAdjustmentAudit?.reason
+          : terminationEval.isAutoClockOut
+          ? 'Automated expiration clock-out after +30m warning timeout.'
+          : 'Shift completed and clocked out via Guard Terminal.'),
+      handoverSummary:
+        options?.completionReport?.activitySummary ||
+        options?.handoverSummary ||
+        'Handover completed to relief officer. All posts secure.',
+      actualHoursWorked: terminationEval.actualPayableHours,
       breaks: updatedBreaks,
       breadcrumbs: finalBreadcrumbs,
       completionReport: options?.completionReport
     };
 
-    setScheduledShifts((prev) => prev.map((s) => s.id === activeShift.id ? updatedShift : s));
+    setScheduledShifts((prev) => prev.map((s) => (s.id === activeShift.id ? updatedShift : s)));
+
+    // Convert and upsert into Historical Shift & Report Audit Archive
+    const archiveRecord = convertScheduledShiftToShiftRecord(updatedShift, combinedLinkedReportIds);
+    setShiftRecords((prev) => {
+      const exists = prev.some((r) => r.id === archiveRecord.id);
+      if (exists) {
+        return prev.map((r) => (r.id === archiveRecord.id ? archiveRecord : r));
+      }
+      return [archiveRecord, ...prev];
+    });
 
     // Save GPS Breadcrumb Trail & Completion Report with the reporting history for this shift
     setStandardReports((prev) => {
@@ -6846,37 +6983,270 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     playClockOutAlertSound();
 
-    const reportDesc = options?.completionReport
-      ? `${guard.name} (${guard.badgeNumber}) filed Shift Completion Report at ${activeShift.siteName}. Hours logged: ${actualHoursWorked}h. Returned gear & uniform compliance verified.`
-      : `${guard.name} (${guard.badgeNumber}) completed shift at ${activeShift.siteName}. Hours logged: ${actualHoursWorked}h.`;
+    // Handle Off-Site Clock-Out Rollback CAD Alert vs. Auto Clock-Out vs. Normal Completion
+    if (terminationEval.isOffSiteRollback && terminationEval.cadAlertMessage) {
+      logAdminAction({
+        type: 'off_site_clockout_rollback',
+        adminName: guard.name,
+        adminBadge: guard.badgeNumber,
+        badgeVariant: 'rose',
+        title: `🚨 [PAYROLL ROLLBACK] ${guard.name} (${activeShift.siteName})`,
+        description: terminationEval.cadAlertMessage,
+        metadata: {
+          shiftId: activeShift.id,
+          siteName: activeShift.siteName,
+          deductedMinutes: terminationEval.deductedMinutes,
+          lastOnSitePingTimestamp: terminationEval.lastOnSitePingTimestamp,
+          originalClockOutTime: terminationEval.originalAttemptedClockOutTime,
+          adjustedClockOutTime: terminationEval.actualClockOutTime
+        }
+      });
 
-    logAdminAction({
-      type: 'guard_clocked_out',
-      adminName: guard.name,
-      adminBadge: guard.badgeNumber,
-      badgeVariant: 'slate',
-      title: options?.completionReport ? `Shift Completion Report: ${guard.name}` : `Officer Clocked Out: ${guard.name}`,
-      description: reportDesc,
-      metadata: {
-        siteName: activeShift.siteName,
-        actualHoursWorked,
-        clockOutTime: nowIso,
-        hasCompletionReport: Boolean(options?.completionReport),
-        completionReportId: options?.completionReport?.id
-      }
-    });
+      addAuditLog(
+        'OFF_SITE_CLOCKOUT_ROLLBACK',
+        'shift',
+        terminationEval.cadAlertMessage,
+        guard.name,
+        'danger'
+      );
+
+      showToast(
+        '🚨 Off-Site Clock-Out Rollback Applied',
+        terminationEval.cadAlertMessage,
+        'danger'
+      );
+    } else if (terminationEval.isAutoClockOut) {
+      const autoMsg = `⏱️ [AUTO CLOCK-OUT] Guard ${guard.name} automatically clocked out at ${activeShift.siteName} after +30m expiration warning timeout. Verified ON-SITE (${terminationEval.actualPayableHours}h).`;
+      logAdminAction({
+        type: 'auto_clocked_out',
+        adminName: guard.name,
+        adminBadge: guard.badgeNumber,
+        badgeVariant: 'amber',
+        title: `Auto Clock-Out (+30m Timeout): ${guard.name}`,
+        description: autoMsg,
+        metadata: {
+          shiftId: activeShift.id,
+          siteName: activeShift.siteName,
+          actualHoursWorked: terminationEval.actualPayableHours
+        }
+      });
+
+      addAuditLog(
+        'SHIFT_AUTO_CLOCKED_OUT',
+        'shift',
+        autoMsg,
+        'Automated Shift Monitor',
+        'warning'
+      );
+
+      showToast(
+        '⏱️ Shift Auto Clocked-Out (+30m Timeout)',
+        `Unacknowledged shift end warning expired. Officer ${guard.name} clocked out on-site (${terminationEval.actualPayableHours} hrs).`,
+        'warning'
+      );
+    } else {
+      const reportDesc = options?.completionReport
+        ? `${guard.name} (${guard.badgeNumber}) filed Shift Completion Report at ${activeShift.siteName}. Hours logged: ${terminationEval.actualPayableHours}h. Returned gear & uniform compliance verified.`
+        : `${guard.name} (${guard.badgeNumber}) completed shift at ${activeShift.siteName}. Hours logged: ${terminationEval.actualPayableHours}h.`;
+
+      logAdminAction({
+        type: 'guard_clocked_out',
+        adminName: guard.name,
+        adminBadge: guard.badgeNumber,
+        badgeVariant: 'slate',
+        title: options?.completionReport ? `Shift Completion Report: ${guard.name}` : `Officer Clocked Out: ${guard.name}`,
+        description: reportDesc,
+        metadata: {
+          siteName: activeShift.siteName,
+          actualHoursWorked: terminationEval.actualPayableHours,
+          clockOutTime: terminationEval.actualClockOutTime,
+          hasCompletionReport: Boolean(options?.completionReport),
+          completionReportId: options?.completionReport?.id
+        }
+      });
+
+      addAuditLog(
+        'SHIFT_DUTY_CLOCK_OUT',
+        guard.id,
+        `${guard.name} completed duty at ${activeShift.siteName}. Logged ${terminationEval.actualPayableHours} hours. ${options?.completionReport ? 'Shift Completion Report submitted.' : `Handover: ${options?.handoverSummary || 'Completed'}.`}`,
+        guard.name,
+        'info'
+      );
+
+      showToast(
+        options?.completionReport ? 'Shift Completion Report Submitted' : 'Shift Complete & Clocked Out',
+        `Officer ${guard.name} completed shift at ${activeShift.siteName} (${terminationEval.actualPayableHours} hrs). Check-out timestamped.`,
+        'success'
+      );
+    }
+  };
+
+  const extendActiveShift30m = (shiftId: string, reason: string) => {
+    const nowIso = new Date().toISOString();
+    const targetShift = scheduledShifts.find((s) => s.id === shiftId);
+    if (!targetShift) return;
+
+    const cleanReason = reason.trim() || 'Staying late for incident resolution / late relief hand-off';
+
+    setScheduledShifts((prev) =>
+      prev.map((s) => {
+        if (s.id === shiftId) {
+          const extensions = [
+            ...(s.extensionHistory || []),
+            {
+              extendedAt: nowIso,
+              minutesAdded: 30,
+              reason: cleanReason
+            }
+          ];
+          return {
+            ...s,
+            extensionHistory: extensions,
+            expirationWarningShownAt: null,
+            expirationDeadlineIso: null
+          };
+        }
+        return s;
+      })
+    );
 
     addAuditLog(
-      'SHIFT_DUTY_CLOCK_OUT',
-      guard.id,
-      `${guard.name} completed duty at ${activeShift.siteName}. Logged ${actualHoursWorked} hours. ${options?.completionReport ? 'Shift Completion Report submitted.' : `Handover: ${options?.handoverSummary || 'Completed'}.`}`,
-      guard.name,
+      'SHIFT_EXTENDED_30M',
+      'shift',
+      `Officer ${targetShift.guardName} (${targetShift.guardBadge}) extended shift at ${targetShift.siteName} by +30m. Reason: "${cleanReason}"`,
+      targetShift.guardName,
+      'warning'
+    );
+
+    logAdminAction({
+      type: 'shift_extended_30m',
+      adminName: targetShift.guardName,
+      adminBadge: targetShift.guardBadge,
+      badgeVariant: 'amber',
+      title: `Shift Extended +30m: ${targetShift.guardName}`,
+      description: `Extended duty at ${targetShift.siteName} for incident/relief hand-off: "${cleanReason}"`,
+      metadata: { shiftId, siteName: targetShift.siteName, reason: cleanReason }
+    });
+
+    showToast(
+      '+30m Shift Extension Logged',
+      `Shift at ${targetShift.siteName} extended by 30 minutes. Reason logged to Command CAD.`,
       'info'
+    );
+  };
+
+  const triggerShiftExpirationWarning = (shiftId: string, simulateTimeoutSoon: boolean = false) => {
+    const nowMs = Date.now();
+    const warningStartIso = simulateTimeoutSoon
+      ? new Date(nowMs - (29 * 60 + 45) * 1000).toISOString()
+      : new Date(nowMs).toISOString();
+    const deadlineIso = simulateTimeoutSoon
+      ? new Date(nowMs + 15 * 1000).toISOString()
+      : new Date(nowMs + 30 * 60 * 1000).toISOString();
+
+    setScheduledShifts((prev) =>
+      prev.map((s) =>
+        s.id === shiftId
+          ? {
+              ...s,
+              expirationWarningShownAt: warningStartIso,
+              expirationDeadlineIso: deadlineIso
+            }
+          : s
+      )
     );
 
     showToast(
-      options?.completionReport ? 'Shift Completion Report Submitted' : 'Shift Complete & Clocked Out',
-      `Officer ${guard.name} completed shift at ${activeShift.siteName} (${actualHoursWorked} hrs). Check-out timestamped.`,
+      '⚠️ Shift Scheduled End Reached',
+      simulateTimeoutSoon
+        ? 'Simulated +30m expiration warning with 15s remaining before auto clock-out.'
+        : 'Shift end warning active in Guard Terminal (+30m auto clock-out timer started).',
+      'warning'
+    );
+  };
+
+  const overrideShiftRecordPayroll = (
+    shiftRecordId: string,
+    overrideData: {
+      adjustedClockOutTime: string;
+      originalHoursRestored: boolean;
+      note: string;
+      approvedBy: string;
+      approvedByBadge?: string;
+    }
+  ) => {
+    const nowIso = new Date().toISOString();
+    const targetRecord = shiftRecords.find((r) => r.id === shiftRecordId);
+    if (!targetRecord) return;
+
+    const clockInMs = new Date(targetRecord.actualClockInTime).getTime();
+    const newOutMs = new Date(overrideData.adjustedClockOutTime).getTime();
+    const breakMins = (targetRecord.breaks || []).reduce((acc, b) => acc + (b.durationMinutes || 0), 0);
+    const recalculatedPayableHours =
+      overrideData.originalHoursRestored
+        ? targetRecord.scheduledHours || 8.0
+        : Math.max(0.1, Math.round(((newOutMs - clockInMs - breakMins * 60000) / 3600000) * 100) / 100);
+
+    setShiftRecords((prev) =>
+      prev.map((rec) => {
+        if (rec.id === shiftRecordId) {
+          const existingAudit = rec.timeAdjustmentAudit || {
+            originalClockOutTime: rec.actualClockOutTime || nowIso,
+            adjustedClockOutTime: overrideData.adjustedClockOutTime,
+            deductedMinutes: 0,
+            reason: 'Supervisor manual timecard adjustment.',
+            timestamp: nowIso
+          };
+          return {
+            ...rec,
+            actualClockOutTime: overrideData.adjustedClockOutTime,
+            actualPayableHours: recalculatedPayableHours,
+            timeAdjustmentAudit: {
+              ...existingAudit,
+              adjustedClockOutTime: overrideData.adjustedClockOutTime,
+              deductedMinutes: overrideData.originalHoursRestored ? 0 : existingAudit.deductedMinutes,
+              supervisorOverride: {
+                approvedBy: overrideData.approvedBy,
+                approvedByBadge: overrideData.approvedByBadge || 'OPS-SUP-01',
+                approvedAt: nowIso,
+                adjustedPayableClockOutTime: overrideData.adjustedClockOutTime,
+                originalHoursRestored: overrideData.originalHoursRestored,
+                note: overrideData.note
+              }
+            }
+          };
+        }
+        return rec;
+      })
+    );
+
+    addAuditLog(
+      'SUPERVISOR_PAYROLL_OVERRIDE',
+      'shift',
+      `Supervisor ${overrideData.approvedBy} adjusted payable timecard for Officer ${targetRecord.guardName} (${targetRecord.siteName}). ${overrideData.originalHoursRestored ? 'Full scheduled hours restored.' : `Payable clock-out set to ${overrideData.adjustedClockOutTime}.`} Note: "${overrideData.note}"`,
+      overrideData.approvedBy,
+      'info'
+    );
+
+    logAdminAction({
+      type: 'supervisor_payroll_override',
+      adminName: overrideData.approvedBy,
+      adminBadge: overrideData.approvedByBadge || 'OPS-SUP-01',
+      badgeVariant: 'emerald',
+      title: `Payroll Timecard Override: ${targetRecord.guardName}`,
+      description: `${overrideData.originalHoursRestored ? 'Restored full scheduled hours' : 'Adjusted payable clock-out'} for ${targetRecord.siteName}. Note: "${overrideData.note}"`,
+      metadata: {
+        shiftRecordId,
+        guardName: targetRecord.guardName,
+        siteName: targetRecord.siteName,
+        originalHoursRestored: overrideData.originalHoursRestored,
+        note: overrideData.note
+      }
+    });
+
+    showToast(
+      '✅ Supervisor Payroll Override Saved',
+      `Updated payable timecard for Officer ${targetRecord.guardName} (${recalculatedPayableHours}h). Audit trail recorded.`,
       'success'
     );
   };
@@ -7868,9 +8238,13 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (s.id === shiftId) {
           const existing = s.breadcrumbs || [];
           const updatedTrail = [...existing, newCrumb].slice(-2000);
+          const pingInfo = processContinuousShiftPing(s, newCrumb);
+          const updatedRecordCrumbs = [...(s.gpsBreadcrumbs || []), pingInfo.mappedBreadcrumb].slice(-2000);
           return {
             ...s,
             breadcrumbs: updatedTrail,
+            gpsBreadcrumbs: updatedRecordCrumbs,
+            lastOnSitePingTimestamp: pingInfo.lastOnSitePingTimestamp,
             gpsCoordinates: {
               latitude: newCrumb.latitude,
               longitude: newCrumb.longitude,
@@ -9518,6 +9892,8 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     localStorage.removeItem(STORAGE_KEY_AVAILABILITY_CHANGE_REQUESTS);
     localStorage.removeItem(STORAGE_KEY_ORIENTATIONS);
     localStorage.removeItem(STORAGE_KEY_DASHBOARD_CONFIG);
+    localStorage.removeItem(STORAGE_KEY_SHIFT_RECORDS);
+    setShiftRecords(INITIAL_SHIFT_RECORDS);
     showToast('System Reset', 'Demo shift, trade, schedule, command dashboard, orientations, and telemetry restored to initial state.', 'info');
   };
 
@@ -9566,6 +9942,10 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         dismissLateBreakAlert,
         clockInGuard,
         clockOutGuard,
+        shiftRecords,
+        extendActiveShift30m,
+        triggerShiftExpirationWarning,
+        overrideShiftRecordPayroll,
         startGuardBreak,
         endGuardBreak,
         scheduleNewShift,
