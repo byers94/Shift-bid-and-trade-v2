@@ -1449,6 +1449,26 @@ export interface MaintenanceReportDetails {
   suggestedAction?: string;
   workOrderStatus: WorkOrderStatus;
   workOrderNumber?: string;
+
+  // Site Emergency Maintenance Call-Out Tracking
+  emergencyMaintenanceContacted?: boolean;
+  contactedPersonOrVendorName?: string;
+  timeCalled?: string;
+  callOutcomeOrTechEta?: string;
+}
+
+export interface UseOfForceSupplement {
+  deEscalationAttempted: string[];
+  subjectResistanceLevels: string[];
+  forceOptionsUtilized: string[];
+  handcuffsDoubleLocked?: boolean;
+  gaugeTightnessChecked?: boolean;
+  restraintsTimeAndTransfer?: string;
+  subjectInjuryStatus: string;
+  officerInjuryStatus: string;
+  bwcActiveStatus: string;
+  justificationNarrative: string;
+  fieldSupervisorImmediatelyNotified: boolean;
 }
 
 export type IncidentCategory = 
@@ -1540,6 +1560,11 @@ export interface IncidentReportDetails {
   emergencyOutcome?: string; // e.g. "Subject detained by SPD and issued criminal trespass admonishment."
   supervisorNotified: boolean;
   supervisorName?: string;
+
+  // Use of Force (UoF) Supplemental Report
+  useOfForce?: boolean;
+  requiresSupervisorReview?: boolean;
+  useOfForceSupplement?: UseOfForceSupplement;
 }
 
 export interface StandardShiftReport {
@@ -1574,6 +1599,10 @@ export interface StandardShiftReport {
   maintenanceDetails?: MaintenanceReportDetails;
   incidentDetails?: IncidentReportDetails;
   completionDetails?: ShiftCompletionReport;
+
+  // Use of Force & Supervisor Review Flags
+  useOfForce?: boolean;
+  requiresSupervisorReview?: boolean;
   
   // Review & Workflow
   status: 'submitted' | 'reviewed' | 'flagged_for_client' | 'archived';

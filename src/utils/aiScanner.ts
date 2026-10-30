@@ -1,5 +1,3 @@
-import { GoogleGenAI, Type } from '@google/genai';
-
 export interface ScannedIdDocumentResult {
   fullName: string;
   idType: string;
@@ -29,38 +27,38 @@ export interface ScannedVehiclePlateResult {
 const SAMPLE_ID_SCANS: ScannedIdDocumentResult[] = [
   {
     fullName: 'Marcus J. Reynolds',
-    idType: 'drivers_license',
+    idType: "Driver's License (DL)",
     idNumber: 'WDL-9482-019B',
     issuingState: 'WA',
     approxAge: '34',
-    gender: 'male',
+    gender: 'Male',
     height: '5\'11"',
-    weight: '185 lbs, Medium build',
-    hairEyeColor: 'Brown / Hazel',
+    weight: '185 lbs',
+    hairEyeColor: 'Brown hair, Hazel eyes',
     address: 'Apt #402 / Bldg 3'
   },
   {
     fullName: 'Elena M. Vance',
-    idType: 'drivers_license',
+    idType: "Driver's License (DL)",
     idNumber: 'WDL-7731-402C',
     issuingState: 'WA',
     approxAge: '29',
-    gender: 'female',
+    gender: 'Female',
     height: '5\'6"',
-    weight: '135 lbs, Slender',
-    hairEyeColor: 'Black / Brown',
+    weight: '135 lbs',
+    hairEyeColor: 'Black hair, Brown eyes',
     address: 'Apt 304'
   },
   {
     fullName: 'Devon R. Holloway',
-    idType: 'state_id',
+    idType: 'State ID Card',
     idNumber: 'CO-ID-884-9201',
     issuingState: 'CO',
     approxAge: '41',
-    gender: 'male',
+    gender: 'Male',
     height: '6\'1"',
-    weight: '210 lbs, Athletic build',
-    hairEyeColor: 'Dark Brown / Blue',
+    weight: '210 lbs',
+    hairEyeColor: 'Brown hair, Blue eyes',
     address: 'Unit 412'
   }
 ];
@@ -71,56 +69,37 @@ const SAMPLE_VEHICLE_SCANS: ScannedVehiclePlateResult[] = [
     plateState: 'WA',
     vehicleColor: 'Silver',
     vehicleMake: 'Honda',
-    vehicleModel: 'Accord',
-    formattedSummary: '2021 Silver Honda Accord, WA #ABC-123'
+    vehicleModel: 'Accord Sedan',
+    formattedSummary: 'Silver Honda Accord Sedan, WA #ABC-123'
   },
   {
     plateNumber: 'WA-8849B',
     plateState: 'WA',
     vehicleColor: 'Black',
     vehicleMake: 'Ford',
-    vehicleModel: 'F-150',
-    formattedSummary: '2022 Black Ford F-150, WA #WA-8849B'
+    vehicleModel: 'F-150 Pickup',
+    formattedSummary: 'Black Ford F-150 Pickup, WA #WA-8849B'
   },
   {
     plateNumber: 'ABC-1234',
     plateState: 'CO',
     vehicleColor: 'Silver',
     vehicleMake: 'Honda',
-    vehicleModel: 'Civic',
-    formattedSummary: '2020 Silver Honda Civic, CO #ABC-1234'
+    vehicleModel: 'Civic Sedan',
+    formattedSummary: 'Silver Honda Civic Sedan, CO #ABC-1234'
   }
 ];
 
 let sampleIdCursor = 0;
 let samplePlateCursor = 0;
 
-function stripBase64DataUrlPrefix(input: string): string {
-  if (!input) return '';
-  const commaIdx = input.indexOf(',');
-  if (input.startsWith('data:') && commaIdx !== -1) {
-    return input.slice(commaIdx + 1);
-  }
-  return input;
-}
-
-function getSafeGeminiApiKey(): string | undefined {
-  try {
-    if (typeof process !== 'undefined' && process.env && process.env.GEMINI_API_KEY) {
-      return process.env.GEMINI_API_KEY;
-    }
-  } catch {
-    // Ignore ReferenceError if process is not defined in browser runtime
-  }
-  return undefined;
-}
-
 export function calculateAgeFromDobString(dobRaw?: string): string {
   if (!dobRaw) return '';
   const parsed = new Date(dobRaw);
   if (Number.isNaN(parsed.getTime())) return '';
+  const referenceYear = 2026;
+  let age = referenceYear - parsed.getFullYear();
   const today = new Date();
-  let age = today.getFullYear() - parsed.getFullYear();
   const m = today.getMonth() - parsed.getMonth();
   if (m < 0 || (m === 0 && today.getDate() < parsed.getDate())) {
     age--;
@@ -139,7 +118,7 @@ export function generateSimulatedIdCardImage(scan: ScannedIdDocumentResult): str
     <rect width="800" height="500" rx="24" fill="url(#bg)" stroke="#38bdf8" stroke-width="4"/>
     <rect x="24" y="24" width="752" height="64" rx="12" fill="#0284c7"/>
     <text x="48" y="65" fill="#ffffff" font-family="monospace" font-size="26" font-weight="bold">
-      ${scan.issuingState || 'WA'} DRIVER LICENSE • AI OCR VERIFIED
+      ${scan.issuingState || 'WA'} DRIVER LICENSE • SIMULATED SAMPLE
     </text>
     <rect x="44" y="116" width="190" height="240" rx="14" fill="#334155" stroke="#64748b" stroke-width="2"/>
     <circle cx="139" cy="195" r="42" fill="#94a3b8"/>
@@ -161,7 +140,7 @@ export function generateSimulatedIdCardImage(scan: ScannedIdDocumentResult): str
     </text>
     <rect x="44" y="395" width="712" height="68" rx="10" fill="#090d16" stroke="#1e293b"/>
     <text x="64" y="436" fill="#22c55e" font-family="monospace" font-size="17">
-      [GEMINI VISION OCR] CONFIDENCE 99.4% • TIMESTAMP ${new Date().toISOString().slice(0, 19)}Z
+      [SIMULATED TEST SAMPLE] • TIMESTAMP ${new Date().toISOString().slice(0, 19)}Z
     </text>
   </svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
@@ -176,14 +155,14 @@ export function generateSimulatedPlateImage(scan: ScannedVehiclePlateResult): st
     </text>
     <rect x="190" y="130" width="420" height="190" rx="18" fill="#f8fafc" stroke="#f59e0b" stroke-width="6"/>
     <text x="400" y="172" text-anchor="middle" fill="#1e3a8a" font-family="sans-serif" font-size="24" font-weight="bold">
-      ${scan.plateState || 'WA'} • EVERGREEN STATE
+      ${scan.plateState || 'WA'} • SIMULATED SAMPLE
     </text>
     <text x="400" y="258" text-anchor="middle" fill="#0f172a" font-family="monospace" font-size="68" font-weight="bold" letter-spacing="4">
       ${scan.plateNumber}
     </text>
     <rect x="40" y="395" width="720" height="68" rx="10" fill="#0f172a" stroke="#f59e0b" stroke-width="2"/>
     <text x="64" y="436" fill="#fbbf24" font-family="monospace" font-size="17" font-weight="bold">
-      [ALPR / GEMINI VISION] PLATE #${scan.plateNumber} (${scan.plateState}) • ${scan.vehicleColor.toUpperCase()} ${scan.vehicleMake.toUpperCase()} ${scan.vehicleModel.toUpperCase()}
+      [SIMULATED ALPR SAMPLE] PLATE #${scan.plateNumber} (${scan.plateState}) • ${scan.vehicleColor.toUpperCase()} ${scan.vehicleMake.toUpperCase()} ${scan.vehicleModel.toUpperCase()}
     </text>
   </svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
@@ -210,227 +189,503 @@ export function getSampleVehiclePlateScanResult(): ScannedVehiclePlateResult {
 }
 
 /**
- * Uses @google/genai ('gemini-2.5-flash') Vision OCR to extract structured identity
- * and physical demographic fields from a Driver's License or ID card image.
- * Falls back gracefully to simulated extraction if GEMINI_API_KEY is unavailable.
+ * Shared client-side image compression & base64 stripping for both scanners:
+ * 1. Loads the File into an HTML Image object.
+ * 2. Draws it onto an offscreen <canvas> scaled down so the max width or height is 1200px
+ *    (preserving aspect ratio so small text on IDs and license plates remains crisp).
+ * 3. Exports canvas.toDataURL('image/jpeg', 0.88).
+ * 4. Strips the "data:image/jpeg;base64," prefix via .split(',')[1] and returns the raw
+ *    base64Data and mimeType: 'image/jpeg'.
  */
-export async function scanIdentificationDocument(
-  base64Image: string,
-  mimeType: string = 'image/jpeg'
-): Promise<ScannedIdDocumentResult> {
-  const cleanBase64 = stripBase64DataUrlPrefix(base64Image);
-  if (!cleanBase64 || cleanBase64 === 'SIMULATED_SAMPLE') {
-    await new Promise((resolve) => setTimeout(resolve, 650));
-    return getSampleIdScanResult();
-  }
+export async function prepareImageForGemini(
+  file: File
+): Promise<{ base64Data: string; mimeType: string; dataUrl: string }> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
 
-  const apiKey = getSafeGeminiApiKey();
-  if (!apiKey) {
-    await new Promise((resolve) => setTimeout(resolve, 750));
-    const fallback = getSampleIdScanResult();
-    return {
-      ...fallback,
-      sampleImageDataUrl: base64Image.startsWith('data:') ? base64Image : `data:${mimeType};base64,${cleanBase64}`
-    };
-  }
+    img.onload = () => {
+      try {
+        URL.revokeObjectURL(objectUrl);
 
-  try {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const currentYear = new Date().getFullYear();
+        const MAX_DIMENSION = 1200;
+        let width = img.naturalWidth || img.width;
+        let height = img.naturalHeight || img.height;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: mimeType || 'image/jpeg',
-              data: cleanBase64
-            }
-          },
-          {
-            text: `Analyze this identification document (Driver's License, State ID, Passport, or Badge) and extract the subject's credentials and physical demographics into JSON.
-If Date of Birth (DOB) is visible, calculate approxAge automatically based on the current year (${currentYear}).
-Normalize idType to one of: "drivers_license", "state_id", "passport", "employee_badge", "student_id", "military_id", or "other".
-Normalize gender to one of: "male", "female", "non_binary", or "unknown".
-Return empty strings for any fields that are not visible.`
-          }
-        ]
-      },
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            fullName: { type: Type.STRING, description: 'Full legal name on the ID document' },
-            idType: {
-              type: Type.STRING,
-              description: 'drivers_license, state_id, passport, employee_badge, student_id, military_id, or other'
-            },
-            idNumber: { type: Type.STRING, description: 'Driver license, ID, or badge number' },
-            issuingState: {
-              type: Type.STRING,
-              description: '2-letter state code or issuing authority (e.g., WA, CO, CA)'
-            },
-            dateOfBirth: {
-              type: Type.STRING,
-              description: 'Date of birth if visible on the ID (YYYY-MM-DD or MM/DD/YYYY)'
-            },
-            approxAge: {
-              type: Type.STRING,
-              description: 'Calculated age from Date of Birth or estimated age string'
-            },
-            gender: { type: Type.STRING, description: 'male, female, non_binary, or unknown' },
-            height: { type: Type.STRING, description: 'Height on ID, e.g., 5\'10"' },
-            weight: { type: Type.STRING, description: 'Weight or build on ID, e.g., 180 lbs' },
-            hairEyeColor: { type: Type.STRING, description: 'Hair and/or eye color on ID, e.g., BRO / BLU' },
-            address: { type: Type.STRING, description: 'Street or apartment/unit address printed on the ID' }
-          },
-          required: [
-            'fullName',
-            'idType',
-            'idNumber',
-            'issuingState',
-            'approxAge',
-            'gender',
-            'height',
-            'weight',
-            'hairEyeColor',
-            'address'
-          ]
+        if (!width || !height) {
+          reject(new Error('Selected image file has invalid dimensions.'));
+          return;
         }
+
+        if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+          if (width >= height) {
+            height = Math.round((height * MAX_DIMENSION) / width);
+            width = MAX_DIMENSION;
+          } else {
+            width = Math.round((width * MAX_DIMENSION) / height);
+            height = MAX_DIMENSION;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Failed to create 2D canvas context for image compression.'));
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        const base64Data = dataUrl.split(',')[1] || '';
+
+        if (!base64Data) {
+          reject(new Error('Failed to extract base64 JPEG data from canvas.'));
+          return;
+        }
+
+        resolve({
+          base64Data,
+          mimeType: 'image/jpeg',
+          dataUrl
+        });
+      } catch (err) {
+        reject(err instanceof Error ? err : new Error(String(err)));
       }
-    });
-
-    const rawText = response.text?.trim() || '{}';
-    const parsed = JSON.parse(rawText);
-
-    const computedAge =
-      parsed.approxAge ||
-      calculateAgeFromDobString(parsed.dateOfBirth) ||
-      '30-35';
-
-    return {
-      fullName: parsed.fullName || 'Identified Subject',
-      idType: parsed.idType || 'drivers_license',
-      idNumber: parsed.idNumber || '',
-      issuingState: parsed.issuingState || 'WA',
-      approxAge: String(computedAge),
-      gender: parsed.gender || 'unknown',
-      height: parsed.height || '',
-      weight: parsed.weight || '',
-      hairEyeColor: parsed.hairEyeColor || '',
-      address: parsed.address || '',
-      isSimulated: false,
-      sampleImageDataUrl: base64Image.startsWith('data:') ? base64Image : `data:${mimeType};base64,${cleanBase64}`
     };
-  } catch {
-    const fallback = getSampleIdScanResult();
-    return {
-      ...fallback,
-      sampleImageDataUrl: base64Image.startsWith('data:') ? base64Image : `data:${mimeType};base64,${cleanBase64}`
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error(`Unable to decode image file "${file.name}".`));
     };
-  }
+
+    img.src = objectUrl;
+  });
+}
+
+export const GEMINI_VISION_CASCADE_MODELS = [
+  'gemini-3.8-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.7-flash',
+  'gemini-flash-latest'
+] as const;
+
+export const HIGH_DEMAND_RETRY_STATUS_TEXT =
+  '⏳ High server demand — retrying scan via backup channel...';
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function stripLegacyGeminiSamplingParams<T extends Record<string, any>>(config: T): T {
+  const sanitized = { ...config };
+  delete sanitized.temperature;
+  delete sanitized.topP;
+  delete sanitized.topK;
+  delete sanitized.candidateCount;
+  return sanitized;
+}
+
+function isHighDemand503Error(status: number, errorMessage: string): boolean {
+  const msg = (errorMessage || '').toLowerCase();
+  return (
+    status === 503 ||
+    msg.includes('503') ||
+    msg.includes('unavailable') ||
+    msg.includes('high demand') ||
+    msg.includes('overloaded') ||
+    msg.includes('temporarily unavailable')
+  );
+}
+
+function isRetryableModelCascadeError(status: number, errorMessage: string): boolean {
+  const msg = (errorMessage || '').toLowerCase();
+  return (
+    isHighDemand503Error(status, errorMessage) ||
+    status === 429 ||
+    status === 404 ||
+    msg.includes('429') ||
+    msg.includes('resource_exhausted') ||
+    msg.includes('quota') ||
+    msg.includes('rate limit') ||
+    msg.includes('404') ||
+    msg.includes('not_found') ||
+    msg.includes('not found') ||
+    msg.includes('no longer available') ||
+    msg.includes('is not supported')
+  );
 }
 
 /**
- * Uses @google/genai ('gemini-2.5-flash') Vision OCR to extract license plate number,
- * state, and vehicle make/model/color from a guard camera photo.
- * Falls back gracefully to simulated extraction if GEMINI_API_KEY is unavailable.
+ * Universal Server-to-Client JSON Unwrapping Helper:
+ * 1. Extracts raw text strings or nested objects from any wrapper (.text, .data, .result, .response, .payload, candidates).
+ * 2. Strips markdown fences (```json / ```).
+ * 3. Extracts the first valid { ... } block via regex and parses it.
+ * 4. Validates that the parsed object contains at least one expected key with a non-empty value,
+ *    falling back gracefully to throw an error containing the raw text so it displays in the error banner
+ *    instead of outputting "Identified Subject (#N/A)" or blank fields.
  */
-export async function scanVehicleAndPlate(
-  base64Image: string,
-  mimeType: string = 'image/jpeg'
-): Promise<ScannedVehiclePlateResult> {
-  const cleanBase64 = stripBase64DataUrlPrefix(base64Image);
-  if (!cleanBase64 || cleanBase64 === 'SIMULATED_SAMPLE') {
-    await new Promise((resolve) => setTimeout(resolve, 650));
-    return getSampleVehiclePlateScanResult();
+export function parseGeminiJsonResponse(
+  rawResponse: unknown,
+  expectedKeys: string[] = []
+): Record<string, any> {
+  if (rawResponse === null || rawResponse === undefined) {
+    throw new Error('Gemini Vision returned an empty response.');
   }
 
-  const apiKey = getSafeGeminiApiKey();
-  if (!apiKey) {
-    await new Promise((resolve) => setTimeout(resolve, 750));
-    const fallback = getSampleVehiclePlateScanResult();
-    return {
-      ...fallback,
-      sampleImageDataUrl: base64Image.startsWith('data:') ? base64Image : `data:${mimeType};base64,${cleanBase64}`
-    };
-  }
+  const pickNonEmptyExpected = (obj: Record<string, any>): boolean => {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
+    if (expectedKeys.length === 0) return Object.keys(obj).length > 0;
+    return expectedKeys.some((k) => {
+      const val = obj[k];
+      return val !== undefined && val !== null && String(val).trim() !== '';
+    });
+  };
 
-  try {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  let rawText = '';
+  let candidateObject: Record<string, any> | null = null;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: mimeType || 'image/jpeg',
-              data: cleanBase64
-            }
-          },
-          {
-            text: `Analyze this vehicle and license plate photo. Extract the license plate number, state/jurisdiction, vehicle color, vehicle make, vehicle model, and a concise formattedSummary string such as "Silver Honda Civic, CO #ABC-1234" or "2020 Silver Toyota Tacoma, CO #XYZ-987".`
+  // Step 1: Extract raw text string or unwrapped object from any wrapper shape
+  if (typeof rawResponse === 'string') {
+    rawText = rawResponse;
+  } else if (typeof rawResponse === 'object') {
+    const obj = rawResponse as Record<string, any>;
+
+    if (pickNonEmptyExpected(obj)) {
+      candidateObject = obj;
+    } else {
+      for (const wrapperKey of ['data', 'result', 'response', 'payload']) {
+        const nested = obj[wrapperKey];
+        if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+          if (pickNonEmptyExpected(nested as Record<string, any>)) {
+            candidateObject = nested as Record<string, any>;
+            break;
           }
-        ]
-      },
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            plateNumber: { type: Type.STRING, description: 'License plate alphanumeric characters, e.g., ABC-1234' },
-            plateState: { type: Type.STRING, description: '2-letter state or jurisdiction code, e.g., WA, CO, CA' },
-            vehicleColor: { type: Type.STRING, description: 'Primary exterior color of the vehicle, e.g., Silver' },
-            vehicleMake: { type: Type.STRING, description: 'Vehicle manufacturer/make, e.g., Honda, Toyota, Ford' },
-            vehicleModel: { type: Type.STRING, description: 'Vehicle model, e.g., Civic, Tacoma, Accord' },
-            formattedSummary: {
-              type: Type.STRING,
-              description: 'Combined summary, e.g., "Silver Honda Civic, CO #ABC-1234"'
-            }
-          },
-          required: [
-            'plateNumber',
-            'plateState',
-            'vehicleColor',
-            'vehicleMake',
-            'vehicleModel',
-            'formattedSummary'
-          ]
+        } else if (typeof nested === 'string' && nested.trim()) {
+          rawText = nested;
+          break;
         }
       }
+
+      if (!candidateObject && !rawText) {
+        if (typeof obj.text === 'string' && obj.text.trim()) {
+          rawText = obj.text;
+        } else if (typeof obj.rawText === 'string' && obj.rawText.trim()) {
+          rawText = obj.rawText;
+        } else if (typeof obj?.candidates?.[0]?.content?.parts?.[0]?.text === 'string') {
+          rawText = obj.candidates[0].content.parts[0].text;
+        } else if (typeof obj.message === 'string' && obj.message.trim()) {
+          rawText = obj.message;
+        } else {
+          rawText = JSON.stringify(obj);
+        }
+      }
+    }
+  } else {
+    rawText = String(rawResponse);
+  }
+
+  let parsed: Record<string, any> | null = candidateObject;
+
+  if (!parsed) {
+    // Step 2: Strip markdown fences (```json / ```)
+    const stripped = rawText
+      .trim()
+      .replace(/```(?:json)?/gi, '')
+      .replace(/```/g, '')
+      .trim();
+
+    // Step 3: Extract the first valid { ... } block via regex and parse it
+    const firstBraceBlock = stripped.match(/\{[\s\S]*\}/);
+    const jsonCandidate = firstBraceBlock ? firstBraceBlock[0] : stripped;
+
+    try {
+      parsed = JSON.parse(jsonCandidate);
+    } catch {
+      throw new Error(
+        `Could not parse Gemini scan JSON. Raw response: ${stripped.slice(0, 400) || '(empty)'}`
+      );
+    }
+
+    // Unwrap if the parsed JSON still wraps .text / .data / .result
+    for (const key of ['data', 'result', 'text', 'response', 'payload']) {
+      const inner = parsed?.[key];
+      if (typeof inner === 'string' && inner.includes('{')) {
+        try {
+          const innerCleaned = inner.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+          const innerBlock = innerCleaned.match(/\{[\s\S]*\}/);
+          if (innerBlock) {
+            parsed = JSON.parse(innerBlock[0]);
+          }
+        } catch {
+          // Keep current parsed object
+        }
+      } else if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+        if (pickNonEmptyExpected(inner)) {
+          parsed = inner;
+          break;
+        }
+      }
+    }
+  }
+
+  // Step 4: Validate that the parsed object contains at least one expected key
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(
+      `Invalid scan object returned by server. Raw response: ${rawText.slice(0, 400) || '(empty)'}`
+    );
+  }
+
+  if (expectedKeys.length > 0 && !pickNonEmptyExpected(parsed)) {
+    const rawFallback =
+      rawText ||
+      (typeof (rawResponse as any)?.rawText === 'string'
+        ? (rawResponse as any).rawText
+        : JSON.stringify(parsed));
+    throw new Error(
+      `Scan did not return required fields (${expectedKeys.join(' / ')}). Raw response: ${String(rawFallback).slice(0, 400)}`
+    );
+  }
+
+  return parsed;
+}
+
+async function callGeminiScanWithCascade(
+  endpoint: '/api/gemini/scan-id' | '/api/gemini/scan-plate',
+  base64Data: string,
+  mimeType: string,
+  onStatusUpdate?: (statusText: string) => void
+): Promise<unknown> {
+  let lastErrorMessage = 'Server error during Gemini Vision scan.';
+
+  const attemptModelCall = async (
+    modelName: string
+  ): Promise<{ ok: boolean; status: number; payload: any }> => {
+    const cleanBody = stripLegacyGeminiSamplingParams({
+      model: modelName,
+      base64Data,
+      mimeType,
+      singleAttempt: true
     });
 
-    const rawText = response.text?.trim() || '{}';
-    const parsed = JSON.parse(rawText);
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cleanBody)
+    });
 
-    const plateNumber = (parsed.plateNumber || '').trim().toUpperCase();
-    const plateState = (parsed.plateState || 'WA').trim().toUpperCase();
-    const vehicleColor = (parsed.vehicleColor || '').trim();
-    const vehicleMake = (parsed.vehicleMake || '').trim();
-    const vehicleModel = (parsed.vehicleModel || '').trim();
+    const rawBodyText = await response.text().catch(() => '');
+    let payload: any = {};
+    if (rawBodyText) {
+      try {
+        payload = JSON.parse(rawBodyText);
+      } catch {
+        payload = { text: rawBodyText };
+      }
+    }
+    return { ok: response.ok, status: response.status, payload };
+  };
 
-    const constructedSummary =
-      parsed.formattedSummary?.trim() ||
-      `${[vehicleColor, vehicleMake, vehicleModel].filter(Boolean).join(' ') || 'Vehicle'}, ${plateState} #${plateNumber || 'UNKNOWN'}`;
+  for (let i = 0; i < GEMINI_VISION_CASCADE_MODELS.length; i++) {
+    const modelName = GEMINI_VISION_CASCADE_MODELS[i];
+    const result = await attemptModelCall(modelName);
 
-    return {
-      plateNumber: plateNumber || 'ABC-123',
-      plateState,
-      vehicleColor,
-      vehicleMake,
-      vehicleModel,
-      formattedSummary: constructedSummary,
-      isSimulated: false,
-      sampleImageDataUrl: base64Image.startsWith('data:') ? base64Image : `data:${mimeType};base64,${cleanBase64}`
-    };
-  } catch {
-    const fallback = getSampleVehiclePlateScanResult();
-    return {
-      ...fallback,
-      sampleImageDataUrl: base64Image.startsWith('data:') ? base64Image : `data:${mimeType};base64,${cleanBase64}`
-    };
+    if (result.ok) {
+      return result.payload;
+    }
+
+    const errMsg = String(
+      result.payload?.error ||
+        result.payload?.text ||
+        `Server error (${result.status}) during scan.`
+    );
+    lastErrorMessage = errMsg;
+
+    // For gemini-3.8-flash, if a 503 or UNAVAILABLE response is returned,
+    // wait 1200ms and retry gemini-3.8-flash once before immediately cascading down
+    if (modelName === 'gemini-3.8-flash' && isHighDemand503Error(result.status, errMsg)) {
+      onStatusUpdate?.(HIGH_DEMAND_RETRY_STATUS_TEXT);
+      await sleepMs(1200);
+
+      const retryResult = await attemptModelCall('gemini-3.8-flash');
+      if (retryResult.ok) {
+        return retryResult.payload;
+      }
+
+      const retryErrMsg = String(
+        retryResult.payload?.error ||
+          retryResult.payload?.text ||
+          `Server error (${retryResult.status}) during scan.`
+      );
+      lastErrorMessage = retryErrMsg;
+
+      if (!isRetryableModelCascadeError(retryResult.status, retryErrMsg)) {
+        throw new Error(retryErrMsg);
+      }
+    } else if (!isRetryableModelCascadeError(result.status, errMsg)) {
+      throw new Error(errMsg);
+    }
+
+    // Cascade down through gemini-3.5-flash-lite, gemini-3.7-flash, and gemini-flash-latest with 800ms backoff
+    if (i < GEMINI_VISION_CASCADE_MODELS.length - 1) {
+      onStatusUpdate?.(HIGH_DEMAND_RETRY_STATUS_TEXT);
+      await sleepMs(800);
+    }
   }
+
+  throw new Error(lastErrorMessage);
 }
+
+/**
+ * Live Gemini Vision Call #1 — scanIdentificationDocument(file: File)
+ * Compresses the user's photo on the client, calls the server-side Gemini Vision
+ * endpoint (/api/gemini/scan-id) with automatic 503/429/404 multi-model retry cascade,
+ * and unwraps the JSON payload via parseGeminiJsonResponse.
+ */
+export async function scanIdentificationDocument(
+  file: File,
+  onStatusUpdate?: (statusText: string) => void
+): Promise<ScannedIdDocumentResult> {
+  const { base64Data, mimeType, dataUrl } = await prepareImageForGemini(file);
+
+  const rawPayload = await callGeminiScanWithCascade(
+    '/api/gemini/scan-id',
+    base64Data,
+    mimeType,
+    onStatusUpdate
+  );
+
+  const parsed = parseGeminiJsonResponse(rawPayload, [
+    'idNumber',
+    'fullName',
+    'name',
+    'licenseNumber',
+    'dlNumber'
+  ]);
+
+  const fullName = String(
+    parsed.fullName || parsed.name || parsed.full_name || ''
+  ).trim();
+  const idType = String(
+    parsed.idType || parsed.id_type || parsed.documentType || "Driver's License (DL)"
+  ).trim();
+  const idNumber = String(
+    parsed.idNumber || parsed.id_number || parsed.licenseNumber || parsed.dlNumber || ''
+  ).trim();
+  const issuingState = String(
+    parsed.issuingState || parsed.issuing_state || parsed.state || ''
+  )
+    .trim()
+    .toUpperCase();
+  const approxAge = String(
+    parsed.approxAge ||
+      parsed.approx_age ||
+      parsed.age ||
+      calculateAgeFromDobString(parsed.dob || parsed.dateOfBirth) ||
+      ''
+  ).trim();
+  const gender = String(parsed.gender || parsed.sex || 'Unknown').trim();
+  const height = String(parsed.height || '').trim();
+  const weight = String(parsed.weight || parsed.weightBuild || parsed.weight_build || '').trim();
+  const hairEyeColor = String(
+    parsed.hairEyeColor || parsed.hair_eye_color || parsed.hairEyes || ''
+  ).trim();
+  const address = String(
+    parsed.address || parsed.streetAddress || parsed.unitAddress || ''
+  ).trim();
+
+  if (!fullName && !idNumber) {
+    throw new Error(
+      `ID Scan could not extract a readable Name or ID Number from the image. Raw response: ${JSON.stringify(parsed).slice(0, 300)}`
+    );
+  }
+
+  return {
+    fullName,
+    idType,
+    idNumber,
+    issuingState,
+    approxAge,
+    gender,
+    height,
+    weight,
+    hairEyeColor,
+    address,
+    isSimulated: false,
+    sampleImageDataUrl: dataUrl
+  };
+}
+
+/**
+ * Live Gemini Vision Call #2 — scanVehicleAndPlate(file: File)
+ * Compresses the user's photo on the client, calls the server-side Gemini Vision
+ * endpoint (/api/gemini/scan-plate) with automatic 503/429/404 multi-model retry cascade,
+ * and unwraps the JSON payload via parseGeminiJsonResponse.
+ */
+export async function scanVehicleAndPlate(
+  file: File,
+  onStatusUpdate?: (statusText: string) => void
+): Promise<ScannedVehiclePlateResult> {
+  const { base64Data, mimeType, dataUrl } = await prepareImageForGemini(file);
+
+  const rawPayload = await callGeminiScanWithCascade(
+    '/api/gemini/scan-plate',
+    base64Data,
+    mimeType,
+    onStatusUpdate
+  );
+
+  const parsed = parseGeminiJsonResponse(rawPayload, [
+    'plateNumber',
+    'formattedSummary',
+    'plate',
+    'vehicleMake'
+  ]);
+
+  const plateNumber = String(
+    parsed.plateNumber || parsed.plate_number || parsed.plate || 'UNREADABLE'
+  )
+    .trim()
+    .toUpperCase();
+  const plateState = String(
+    parsed.plateState || parsed.plate_state || parsed.state || ''
+  )
+    .trim()
+    .toUpperCase();
+  const vehicleColor = String(
+    parsed.vehicleColor || parsed.vehicle_color || parsed.color || ''
+  ).trim();
+  const vehicleMake = String(
+    parsed.vehicleMake || parsed.vehicle_make || parsed.make || ''
+  ).trim();
+  const vehicleModel = String(
+    parsed.vehicleModel || parsed.vehicle_model || parsed.model || ''
+  ).trim();
+
+  const vehicleLabel =
+    [vehicleColor, vehicleMake, vehicleModel].filter(Boolean).join(' ') || 'Vehicle';
+  const plateLabel = plateState ? `${plateState} #${plateNumber}` : `#${plateNumber}`;
+  const formattedSummary =
+    String(parsed.formattedSummary || parsed.formatted_summary || '').trim() ||
+    `${vehicleLabel}, ${plateLabel}`;
+
+  if ((!plateNumber || plateNumber === 'UNREADABLE') && !vehicleMake && !vehicleModel && !parsed.formattedSummary) {
+    throw new Error(
+      `Vehicle/Plate Scan could not extract readable plate or vehicle details. Raw response: ${JSON.stringify(parsed).slice(0, 300)}`
+    );
+  }
+
+  return {
+    plateNumber,
+    plateState,
+    vehicleColor,
+    vehicleMake,
+    vehicleModel,
+    formattedSummary,
+    isSimulated: false,
+    sampleImageDataUrl: dataUrl
+  };
+}
+

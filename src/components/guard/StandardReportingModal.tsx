@@ -74,6 +74,8 @@ import { evaluateInfractionHistory } from '../../utils/chronicDetectionEngine';
 import {
   scanIdentificationDocument,
   scanVehicleAndPlate,
+  getSampleIdScanResult,
+  getSampleVehiclePlateScanResult,
   ScannedIdDocumentResult,
   ScannedVehiclePlateResult
 } from '../../utils/aiScanner';
@@ -109,7 +111,7 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
 }) => {
   // Active Report Category
   const [reportType, setReportType] = useState<StandardReportType>(initialPrefill?.reportType || initialReportType);
-  const { addAuditLog, showToast } = useShiftOps();
+  const { addAuditLog, showToast, sitesList } = useShiftOps();
   const { siteIssues, darLogs, updateSiteIssues, updateDarLogs } = useSiteIssuesStore();
 
   // Common metadata
@@ -135,12 +137,22 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
 
   // AI Camera OCR Scanner State (ID / DL & Vehicle Plate)
   const [isScanningId, setIsScanningId] = useState<boolean>(false);
+  const [idScanStatusText, setIdScanStatusText] = useState<string>('🔍 Reading ID Credentials & Demographics via Gemini Vision...');
   const [idScanSuccess, setIdScanSuccess] = useState<boolean>(false);
+  const [idScanError, setIdScanError] = useState<string | null>(null);
   const [scannedIdPhotoUrl, setScannedIdPhotoUrl] = useState<string | null>(null);
   const [idPhotoAttached, setIdPhotoAttached] = useState<boolean>(false);
+  const [scannedIdSummary, setScannedIdSummary] = useState<{
+    fullName: string;
+    idNumber: string;
+    issuingState: string;
+  } | null>(null);
+  const [scannedIdEvaluation, setScannedIdEvaluation] = useState<ReturnType<typeof evaluateInfractionHistory> | null>(null);
 
   const [isScanningPlate, setIsScanningPlate] = useState<boolean>(false);
+  const [plateScanStatusText, setPlateScanStatusText] = useState<string>('🔍 Identifying Plate & Vehicle Make/Model via Gemini Vision...');
   const [plateScanSuccess, setPlateScanSuccess] = useState<boolean>(false);
+  const [plateScanError, setPlateScanError] = useState<string | null>(null);
   const [scannedPlatePhotoUrl, setScannedPlatePhotoUrl] = useState<string | null>(null);
   const [scannedPlateNumber, setScannedPlateNumber] = useState<string>('');
   const [platePhotoAttached, setPlatePhotoAttached] = useState<boolean>(false);
@@ -242,6 +254,63 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
   );
   const [supervisorNotified, setSupervisorNotified] = useState<boolean>(true);
   const [supervisorName, setSupervisorName] = useState<string>('Supervisor Marcus Vance');
+
+  // Emergency Maintenance Call-Out State (Task 2)
+  const [emergencyMaintContacted, setEmergencyMaintContacted] = useState<boolean>(false);
+  const [maintContactedPerson, setMaintContactedPerson] = useState<string>('');
+  const [maintTimeCalled, setMaintTimeCalled] = useState<string>(() => new Date().toTimeString().slice(0, 5));
+  const [maintCallOutcomeEta, setMaintCallOutcomeEta] = useState<string>('Left voicemail + text — awaiting callback');
+
+  // Use of Force (UoF) Supplemental Report State (Task 3)
+  const [useOfForce, setUseOfForce] = useState<boolean>(false);
+  const [uofDeEscalation, setUofDeEscalation] = useState<string[]>([
+    'Verbal De-Escalation Attempted',
+    'Clear Verbal Commands Given'
+  ]);
+  const [uofResistanceLevels, setUofResistanceLevels] = useState<string[]>([]);
+  const [uofForceOptions, setUofForceOptions] = useState<string[]>([]);
+  const [uofHandcuffsDoubleLocked, setUofHandcuffsDoubleLocked] = useState<boolean>(false);
+  const [uofGaugeChecked, setUofGaugeChecked] = useState<boolean>(false);
+  const [uofRestraintsTimeTransfer, setUofRestraintsTimeTransfer] = useState<string>('');
+  const [uofSubjectInjury, setUofSubjectInjury] = useState<string>('No Visible Injury');
+  const [uofOfficerInjury, setUofOfficerInjury] = useState<string>('No');
+  const [uofBwcActive, setUofBwcActive] = useState<string>('Yes — BWC Footage Recorded');
+  const [uofJustificationNarrative, setUofJustificationNarrative] = useState<string>('');
+  const [uofSupervisorImmediatelyNotified, setUofSupervisorImmediatelyNotified] = useState<boolean>(false);
+
+  // Resolve active site emergency maintenance & backup contacts dynamically
+  const resolvedActiveSite =
+    sitesList.find(
+      (s) =>
+        (activeShift?.siteId && s.id === activeShift.siteId) ||
+        s.name.toLowerCase() === (locationName || siteName).toLowerCase() ||
+        (locationName || siteName).toLowerCase().includes(s.name.toLowerCase())
+    ) || sitesList[0];
+
+  const primaryMaintContact = resolvedActiveSite?.emergencyContacts?.find((c) =>
+    /maintenance|engineer|facilities|super|tech/i.test(`${c.role} ${c.name}`)
+  ) || {
+    name: resolvedActiveSite ? `${resolvedActiveSite.name.split(' ')[0]} On-Call Tech (Carlos Mendez)` : 'Carlos Mendez',
+    role: 'Primary 24/7 On-Call Maintenance Tech',
+    phone: resolvedActiveSite?.emergencyContacts?.[0]?.phone || '(206) 555-0194'
+  };
+
+  const backupEmergencyVendor = resolvedActiveSite?.emergencyContacts?.find(
+    (c) => c !== primaryMaintContact && /emergency|manager|director|vendor|gate|elevator|dispatch/i.test(`${c.role} ${c.name}`)
+  ) || {
+    name: `${resolvedActiveSite?.clientName || 'Property'} 24/7 Emergency Line & Gate/Elevator Vendor`,
+    role: 'Backup Property Emergency Line / Gate & Elevator Vendor',
+    phone: resolvedActiveSite?.emergencyContacts?.[1]?.phone || '(206) 555-0199'
+  };
+
+  const toggleUofPill = (
+    value: string,
+    setter: React.Dispatch<React.SetStateAction<string[]>>
+  ) => {
+    setter((prev) =>
+      prev.includes(value) ? prev.filter((item) => item !== value) : [...prev, value]
+    );
+  };
 
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -522,67 +591,158 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
     setNewPartyStatement('');
     setEditingPartyId(null);
     setIdScanSuccess(false);
+    setIdScanError(null);
+    setScannedIdSummary(null);
+    setScannedIdEvaluation(null);
   };
 
-  const applyScannedIdToForm = useCallback((result: ScannedIdDocumentResult) => {
-    setNewPartyRefusedId(false);
-    if (result.fullName) setNewPartyName(result.fullName);
-    const validIdTypes: PartyIdType[] = [
-      'drivers_license',
-      'state_id',
-      'passport',
-      'employee_badge',
-      'student_id',
-      'military_id',
-      'other',
-      'none'
-    ];
-    const normalizedType = validIdTypes.includes(result.idType as PartyIdType)
-      ? (result.idType as PartyIdType)
-      : 'drivers_license';
-    setNewPartyIdType(normalizedType);
-    if (result.idNumber) setNewPartyIdNumber(result.idNumber);
-    if (result.issuingState) setNewPartyIdState(result.issuingState);
-    if (result.approxAge) setNewPartyAge(result.approxAge);
-    if (result.gender) {
-      const g = result.gender.toLowerCase();
-      if (g === 'male' || g === 'm') setNewPartyGender('male');
-      else if (g === 'female' || g === 'f') setNewPartyGender('female');
-      else if (g.includes('non')) setNewPartyGender('non_binary');
-      else setNewPartyGender('unknown');
-    }
-    if (result.height) setNewPartyHeight(result.height);
-    if (result.weight) setNewPartyWeight(result.weight);
-    if (result.hairEyeColor) setNewPartyHairEyes(result.hairEyeColor);
-    if (result.address) setNewPartyAddress(result.address);
-    if (result.sampleImageDataUrl) {
-      setScannedIdPhotoUrl(result.sampleImageDataUrl);
-      setIdPhotoAttached(false);
-    }
-    setIdScanSuccess(true);
-    setIsPartyDetailsExpanded(true);
-  }, []);
+  const applyScannedIdToForm = useCallback(
+    (result: ScannedIdDocumentResult) => {
+      const cleanFullName = (result.fullName || '').trim();
+      const cleanIdNumber = (result.idNumber || '').trim();
+      const cleanIssuingState = (result.issuingState || '').trim().toUpperCase();
+      const cleanApproxAge = (result.approxAge || '').trim();
+      const cleanHeight = (result.height || '').trim();
+      const cleanWeight = (result.weight || '').trim();
+      const cleanHairEyeColor = (result.hairEyeColor || '').trim();
+      const cleanAddress = (result.address || '').trim();
+
+      if (!cleanFullName && !cleanIdNumber) {
+        setIdScanSuccess(false);
+        setIdScanError(
+          `ID scan did not return a valid Name or ID Number. Raw result: ${JSON.stringify(result)}`
+        );
+        return;
+      }
+
+      setNewPartyRefusedId(false);
+      setNewPartyName(cleanFullName);
+
+      const rawType = (result.idType || '').toLowerCase();
+      let mappedIdType: PartyIdType = 'drivers_license';
+      if (rawType === 'drivers_license' || rawType.includes('driver') || rawType.includes('dl')) {
+        mappedIdType = 'drivers_license';
+      } else if (rawType === 'state_id' || rawType.includes('state')) {
+        mappedIdType = 'state_id';
+      } else if (rawType === 'passport' || rawType.includes('passport')) {
+        mappedIdType = 'passport';
+      } else if (rawType === 'military_id' || rawType.includes('military') || rawType.includes('gov')) {
+        mappedIdType = 'military_id';
+      } else if (
+        rawType === 'employee_badge' ||
+        rawType.includes('badge') ||
+        rawType.includes('work') ||
+        rawType.includes('facility')
+      ) {
+        mappedIdType = 'employee_badge';
+      } else if (rawType === 'student_id' || rawType.includes('student')) {
+        mappedIdType = 'student_id';
+      } else if (rawType === 'none') {
+        mappedIdType = 'none';
+      } else if (rawType) {
+        mappedIdType = 'other';
+      }
+      setNewPartyIdType(mappedIdType);
+
+      setNewPartyIdNumber(cleanIdNumber);
+      setNewPartyIdState(cleanIssuingState);
+      setNewPartyAge(cleanApproxAge);
+
+      const g = (result.gender || '').toLowerCase();
+      let mappedGender = 'unknown';
+      if (g === 'male' || g === 'm') mappedGender = 'male';
+      else if (g === 'female' || g === 'f') mappedGender = 'female';
+      else if (g.includes('non') || g === 'x' || g.includes('other')) mappedGender = 'non_binary';
+      setNewPartyGender(mappedGender);
+
+      setNewPartyHeight(cleanHeight);
+      setNewPartyWeight(cleanWeight);
+      setNewPartyHairEyes(cleanHairEyeColor);
+      setNewPartyAddress(cleanAddress);
+
+      // Synchronize with the active party in partiesList so the documented party card updates too
+      setPartiesList((prev) => {
+        const targetId = editingPartyId || (prev.length === 1 && prev[0].id === 'pty-1' ? 'pty-1' : null);
+        if (!targetId) return prev;
+        return prev.map((p) =>
+          p.id === targetId
+            ? {
+                ...p,
+                name: cleanFullName || p.name,
+                refusedIdentification: false,
+                idType: mappedIdType,
+                idNumber: cleanIdNumber || p.idNumber,
+                idStateOrIssuer: cleanIssuingState || p.idStateOrIssuer,
+                ageApprox: cleanApproxAge || p.ageApprox,
+                gender: mappedGender,
+                height: cleanHeight || p.height,
+                weightBuild: cleanWeight || p.weightBuild,
+                hairEyes: cleanHairEyeColor || p.hairEyes,
+                address: cleanAddress || p.address
+              }
+            : p
+        );
+      });
+
+      if (result.sampleImageDataUrl) {
+        setScannedIdPhotoUrl(result.sampleImageDataUrl);
+        setIdPhotoAttached(false);
+      }
+
+      setScannedIdSummary({
+        fullName: cleanFullName,
+        idNumber: cleanIdNumber,
+        issuingState: cleanIssuingState
+      });
+
+      // Trigger evaluateInfractionHistory() on the extracted address and name
+      const openTickets = siteIssues.filter((t) => t.status !== 'RESOLVED');
+      const targetSite = activeShift?.siteId || locationName || 'ALL';
+      const targetCategory =
+        incCategory === 'altercation_verbal' ? 'NOISE_COMPLAINT' : 'CHRONIC_LEASE_VIOLATION';
+
+      const evalByAddress = cleanAddress
+        ? evaluateInfractionHistory(targetSite, targetCategory, cleanAddress, darLogs, openTickets)
+        : null;
+      const evalByName = cleanFullName
+        ? evaluateInfractionHistory(targetSite, targetCategory, cleanFullName, darLogs, openTickets)
+        : null;
+
+      setScannedIdEvaluation(
+        evalByAddress && (evalByAddress.matchCount > 0 || evalByAddress.activeTicket)
+          ? evalByAddress
+          : evalByName || evalByAddress
+      );
+
+      setIdScanError(null);
+      setIdScanSuccess(true);
+      setIsPartyDetailsExpanded(true);
+    },
+    [activeShift?.siteId, darLogs, editingPartyId, incCategory, locationName, siteIssues]
+  );
 
   const handleIdScanFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsScanningId(true);
+    setIdScanStatusText('🔍 Reading ID Credentials & Demographics via Gemini Vision...');
     setIdScanSuccess(false);
+    setIdScanError(null);
 
     try {
-      const base64DataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ''));
-        reader.onerror = () => reject(new Error('Failed to read ID image'));
-        reader.readAsDataURL(file);
+      const result = await scanIdentificationDocument(file, (statusMsg) => {
+        setIdScanStatusText(statusMsg);
       });
-
-      const result = await scanIdentificationDocument(base64DataUrl, file.type || 'image/jpeg');
       applyScannedIdToForm(result);
-      showToast('ID Credentials Extracted', `Auto-populated ${result.fullName} (${result.issuingState} #${result.idNumber}).`, 'success');
-    } catch {
-      const fallback = await scanIdentificationDocument('SIMULATED_SAMPLE', 'image/jpeg');
-      applyScannedIdToForm(fallback);
+      showToast(
+        'ID Scanned',
+        `✓ ID Scanned: ${result.fullName} (${result.issuingState ? result.issuingState + ' ' : ''}#${result.idNumber})`,
+        'success'
+      );
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      setIdScanError(errorMsg);
+      showToast('ID Scanner API Error', errorMsg, 'error');
     } finally {
       setIsScanningId(false);
       if (e.target) e.target.value = '';
@@ -592,10 +752,16 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
   const handleSimulateIdScan = async () => {
     setIsScanningId(true);
     setIdScanSuccess(false);
+    setIdScanError(null);
     try {
-      const result = await scanIdentificationDocument('SIMULATED_SAMPLE', 'image/jpeg');
+      await new Promise((resolve) => setTimeout(resolve, 450));
+      const result = getSampleIdScanResult();
       applyScannedIdToForm(result);
-      showToast('ID Credentials Scanned', `Auto-populated ${result.fullName} (${result.issuingState} #${result.idNumber}).`, 'success');
+      showToast(
+        'Simulated ID Sample Loaded',
+        `✓ ID Scanned: ${result.fullName} (${result.issuingState} #${result.idNumber})`,
+        'info'
+      );
     } finally {
       setIsScanningId(false);
     }
@@ -603,15 +769,44 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
 
   const applyScannedPlateToForm = useCallback(
     (result: ScannedVehiclePlateResult) => {
-      const summary =
-        result.formattedSummary ||
-        `${[result.vehicleColor, result.vehicleMake, result.vehicleModel].filter(Boolean).join(' ')}, ${result.plateState} #${result.plateNumber}`;
+      const cleanPlate = (result.plateNumber || '').trim().toUpperCase();
+      const cleanState = (result.plateState || '').trim().toUpperCase();
+      const constructedVehicle = [result.vehicleColor, result.vehicleMake, result.vehicleModel]
+        .map((s) => (s || '').trim())
+        .filter(Boolean)
+        .join(' ');
+      const constructedSummary = `${constructedVehicle || 'Vehicle'}, ${
+        cleanState ? cleanState + ' ' : ''
+      }#${cleanPlate}`;
+      const summary = (result.formattedSummary || '').trim() || constructedSummary;
+
+      if (!cleanPlate && !summary) {
+        setPlateScanSuccess(false);
+        setPlateScanError(
+          `Vehicle scan did not return a valid plate or vehicle summary. Raw result: ${JSON.stringify(result)}`
+        );
+        return;
+      }
+
       setNewPartyVehicle(summary);
-      setScannedPlateNumber(result.plateNumber || summary);
+      setScannedPlateNumber(cleanPlate || summary);
+
+      setPartiesList((prev) => {
+        const targetId = editingPartyId || (prev.length === 1 && prev[0].id === 'pty-1' ? 'pty-1' : null);
+        if (!targetId) return prev;
+        return prev.map((p) =>
+          p.id === targetId
+            ? {
+                ...p,
+                vehicleInfo: summary
+              }
+            : p
+        );
+      });
 
       if (reportType === 'maintenance') {
         setMaintLocation((prev) =>
-          prev.includes(result.plateNumber) ? prev : `${prev ? prev + ' — ' : ''}${summary}`
+          prev && prev.includes(cleanPlate) ? prev : `${prev ? prev + ' — ' : ''}${summary}`
         );
       }
 
@@ -625,36 +820,35 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
       const evalResult = evaluateInfractionHistory(
         activeShift?.siteId || locationName || 'ALL',
         'PARKING_VIOLATION',
-        result.plateNumber || summary,
+        cleanPlate || summary,
         darLogs,
         openTickets
       );
       setScannedPlateEvaluation(evalResult);
+      setPlateScanError(null);
       setPlateScanSuccess(true);
     },
-    [activeShift?.siteId, darLogs, locationName, reportType, siteIssues]
+    [activeShift?.siteId, darLogs, editingPartyId, locationName, reportType, siteIssues]
   );
 
   const handlePlateScanFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsScanningPlate(true);
+    setPlateScanStatusText('🔍 Identifying Plate & Vehicle Make/Model via Gemini Vision...');
     setPlateScanSuccess(false);
+    setPlateScanError(null);
 
     try {
-      const base64DataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ''));
-        reader.onerror = () => reject(new Error('Failed to read vehicle/plate image'));
-        reader.readAsDataURL(file);
+      const result = await scanVehicleAndPlate(file, (statusMsg) => {
+        setPlateScanStatusText(statusMsg);
       });
-
-      const result = await scanVehicleAndPlate(base64DataUrl, file.type || 'image/jpeg');
       applyScannedPlateToForm(result);
-      showToast('Vehicle & Plate Identified', `Auto-populated ${result.formattedSummary}.`, 'success');
-    } catch {
-      const fallback = await scanVehicleAndPlate('SIMULATED_SAMPLE', 'image/jpeg');
-      applyScannedPlateToForm(fallback);
+      showToast('Vehicle Scanned', `✓ Vehicle Scanned: ${result.formattedSummary}`, 'success');
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      setPlateScanError(errorMsg);
+      showToast('ALPR Scanner API Error', errorMsg, 'error');
     } finally {
       setIsScanningPlate(false);
       if (e.target) e.target.value = '';
@@ -664,10 +858,12 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
   const handleSimulatePlateScan = async () => {
     setIsScanningPlate(true);
     setPlateScanSuccess(false);
+    setPlateScanError(null);
     try {
-      const result = await scanVehicleAndPlate('SIMULATED_SAMPLE', 'image/jpeg');
+      await new Promise((resolve) => setTimeout(resolve, 450));
+      const result = getSampleVehiclePlateScanResult();
       applyScannedPlateToForm(result);
-      showToast('Vehicle & Plate Scanned', `Auto-populated ${result.formattedSummary}.`, 'success');
+      showToast('Simulated Plate Sample Loaded', `Auto-populated ${result.formattedSummary}.`, 'info');
     } finally {
       setIsScanningPlate(false);
     }
@@ -836,6 +1032,22 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
       return;
     }
 
+    // USE OF FORCE SUPPLEMENT VALIDATION (Task 3)
+    if (reportType === 'incident' && useOfForce) {
+      if (uofResistanceLevels.length === 0) {
+        setFormError('Use of Force Supplement Requirement: Select at least 1 Subject Resistance Level.');
+        return;
+      }
+      if (uofForceOptions.length === 0) {
+        setFormError('Use of Force Supplement Requirement: Select at least 1 Force Option / Tool Utilized.');
+        return;
+      }
+      if (!uofJustificationNarrative.trim()) {
+        setFormError('Use of Force Supplement Requirement: Provide the Detailed Use of Force Justification & Sequence Narrative.');
+        return;
+      }
+    }
+
     setFormError(null);
 
     let activityDetails: ActivityReportDetails | undefined;
@@ -864,12 +1076,19 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
         propertyStaffNotified: maintStaffNotified,
         notifiedPersonName: maintStaffNotified ? maintStaffName : undefined,
         suggestedAction: maintSuggestedAction.trim() || undefined,
-        workOrderStatus: 'reported'
+        workOrderStatus: 'reported',
+        emergencyMaintenanceContacted: emergencyMaintContacted,
+        contactedPersonOrVendorName: emergencyMaintContacted
+          ? maintContactedPerson.trim() || primaryMaintContact.name
+          : undefined,
+        timeCalled: emergencyMaintContacted ? maintTimeCalled : undefined,
+        callOutcomeOrTechEta: emergencyMaintContacted ? maintCallOutcomeEta.trim() : undefined
       };
     } else if (reportType === 'incident') {
+      const handcuffsUsed = uofForceOptions.includes('Handcuffs / Soft Restraints Applied');
       incidentDetails = {
         incidentCategory: incCategory,
-        severity: incSeverity,
+        severity: useOfForce && incSeverity === 'low' ? 'high' : incSeverity,
         incidentTitle: incTitle.trim() || 'Security Guard Action Log',
         summary: incSummary.trim(),
         detailedTimeline: incTimeline.trim(),
@@ -883,8 +1102,25 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
         cadIncidentNumber: escalatedToEmergency ? cadIncidentNum : undefined,
         respondingUnits: escalatedToEmergency ? respondingUnits : undefined,
         emergencyOutcome: escalatedToEmergency ? emergencyOutcome : undefined,
-        supervisorNotified,
-        supervisorName: supervisorNotified ? supervisorName : undefined
+        supervisorNotified: useOfForce ? uofSupervisorImmediatelyNotified || supervisorNotified : supervisorNotified,
+        supervisorName: supervisorNotified ? supervisorName : undefined,
+        useOfForce,
+        requiresSupervisorReview: useOfForce ? true : undefined,
+        useOfForceSupplement: useOfForce
+          ? {
+              deEscalationAttempts: uofDeEscalation,
+              subjectResistanceLevels: uofResistanceLevels,
+              forceOptionsUtilized: uofForceOptions,
+              handcuffsDoubleLocked: handcuffsUsed ? uofHandcuffsDoubleLocked : undefined,
+              gaugeTightnessChecked: handcuffsUsed ? uofGaugeChecked : undefined,
+              timeRestraintsAppliedAndRemoved: handcuffsUsed ? uofRestraintsTimeTransfer.trim() : undefined,
+              subjectInjuryStatus: uofSubjectInjury,
+              officerInjuryStatus: uofOfficerInjury,
+              bwcActiveStatus: uofBwcActive,
+              justificationNarrative: uofJustificationNarrative.trim(),
+              supervisorImmediatelyNotified: uofSupervisorImmediatelyNotified
+            }
+          : undefined
       };
     }
 
@@ -913,6 +1149,8 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
       activityDetails,
       maintenanceDetails,
       incidentDetails,
+      useOfForce: reportType === 'incident' && useOfForce ? true : undefined,
+      requiresSupervisorReview: reportType === 'incident' && useOfForce ? true : undefined,
       status: 'submitted'
     };
 
@@ -1041,17 +1279,25 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
             </span>
           </div>
 
-          {/* Row 2: Subtitle + Conditional EMS / 911 Escalated Alert Badge */}
+          {/* Row 2: Subtitle + Conditional EMS / 911 & UoF Supplement Alert Badges */}
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <p className="text-xs text-slate-400">
               Standard shift duty log • Mandatory photo/video verification
             </p>
 
-            {escalatedToEmergency && reportType === 'incident' && (
-              <div className="w-full sm:w-auto mt-1 sm:mt-0 px-2.5 py-1 rounded bg-red-950/90 border border-red-500/70 text-red-200 text-xs font-bold flex items-center justify-center gap-1.5 animate-pulse">
-                <span>🚨 EMS / 911 ESCALATED — PRIORITY CAD LINK ACTIVE</span>
-              </div>
-            )}
+            <div className="flex items-center gap-2 flex-wrap">
+              {useOfForce && reportType === 'incident' && (
+                <div className="px-2.5 py-1 rounded-lg bg-amber-950/90 border border-amber-500/80 text-amber-200 text-xs font-bold flex items-center gap-1.5">
+                  <span>⚠️ UoF SUPPLEMENT REQUIRED</span>
+                </div>
+              )}
+
+              {escalatedToEmergency && reportType === 'incident' && (
+                <div className="px-2.5 py-1 rounded bg-red-950/90 border border-red-500/70 text-red-200 text-xs font-bold flex items-center justify-center gap-1.5 animate-pulse">
+                  <span>🚨 EMS / 911 ESCALATED — PRIORITY CAD LINK ACTIVE</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1303,6 +1549,162 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
           {/* ------------------------------------------------------------- */}
           {reportType === 'maintenance' && (
             <div className="space-y-4">
+              {/* SITE-SPECIFIC EMERGENCY MAINTENANCE & ON-CALL CONTACTS CARD (Task 2) */}
+              <div className="p-4 rounded-xl bg-amber-950/40 border-2 border-amber-500/60 shadow-lg shadow-amber-950/30 space-y-3.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-amber-500/20 border border-amber-400/50 text-amber-300">
+                      <Phone className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-xs sm:text-sm font-bold text-amber-200 uppercase tracking-wide">
+                          Site Emergency Maintenance &amp; On-Call Contacts
+                        </h4>
+                        <span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-[10px] font-mono font-bold text-amber-300">
+                          {resolvedActiveSite?.name || locationName}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-amber-200/80 mt-0.5">
+                        Call immediately for active water/flood leaks, broken perimeter locks/gates, power outages, biohazards, or elevator entrapments.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Primary & Backup Contacts Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl bg-slate-900/85 border border-amber-500/40 flex flex-col justify-between gap-2.5">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 block">
+                        Primary 24/7 On-Call Maintenance Tech
+                      </span>
+                      <div className="text-sm font-bold text-white mt-0.5">
+                        {primaryMaintContact.name}
+                      </div>
+                      <div className="text-[11px] text-slate-300">
+                        {primaryMaintContact.role} • <span className="font-mono text-amber-200">{primaryMaintContact.phone}</span>
+                      </div>
+                    </div>
+                    <a
+                      href={`tel:${primaryMaintContact.phone.replace(/[^0-9+]/g, '')}`}
+                      onClick={() => {
+                        if (!maintContactedPerson) {
+                          setMaintContactedPerson(`${primaryMaintContact.name} (${primaryMaintContact.role})`);
+                        }
+                      }}
+                      className="w-full py-2 px-3 rounded-lg bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+                    >
+                      <span>📞 Call On-Call Maintenance</span>
+                      <span className="font-mono text-[11px]">({primaryMaintContact.phone})</span>
+                    </a>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-900/85 border border-slate-700 flex flex-col justify-between gap-2.5">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 block">
+                        Backup Property Emergency Line / Gate &amp; Elevator Vendor
+                      </span>
+                      <div className="text-sm font-bold text-white mt-0.5">
+                        {backupEmergencyVendor.name}
+                      </div>
+                      <div className="text-[11px] text-slate-300">
+                        {backupEmergencyVendor.role} • <span className="font-mono text-cyan-200">{backupEmergencyVendor.phone}</span>
+                      </div>
+                    </div>
+                    <a
+                      href={`tel:${backupEmergencyVendor.phone.replace(/[^0-9+]/g, '')}`}
+                      onClick={() => {
+                        if (!maintContactedPerson) {
+                          setMaintContactedPerson(`${backupEmergencyVendor.name}`);
+                        }
+                      }}
+                      className="w-full py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 border border-cyan-500/50 text-cyan-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                    >
+                      <span>📞 Call On-Call Maintenance / Vendor</span>
+                      <span className="font-mono text-[11px]">({backupEmergencyVendor.phone})</span>
+                    </a>
+                  </div>
+                </div>
+
+                {/* Interactive Toggle: I Contacted Emergency Maintenance for This Issue */}
+                <div className="pt-1">
+                  <label className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-slate-900/90 border border-amber-500/50 cursor-pointer hover:bg-slate-900 transition-colors">
+                    <div className="flex items-center gap-2.5">
+                      <input
+                        type="checkbox"
+                        id="emergency-maint-contacted-toggle"
+                        checked={emergencyMaintContacted}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setEmergencyMaintContacted(checked);
+                          if (checked) {
+                            if (!maintContactedPerson) {
+                              setMaintContactedPerson(`${primaryMaintContact.name} (${primaryMaintContact.phone})`);
+                            }
+                            setMaintTimeCalled(new Date().toTimeString().slice(0, 5));
+                          }
+                        }}
+                        className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500 bg-slate-950 border-amber-400"
+                      />
+                      <span className="text-xs font-bold text-amber-200 font-mono">
+                        [ 📞 I Contacted Emergency Maintenance for This Issue ]
+                      </span>
+                    </div>
+                    {emergencyMaintContacted && (
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/50 text-[10px] font-bold text-emerald-300 uppercase">
+                        Call Logged
+                      </span>
+                    )}
+                  </label>
+
+                  {emergencyMaintContacted && (
+                    <div className="mt-3 p-3 rounded-xl bg-slate-900/95 border border-amber-500/50 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-amber-200 mb-1">
+                          1. Contacted Person / Vendor Name
+                        </label>
+                        <input
+                          type="text"
+                          id="maint-contacted-person-input"
+                          value={maintContactedPerson}
+                          onChange={(e) => setMaintContactedPerson(e.target.value)}
+                          placeholder="e.g. Carlos Mendez / On-Call Tech"
+                          className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-amber-200 mb-1">
+                          2. Time Called
+                        </label>
+                        <input
+                          type="time"
+                          id="maint-time-called-input"
+                          value={maintTimeCalled}
+                          onChange={(e) => setMaintTimeCalled(e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white font-mono focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-amber-200 mb-1">
+                          3. Call Outcome / Tech ETA
+                        </label>
+                        <input
+                          type="text"
+                          id="maint-call-outcome-eta-input"
+                          value={maintCallOutcomeEta}
+                          onChange={(e) => setMaintCallOutcomeEta(e.target.value)}
+                          placeholder='e.g. "Tech en route - 45m ETA" or "Left voicemail + text"'
+                          className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-800/40 text-amber-200 text-xs flex items-start gap-2.5">
                 <Wrench className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <div>
@@ -1382,7 +1784,7 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                         className="px-2 py-0.5 rounded-lg bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/50 text-amber-200 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
                         title="Scan Vehicle Plate or Location Tag via Camera"
                       >
-                        <span>📷 Scan Plate &amp; Car</span>
+                        <span>[ 📷 Scan Plate &amp; Car ]</span>
                       </button>
                       <button
                         type="button"
@@ -1391,7 +1793,7 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                         className="px-1.5 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-amber-300 text-[10px] font-mono font-bold cursor-pointer transition-colors"
                         title="Test Sample Scan"
                       >
-                        🧪 Test Sample Scan
+                        [ ⚡ Sim ]
                       </button>
                     </div>
                   </div>
@@ -1407,13 +1809,31 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                   {isScanningPlate && (
                     <div className="mt-1.5 px-2.5 py-1.5 rounded-lg bg-amber-950/60 border border-amber-500/40 text-amber-200 text-[11px] font-medium flex items-center gap-2 animate-pulse">
                       <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400 shrink-0" />
-                      <span>🔍 Identifying Plate &amp; Vehicle Make/Model...</span>
+                      <span>{plateScanStatusText}</span>
+                    </div>
+                  )}
+                  {plateScanError && !isScanningPlate && (
+                    <div className="mt-1.5 p-2.5 rounded-lg bg-red-950/80 border border-red-500/70 text-red-200 text-xs flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold text-red-300">Gemini Vision Plate Scan Error</p>
+                        <p className="text-[11px] text-red-200 mt-0.5 break-words">{plateScanError}</p>
+                      </div>
+                    </div>
+                  )}
+                  {plateScanSuccess && !isScanningPlate && (
+                    <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-emerald-950/70 border border-emerald-500/50 text-[11px]">
+                      <span className="text-emerald-300 font-bold flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        ✓ Vehicle Scanned: {newPartyVehicle || scannedPlateNumber}
+                      </span>
                     </div>
                   )}
                   <GuardDARInFormAlertBanner
                     siteId="ALL"
                     category={maintSafetyHazard ? 'SAFETY_HAZARD' : 'MAINTENANCE'}
-                    rawKeyValue={maintLocation}
+                    rawKeyValue={scannedPlateNumber || maintLocation}
+                    debounceMs={plateScanSuccess ? 0 : 200}
                   />
                 </div>
               </div>
@@ -1632,6 +2052,316 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                 )}
               </div>
 
+              {/* USE OF FORCE (UoF) CHECKBOX & MANDATORY SUPPLEMENTAL REPORT (Task 3) */}
+              <div
+                className={`p-4 rounded-xl border transition-all ${
+                  useOfForce
+                    ? 'bg-amber-950/40 border-amber-500/80 shadow-lg shadow-amber-950/40 ring-2 ring-amber-500/40'
+                    : 'bg-slate-800/80 border-slate-700 hover:border-slate-600'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`p-2.5 rounded-xl shrink-0 ${
+                        useOfForce ? 'bg-amber-500 text-slate-950' : 'bg-slate-700 text-slate-300'
+                      }`}
+                    >
+                      <ShieldAlert className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="uof-occurred-toggle"
+                        className="text-sm font-bold text-white flex items-center gap-2 flex-wrap cursor-pointer"
+                      >
+                        <span className="font-mono text-amber-300">
+                          [ 🛡️ Use of Force (UoF) / Physical Intervention Occurred ]
+                        </span>
+                        {useOfForce && (
+                          <span className="px-2 py-0.5 text-[10px] font-black uppercase rounded bg-amber-500 text-slate-950 tracking-wider">
+                            Mandatory Supplement Active
+                          </span>
+                        )}
+                      </label>
+                      <p className="text-xs text-slate-300 mt-0.5">
+                        Check if any physical force, restraint/handcuffs, OC spray, Taser/CEW, or defensive weapon was displayed or used.
+                      </p>
+                    </div>
+                  </div>
+
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      id="uof-occurred-toggle"
+                      checked={useOfForce}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setUseOfForce(checked);
+                        if (checked && (incSeverity === 'low' || incSeverity === 'medium')) {
+                          setIncSeverity('high');
+                        }
+                      }}
+                      className="sr-only peer"
+                    />
+                    <div className="w-12 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                  </label>
+                </div>
+
+                {useOfForce && (
+                  <div className="mt-4 border-2 border-amber-500/70 bg-amber-950/20 rounded-xl p-4 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-amber-500/30">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black uppercase tracking-wider text-amber-300">
+                          🛡️ USE OF FORCE SUPPLEMENTAL REPORT
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-mono text-amber-200/90">
+                        Supervisor Review Escalation Enabled
+                      </span>
+                    </div>
+
+                    {/* 1. De-Escalation & Warnings Attempted Prior to Force */}
+                    <div>
+                      <label className="block text-xs font-bold text-amber-200 mb-2">
+                        1. De-Escalation &amp; Warnings Attempted Prior to Force (Required):
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          'Verbal De-Escalation Attempted',
+                          'Clear Verbal Commands Given',
+                          'Use of Force Warning Issued',
+                          'Time & Distance / Tactical Repositioning Used'
+                        ].map((pill) => {
+                          const active = uofDeEscalation.includes(pill);
+                          return (
+                            <button
+                              type="button"
+                              key={pill}
+                              onClick={() => toggleUofPill(pill, setUofDeEscalation)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                                active
+                                  ? 'bg-amber-500/30 text-white border-amber-400 ring-1 ring-amber-400/60'
+                                  : 'bg-slate-900/80 text-slate-300 border-slate-700 hover:border-amber-500/50'
+                              }`}
+                            >
+                              {active && <Check className="w-3.5 h-3.5 text-amber-300 shrink-0" />}
+                              <span>{pill}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 2. Subject Resistance Level */}
+                    <div>
+                      <label className="block text-xs font-bold text-amber-200 mb-2">
+                        2. Subject Resistance Level (Select all that apply — Required):
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          'Psychological Intimidation',
+                          'Verbal Non-Compliance',
+                          'Passive Resistance',
+                          'Defensive Resistance / Pulling Away',
+                          'Active Physical Aggression',
+                          'Aggravated / Deadly Force Threat'
+                        ].map((pill) => {
+                          const active = uofResistanceLevels.includes(pill);
+                          return (
+                            <button
+                              type="button"
+                              key={pill}
+                              onClick={() => toggleUofPill(pill, setUofResistanceLevels)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                                active
+                                  ? 'bg-red-600/35 text-white border-red-400 ring-1 ring-red-400/60'
+                                  : 'bg-slate-900/80 text-slate-300 border-slate-700 hover:border-amber-500/50'
+                              }`}
+                            >
+                              {active && <Check className="w-3.5 h-3.5 text-red-300 shrink-0" />}
+                              <span>{pill}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 3. Force Options / Tools Utilized */}
+                    <div>
+                      <label className="block text-xs font-bold text-amber-200 mb-2">
+                        3. Force Options / Tools Utilized (Select all that apply — Required):
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          'Presence / Verbal Direction',
+                          'Soft Empty-Hand (Escort / Hold)',
+                          'Hard Empty-Hand (Strikes / Takedown)',
+                          'Handcuffs / Soft Restraints Applied',
+                          'OC Spray / Chemical Agent Deployed',
+                          'Taser / CEW Displayed (Arc/Laser)',
+                          'Taser / CEW Deployed (Probes/Drive-Stun)',
+                          'Baton / Impact Weapon',
+                          'Firearm Unholstered / Displayed (Low Ready)',
+                          'Firearm Pointed at Subject',
+                          'Firearm Discharged'
+                        ].map((pill) => {
+                          const active = uofForceOptions.includes(pill);
+                          return (
+                            <button
+                              type="button"
+                              key={pill}
+                              onClick={() => toggleUofPill(pill, setUofForceOptions)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer flex items-center gap-1.5 ${
+                                active
+                                  ? 'bg-amber-500 text-slate-950 font-bold border-amber-300 shadow-sm'
+                                  : 'bg-slate-900/80 text-slate-300 border-slate-700 hover:border-amber-500/50'
+                              }`}
+                            >
+                              {active && <Check className="w-3.5 h-3.5 text-slate-950 shrink-0" />}
+                              <span>{pill}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 4. Conditional Restraint Protocol (Shown if Handcuffs/Restraints selected) */}
+                    {uofForceOptions.includes('Handcuffs / Soft Restraints Applied') && (
+                      <div className="p-3.5 rounded-xl bg-slate-900/90 border border-amber-500/60 space-y-3">
+                        <div className="text-xs font-bold text-amber-300 uppercase tracking-wide">
+                          4. Conditional Restraint Protocol (Handcuffs / Soft Restraints Selected)
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          <label className="flex items-center gap-2 p-2 rounded-lg bg-slate-950 border border-slate-700 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={uofHandcuffsDoubleLocked}
+                              onChange={(e) => setUofHandcuffsDoubleLocked(e.target.checked)}
+                              className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500 bg-slate-900 border-slate-600"
+                            />
+                            <span className="text-xs font-mono font-bold text-amber-200">
+                              [ ✓ Handcuffs Double-Locked ]
+                            </span>
+                          </label>
+
+                          <label className="flex items-center gap-2 p-2 rounded-lg bg-slate-950 border border-slate-700 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={uofGaugeChecked}
+                              onChange={(e) => setUofGaugeChecked(e.target.checked)}
+                              className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500 bg-slate-900 border-slate-600"
+                            />
+                            <span className="text-xs font-mono font-bold text-amber-200">
+                              [ ✓ Gauge / Tightness Checked ]
+                            </span>
+                          </label>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-semibold text-amber-200 mb-1">
+                            Time Restraints Applied &amp; Removed / Transferred to PD
+                          </label>
+                          <input
+                            type="text"
+                            value={uofRestraintsTimeTransfer}
+                            onChange={(e) => setUofRestraintsTimeTransfer(e.target.value)}
+                            placeholder="e.g. Applied 23:14 — Transferred custody to SPD Ofc. Henderson #7821 at 23:29"
+                            className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 5. Medical Aid, Injuries & Evidence Compliance */}
+                    <div className="space-y-3 pt-2 border-t border-amber-500/30">
+                      <div className="text-xs font-bold text-amber-200">
+                        5. Medical Aid, Injuries &amp; Evidence Compliance (Required):
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-200 mb-1">
+                            Subject Injured / Complained of Injury?
+                          </label>
+                          <select
+                            value={uofSubjectInjury}
+                            onChange={(e) => setUofSubjectInjury(e.target.value)}
+                            className="w-full px-2.5 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                          >
+                            <option value="No Visible Injury">No Visible Injury</option>
+                            <option value="Minor / First Aid">Minor / First Aid</option>
+                            <option value="EMS Evaluated & Released">EMS Evaluated &amp; Released</option>
+                            <option value="Transported to Hospital">Transported to Hospital</option>
+                            <option value="Refused Medical Aid">Refused Medical Aid</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-200 mb-1">
+                            Officer Injured?
+                          </label>
+                          <select
+                            value={uofOfficerInjury}
+                            onChange={(e) => setUofOfficerInjury(e.target.value)}
+                            className="w-full px-2.5 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                          >
+                            <option value="No">No</option>
+                            <option value="Yes — Minor">Yes — Minor</option>
+                            <option value="Yes — Medical Attention Required">Yes — Medical Attention Required</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-200 mb-1">
+                            Body-Worn Camera (BWC) Active During Incident?
+                          </label>
+                          <select
+                            value={uofBwcActive}
+                            onChange={(e) => setUofBwcActive(e.target.value)}
+                            className="w-full px-2.5 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                          >
+                            <option value="Yes — BWC Footage Recorded">Yes — BWC Footage Recorded</option>
+                            <option value="No — Explain in Narrative">No — Explain in Narrative</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-amber-200 mb-1">
+                          Detailed Use of Force Justification &amp; Sequence Narrative (Required)
+                        </label>
+                        <textarea
+                          id="uof-justification-narrative-textarea"
+                          rows={3}
+                          value={uofJustificationNarrative}
+                          onChange={(e) => setUofJustificationNarrative(e.target.value)}
+                          placeholder="Explain the immediate threat to safety, subject's active resistance behavior, why lesser de-escalation means were ineffective, and proportionality of force applied..."
+                          className="w-full px-3 py-2 bg-slate-900 border border-amber-500/50 rounded-xl text-xs sm:text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+                        />
+                      </div>
+
+                      <label className="flex items-center gap-2.5 p-2.5 rounded-xl bg-slate-900/95 border border-amber-500/60 cursor-pointer hover:bg-slate-900 transition-colors">
+                        <input
+                          type="checkbox"
+                          id="uof-supervisor-notified-chk"
+                          checked={uofSupervisorImmediatelyNotified}
+                          onChange={(e) => {
+                            setUofSupervisorImmediatelyNotified(e.target.checked);
+                            if (e.target.checked) {
+                              setSupervisorNotified(true);
+                            }
+                          }}
+                          className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500 bg-slate-950 border-amber-400"
+                        />
+                        <span className="text-xs font-mono font-bold text-amber-200">
+                          [ ✓ On-Duty Field Supervisor Immediately Notified of Use of Force ]
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Standard Incident Core Fields */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -1766,7 +2496,7 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                           disabled={isScanningPlate}
                           className="px-2 py-0.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/60 text-amber-200 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
                         >
-                          <span>📷 Scan Plate &amp; Car</span>
+                          <span>[ 📷 Scan Plate &amp; Car ]</span>
                         </button>
                         <button
                           type="button"
@@ -1774,9 +2504,9 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                           onClick={handleSimulatePlateScan}
                           disabled={isScanningPlate}
                           className="px-1.5 py-0.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-amber-500/40 text-amber-300 text-[10px] font-mono font-bold cursor-pointer transition-colors"
-                          title="Test Sample Scan"
+                          title="Simulated Sample Plate Scan"
                         >
-                          🧪 Test Sample Scan
+                          [ ⚡ Sim ]
                         </button>
                       </div>
                     </div>
@@ -1788,20 +2518,29 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                         setNewPartyVehicle(e.target.value);
                         setScannedPlateNumber('');
                       }}
-                      placeholder="e.g. 2018 Silver Honda Civic, WA #ABC-1234"
+                      placeholder="e.g. Black GMC Sierra, CO #ABC-123"
                       className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
                     {isScanningPlate && (
                       <div className="mt-1.5 px-2.5 py-1.5 rounded-lg bg-amber-950/70 border border-amber-500/50 text-amber-200 text-xs font-semibold flex items-center gap-2 animate-pulse">
                         <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400 shrink-0" />
-                        <span>🔍 Identifying Plate &amp; Vehicle Make/Model...</span>
+                        <span>{plateScanStatusText}</span>
+                      </div>
+                    )}
+                    {plateScanError && !isScanningPlate && (
+                      <div className="mt-1.5 p-2.5 rounded-lg bg-red-950/85 border border-red-500/70 text-red-200 text-xs flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-bold text-red-300">Gemini Vision Plate Scan Error</p>
+                          <p className="text-[11px] text-red-200 mt-0.5 break-words">{plateScanError}</p>
+                        </div>
                       </div>
                     )}
                     {plateScanSuccess && !isScanningPlate && (
                       <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-emerald-950/70 border border-emerald-500/50 text-[11px]">
                         <span className="text-emerald-300 font-bold flex items-center gap-1">
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                          ✓ Plate &amp; Vehicle Auto-Populated ({scannedPlateNumber || newPartyVehicle})
+                          ✓ Vehicle Scanned: {newPartyVehicle || scannedPlateNumber}
                         </span>
                         {scannedPlatePhotoUrl && (
                           <button
@@ -2167,32 +2906,58 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                     {isScanningId && (
                       <div className="p-2.5 rounded-lg bg-blue-950/70 border border-blue-500/50 text-blue-200 text-xs font-semibold flex items-center gap-2 animate-pulse">
                         <RefreshCw className="w-4 h-4 animate-spin text-blue-400 shrink-0" />
-                        <span>🔍 Reading ID Credentials &amp; Demographics...</span>
+                        <span>{idScanStatusText}</span>
+                      </div>
+                    )}
+
+                    {idScanError && !isScanningId && (
+                      <div className="p-2.5 rounded-lg bg-red-950/85 border border-red-500/70 text-red-200 text-xs flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-bold text-red-300">Gemini Vision ID Scan Error</p>
+                          <p className="text-[11px] text-red-200 mt-0.5 break-words">{idScanError}</p>
+                        </div>
                       </div>
                     )}
 
                     {idScanSuccess && !isScanningId && (
-                      <div className="p-2 rounded-lg bg-emerald-950/80 border border-emerald-500/60 flex flex-wrap items-center justify-between gap-2 text-xs">
-                        <span className="text-emerald-300 font-bold flex items-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                          ✓ ID Scanned &amp; Auto-Populated — Verify fields below
-                        </span>
-                        {scannedIdPhotoUrl && (
-                          <button
-                            type="button"
-                            onClick={handleAttachIdPhotoToMedia}
-                            disabled={idPhotoAttached}
-                            className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] border transition-colors cursor-pointer ${
-                              idPhotoAttached
-                                ? 'bg-emerald-900/50 text-emerald-300 border-emerald-500/40 cursor-default'
-                                : 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 border-blue-400/60'
-                            }`}
-                          >
-                            {idPhotoAttached
-                              ? '✓ ID Photo Attached to Media'
-                              : '[ + Attach ID Photo to Report Media ]'}
-                          </button>
-                        )}
+                      <div className="space-y-1.5">
+                        <div className="p-2 rounded-lg bg-emerald-950/80 border border-emerald-500/60 flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <span className="text-emerald-300 font-bold flex items-center gap-1.5">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                            <span>
+                              ✓ ID Scanned: {scannedIdSummary?.fullName || newPartyName}{' '}
+                              ({scannedIdSummary?.issuingState || newPartyIdState ? `${scannedIdSummary?.issuingState || newPartyIdState} ` : ''}#
+                              {scannedIdSummary?.idNumber || newPartyIdNumber})
+                            </span>
+                          </span>
+                          {scannedIdPhotoUrl && (
+                            <button
+                              type="button"
+                              onClick={handleAttachIdPhotoToMedia}
+                              disabled={idPhotoAttached}
+                              className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] border transition-colors cursor-pointer ${
+                                idPhotoAttached
+                                  ? 'bg-emerald-900/50 text-emerald-300 border-emerald-500/40 cursor-default'
+                                  : 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 border-blue-400/60'
+                              }`}
+                            >
+                              {idPhotoAttached
+                                ? '✓ ID Photo Attached to Media'
+                                : '[ + Attach ID Photo to Report Media ]'}
+                            </button>
+                          )}
+                        </div>
+                        <GuardDARInFormAlertBanner
+                          siteId={activeShift?.siteId || locationName || 'ALL'}
+                          category={
+                            incCategory === 'altercation_verbal'
+                              ? 'NOISE_COMPLAINT'
+                              : 'CHRONIC_LEASE_VIOLATION'
+                          }
+                          rawKeyValue={newPartyAddress || newPartyName}
+                          debounceMs={0}
+                        />
                       </div>
                     )}
 
@@ -2210,9 +2975,9 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                           <option value="drivers_license">Driver's License (DL)</option>
                           <option value="state_id">State ID Card</option>
                           <option value="passport">Passport</option>
-                          <option value="employee_badge">Employee / Contractor Badge</option>
+                          <option value="military_id">Military / Gov ID</option>
+                          <option value="employee_badge">Work / Facility Badge</option>
                           <option value="student_id">Student ID</option>
-                          <option value="military_id">Military ID</option>
                           <option value="other">Other Official ID</option>
                           <option value="none">No ID / Refused</option>
                         </select>
@@ -2400,14 +3165,23 @@ export const StandardReportingModal: React.FC<StandardReportingModalProps> = ({
                         {isScanningPlate && (
                           <div className="mt-1 px-2 py-1 rounded bg-amber-950/70 border border-amber-500/50 text-amber-200 text-[11px] font-semibold flex items-center gap-1.5 animate-pulse">
                             <RefreshCw className="w-3 h-3 animate-spin text-amber-400 shrink-0" />
-                            <span>🔍 Identifying Plate &amp; Vehicle Make/Model...</span>
+                            <span>{plateScanStatusText}</span>
+                          </div>
+                        )}
+                        {plateScanError && !isScanningPlate && (
+                          <div className="mt-1 p-2 rounded bg-red-950/85 border border-red-500/70 text-red-200 text-[11px] flex items-start gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+                            <div>
+                              <p className="font-bold text-red-300">Gemini Vision Plate Scan Error</p>
+                              <p className="text-[10px] text-red-200 mt-0.5 break-words">{plateScanError}</p>
+                            </div>
                           </div>
                         )}
                         {plateScanSuccess && !isScanningPlate && (
                           <div className="mt-1 p-1.5 rounded bg-emerald-950/70 border border-emerald-500/50 space-y-1">
                             <div className="text-[10px] text-emerald-300 font-bold flex items-center gap-1">
                               <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
-                              <span>✓ Plate &amp; Vehicle Scanned ({scannedPlateNumber || newPartyVehicle})</span>
+                              <span>✓ Vehicle Scanned: {newPartyVehicle || scannedPlateNumber}</span>
                             </div>
                             {scannedPlatePhotoUrl && (
                               <button

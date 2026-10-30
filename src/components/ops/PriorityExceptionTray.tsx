@@ -167,25 +167,57 @@ export const PriorityExceptionTray: React.FC<PriorityExceptionTrayProps> = ({
       });
     });
 
-  // 5. Critical DAR Incidents pending review
+  // 5. Critical DAR Incidents & Use of Force (UoF) Supplements pending review
   standardReports
-    .filter(r => (r.reportType === 'incident' || r.incidentDetails?.severity === 'critical' || r.maintenanceDetails?.severity === 'critical_safety_hazard') && r.status === 'submitted')
-    .slice(0, 4)
+    .filter(
+      r =>
+        (r.useOfForce ||
+          r.incidentDetails?.useOfForce ||
+          r.requiresSupervisorReview ||
+          r.reportType === 'incident' ||
+          r.incidentDetails?.severity === 'critical' ||
+          r.maintenanceDetails?.severity === 'critical_safety_hazard') &&
+        r.status === 'submitted'
+    )
+    .slice(0, 6)
     .forEach(report => {
-      const reportTitle = report.incidentDetails?.incidentTitle || report.maintenanceDetails?.issueTitle || `DAR Report #${report.reportNumber}`;
-      exceptions.push({
-        id: `exc-dar-${report.id}`,
-        category: 'critical_incident',
-        title: `Critical Incident DAR: ${report.siteName}`,
-        subtitle: `${reportTitle} • Logged by ${report.guardName} (${report.guardBadge})`,
-        siteName: report.siteName,
-        guardName: report.guardName,
-        urgency: 'critical',
-        actionLabel: 'Review DAR',
-        onAction: () => {
-          if (onNavigateTab) onNavigateTab('standard_reports');
-        }
-      });
+      const isUof = Boolean(
+        report.useOfForce || report.incidentDetails?.useOfForce || report.requiresSupervisorReview
+      );
+      if (isUof) {
+        exceptions.unshift({
+          id: `exc-uof-${report.id}`,
+          category: 'critical_incident',
+          title: `🚨 [USE OF FORCE REPORT FILED] ${report.siteName}`,
+          subtitle: `🚨 [USE OF FORCE REPORT FILED] Officer ${report.guardName} logged a Use of Force supplement at ${report.siteName} — Immediate Supervisor Review Required.`,
+          siteName: report.siteName,
+          guardName: report.guardName,
+          guardPhone: report.guardPhone,
+          urgency: 'critical',
+          actionLabel: 'Review UoF Supplement',
+          onAction: () => {
+            if (onNavigateTab) onNavigateTab('standard_reports');
+          }
+        });
+      } else {
+        const reportTitle =
+          report.incidentDetails?.incidentTitle ||
+          report.maintenanceDetails?.issueTitle ||
+          `DAR Report #${report.reportNumber}`;
+        exceptions.push({
+          id: `exc-dar-${report.id}`,
+          category: 'critical_incident',
+          title: `Critical Incident DAR: ${report.siteName}`,
+          subtitle: `${reportTitle} • Logged by ${report.guardName} (${report.guardBadge})`,
+          siteName: report.siteName,
+          guardName: report.guardName,
+          urgency: 'critical',
+          actionLabel: 'Review DAR',
+          onAction: () => {
+            if (onNavigateTab) onNavigateTab('standard_reports');
+          }
+        });
+      }
     });
 
   // Ensure all exception IDs are strictly unique

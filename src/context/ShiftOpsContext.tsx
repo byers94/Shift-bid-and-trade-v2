@@ -5397,12 +5397,27 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const id = reportData.id || `rpt-${reportData.reportType}-${Date.now()}`;
     const deviceIsConnected = isDeviceOnline();
 
+    const isUseOfForce = Boolean(
+      reportData.useOfForce || reportData.incidentDetails?.useOfForce
+    );
+
     const newReport: StandardShiftReport = {
       ...reportData,
       id,
       reportNumber,
       createdAt: nowIso,
       timestamp: nowIso,
+      useOfForce: isUseOfForce || undefined,
+      requiresSupervisorReview:
+        isUseOfForce || reportData.requiresSupervisorReview || reportData.incidentDetails?.requiresSupervisorReview || undefined,
+      incidentDetails: reportData.incidentDetails
+        ? {
+            ...reportData.incidentDetails,
+            useOfForce: isUseOfForce || reportData.incidentDetails.useOfForce,
+            requiresSupervisorReview:
+              isUseOfForce || reportData.incidentDetails.requiresSupervisorReview
+          }
+        : undefined,
       status: reportData.status || 'submitted',
       syncStatus: deviceIsConnected ? 'syncing' : 'pending_sync',
       offlineQueuedAt: deviceIsConnected ? undefined : nowIso
@@ -5470,8 +5485,43 @@ export const ShiftOpsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       })();
     }
 
-    // Emergency incident or standard log feedback
-    if (reportData.reportType === 'incident' && reportData.incidentDetails?.escalatedToEmergencyServices) {
+    // Use of Force (UoF) Mandatory Command CAD Escalation Hook
+    if (reportData.reportType === 'incident' && isUseOfForce) {
+      try {
+        playEmergencyEscalationSound();
+      } catch {}
+
+      const uofAlertMessage = `🚨 [USE OF FORCE REPORT FILED] Officer ${newReport.guardName} logged a Use of Force supplement at ${newReport.siteName} — Immediate Supervisor Review Required.`;
+
+      addAuditLog(
+        'USE_OF_FORCE_REPORT_FILED',
+        'system',
+        uofAlertMessage,
+        `${newReport.guardName} (${newReport.guardBadge})`,
+        'danger'
+      );
+
+      logAdminAction({
+        type: 'shift_created',
+        title: `🚨 [USE OF FORCE REPORT FILED] ${newReport.siteName}`,
+        description: uofAlertMessage,
+        adminName: newReport.guardName,
+        adminBadge: newReport.guardBadge,
+        badgeVariant: 'rose',
+        metadata: {
+          reportId: newReport.id,
+          reportNumber: newReport.reportNumber,
+          useOfForce: true,
+          requiresSupervisorReview: true
+        }
+      });
+
+      showToast(
+        '🚨 [USE OF FORCE REPORT FILED]',
+        `Officer ${newReport.guardName} logged a Use of Force supplement at ${newReport.siteName} — Immediate Supervisor Review Required.`,
+        'danger'
+      );
+    } else if (reportData.reportType === 'incident' && reportData.incidentDetails?.escalatedToEmergencyServices) {
       try {
         playEmergencyEscalationSound();
       } catch {}

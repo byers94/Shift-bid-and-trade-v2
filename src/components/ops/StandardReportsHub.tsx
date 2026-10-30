@@ -499,14 +499,21 @@ export const StandardReportsHub: React.FC = () => {
                       )}
 
                       {report.reportType === 'incident' && (
-                        <span className={`px-2.5 py-0.5 rounded-lg text-xs font-black uppercase flex items-center gap-1.5 ${
-                          isEscalated
-                            ? 'bg-red-600 text-white animate-pulse'
-                            : 'bg-orange-900/60 text-orange-300 border border-orange-700/60'
-                        }`}>
-                          {isEscalated ? <Siren className="w-3.5 h-3.5" /> : <ShieldAlert className="w-3.5 h-3.5" />}
-                          {isEscalated ? '🚨 911 / EMS ESCALATED' : `INCIDENT • ${report.incidentDetails?.severity}`}
-                        </span>
+                        <>
+                          <span className={`px-2.5 py-0.5 rounded-lg text-xs font-black uppercase flex items-center gap-1.5 ${
+                            isEscalated
+                              ? 'bg-red-600 text-white animate-pulse'
+                              : 'bg-orange-900/60 text-orange-300 border border-orange-700/60'
+                          }`}>
+                            {isEscalated ? <Siren className="w-3.5 h-3.5" /> : <ShieldAlert className="w-3.5 h-3.5" />}
+                            {isEscalated ? '🚨 911 / EMS ESCALATED' : `INCIDENT • ${report.incidentDetails?.severity}`}
+                          </span>
+                          {(report.useOfForce || report.incidentDetails?.useOfForce) && (
+                            <span className="px-2.5 py-0.5 rounded-lg text-xs font-black uppercase bg-amber-500 text-slate-950 border border-amber-300 flex items-center gap-1 shadow-sm">
+                              🛡️ USE OF FORCE SUPPLEMENT • SUPERVISOR REVIEW REQUIRED
+                            </span>
+                          )}
+                        </>
                       )}
 
                       {/* Review Status & Sync Status Badges */}
@@ -606,13 +613,29 @@ export const StandardReportsHub: React.FC = () => {
                       )}
 
                       {report.reportType === 'maintenance' && report.maintenanceDetails && (
-                        <div>
+                        <div className="space-y-2">
                           <div className="flex items-center justify-between text-[11px] text-amber-300 font-mono mb-1.5">
                             <span>Location: {report.maintenanceDetails.specificLocation}</span>
                             <span className="px-2 py-0.5 rounded bg-amber-950 border border-amber-700 font-bold">
                               WO: {report.maintenanceDetails.workOrderNumber || 'PENDING'} • Status: {report.maintenanceDetails.workOrderStatus?.toUpperCase()}
                             </span>
                           </div>
+                          {report.maintenanceDetails.emergencyMaintenanceContacted && (
+                            <div className="p-2.5 rounded-lg bg-amber-950/70 border border-amber-500/60 text-amber-200 text-[11px] flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <span className="font-bold text-amber-300">📞 Emergency Maintenance Contacted: </span>
+                                <span>{report.maintenanceDetails.contactedPersonOrVendorName || 'On-Call Tech'}</span>
+                                {report.maintenanceDetails.timeCalled && (
+                                  <span className="font-mono text-amber-300 ml-2">({report.maintenanceDetails.timeCalled})</span>
+                                )}
+                              </div>
+                              {report.maintenanceDetails.callOutcomeOrTechEta && (
+                                <span className="px-2 py-0.5 rounded bg-slate-900 border border-amber-500/40 font-mono text-amber-200">
+                                  ETA / Outcome: {report.maintenanceDetails.callOutcomeOrTechEta}
+                                </span>
+                              )}
+                            </div>
+                          )}
                           <p className="leading-relaxed">{report.maintenanceDetails.detailedDescription}</p>
                           {report.maintenanceDetails.suggestedAction && (
                             <p className="text-amber-300/90 mt-1.5 text-[11px]">
@@ -638,6 +661,41 @@ export const StandardReportsHub: React.FC = () => {
                                   <strong>Resolution: </strong> {report.incidentDetails.emergencyOutcome}
                                 </p>
                               )}
+                            </div>
+                          )}
+
+                          {report.incidentDetails.useOfForceSupplement && (
+                            <div className="p-3 rounded-xl bg-amber-950/40 border-2 border-amber-500/70 text-amber-100 space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-xs font-black uppercase tracking-wider text-amber-300">
+                                  🛡️ Use of Force Supplemental Report
+                                </span>
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 border border-amber-400/50 text-amber-200">
+                                  BWC: {report.incidentDetails.useOfForceSupplement.bwcActiveStatus}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                                <div>
+                                  <strong className="text-amber-300">Resistance Levels: </strong>
+                                  {report.incidentDetails.useOfForceSupplement.subjectResistanceLevels.join(', ')}
+                                </div>
+                                <div>
+                                  <strong className="text-amber-300">Force Utilized: </strong>
+                                  {report.incidentDetails.useOfForceSupplement.forceOptionsUtilized.join(', ')}
+                                </div>
+                                <div>
+                                  <strong className="text-amber-300">De-Escalation: </strong>
+                                  {report.incidentDetails.useOfForceSupplement.deEscalationAttempts.join(', ') || 'None specified'}
+                                </div>
+                                <div>
+                                  <strong className="text-amber-300">Injuries: </strong>
+                                  Subject: {report.incidentDetails.useOfForceSupplement.subjectInjuryStatus} • Officer: {report.incidentDetails.useOfForceSupplement.officerInjuryStatus}
+                                </div>
+                              </div>
+                              <p className="text-[11px] bg-slate-900/80 p-2 rounded border border-amber-500/30">
+                                <strong className="text-amber-300">UoF Justification: </strong>
+                                {report.incidentDetails.useOfForceSupplement.justificationNarrative}
+                              </p>
                             </div>
                           )}
 
