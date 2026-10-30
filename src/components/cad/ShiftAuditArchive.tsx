@@ -6,6 +6,7 @@ import {
   StandardShiftReport
 } from '../../types/shift';
 import { formatTimeAmPm } from '../../utils/shiftMonitor';
+import { ShiftBreadcrumbLeafletMap } from './ShiftBreadcrumbLeafletMap';
 import {
   Search,
   Calendar,
@@ -1267,163 +1268,19 @@ export const ShiftAuditArchive: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                  {/* Visual SVG Geofence & Breadcrumb Map */}
-                  <div className="lg:col-span-7 relative bg-slate-900 rounded-xl border border-slate-800 p-4 min-h-[300px] flex flex-col justify-between overflow-hidden">
-                    <div className="flex items-center justify-between z-10 text-[11px] font-mono">
-                      <span className="px-2 py-0.5 rounded bg-slate-950/90 border border-slate-700 text-slate-300">
-                        Property Geofence: {selectedShift.siteName}
-                      </span>
-                      <span className="px-2 py-0.5 rounded bg-slate-950/90 border border-emerald-500/40 text-emerald-300">
-                        Last On-Site Ping: {formatTimeAmPm(selectedShift.lastOnSitePingTimestamp)}
-                      </span>
-                    </div>
-
-                    {/* SVG Trail Plotter */}
-                    {(() => {
-                      const crumbs = selectedShift.gpsBreadcrumbs || [];
-                      if (crumbs.length === 0) {
-                        return (
-                          <div className="my-auto text-center text-xs text-slate-500 font-mono">
-                            No GPS breadcrumbs recorded for this shift.
-                          </div>
-                        );
+                  {/* Real Interactive Leaflet Street Map & Geofence Breadcrumb Plotter */}
+                  <div className="lg:col-span-7 relative bg-slate-900 rounded-xl border border-slate-800 p-3.5 min-h-[340px] flex flex-col justify-between overflow-hidden">
+                    <ShiftBreadcrumbLeafletMap
+                      shift={selectedShift}
+                      geofenceRadiusMeters={
+                        sitesList.find(
+                          (s) => s.id === selectedShift.siteId || s.name === selectedShift.siteName
+                        )?.geofenceRadiusMeters || 180
                       }
-
-                      const baseLat = selectedShift.clockInLocation.lat;
-                      const baseLng = selectedShift.clockInLocation.lng;
-
-                      // Project lat/lng offsets into SVG [0..500, 0..240]
-                      const points = crumbs.map((c, idx) => {
-                        const dLat = (c.lat - baseLat) * 22000;
-                        const dLng = (c.lng - baseLng) * 22000;
-                        const x = Math.max(36, Math.min(464, 210 + dLng));
-                        const y = Math.max(28, Math.min(212, 125 - dLat));
-                        return { x, y, crumb: c, idx };
-                      });
-
-                      const polylineStr = points.map((p) => `${p.x},${p.y}`).join(' ');
-                      const activePt = points[selectedBreadcrumbIndex] || points[points.length - 1];
-
-                      return (
-                        <div className="my-2">
-                          <svg viewBox="0 0 500 240" className="w-full h-56 rounded-lg bg-slate-950/90 border border-slate-800/80">
-                            {/* Grid lines */}
-                            <line x1="0" y1="60" x2="500" y2="60" stroke="#1e293b" strokeWidth="1" />
-                            <line x1="0" y1="120" x2="500" y2="120" stroke="#1e293b" strokeWidth="1" />
-                            <line x1="0" y1="180" x2="500" y2="180" stroke="#1e293b" strokeWidth="1" />
-                            <line x1="125" y1="0" x2="125" y2="240" stroke="#1e293b" strokeWidth="1" />
-                            <line x1="250" y1="0" x2="250" y2="240" stroke="#1e293b" strokeWidth="1" />
-                            <line x1="375" y1="0" x2="375" y2="240" stroke="#1e293b" strokeWidth="1" />
-
-                            {/* Property Geofence Boundary Circle */}
-                            <circle
-                              cx="210"
-                              cy="125"
-                              r="82"
-                              fill="rgba(16, 185, 129, 0.08)"
-                              stroke="#10b981"
-                              strokeWidth="1.5"
-                              strokeDasharray="5 4"
-                            />
-                            <text x="145" y="54" fill="#34d399" fontSize="9" fontFamily="monospace">
-                              SITE GEOFENCE PERIMETER
-                            </text>
-
-                            {/* Breadcrumb Trail Line */}
-                            <polyline
-                              fill="none"
-                              stroke="#38bdf8"
-                              strokeWidth="2"
-                              strokeDasharray="3 2"
-                              points={polylineStr}
-                            />
-
-                            {/* Waypoint Dots */}
-                            {points.map((pt) => {
-                              const isOffSite = !pt.crumb.insideGeofence || pt.crumb.event === 'PERIMETER_EXIT';
-                              const isBreak = pt.crumb.event === 'BREAK';
-                              const fill = isOffSite
-                                ? '#f43f5e'
-                                : isBreak
-                                ? '#f59e0b'
-                                : '#10b981';
-                              const isSelected = pt.idx === selectedBreadcrumbIndex;
-
-                              return (
-                                <g
-                                  key={pt.idx}
-                                  className="cursor-pointer"
-                                  onClick={() => setSelectedBreadcrumbIndex(pt.idx)}
-                                >
-                                  {isSelected && (
-                                    <circle
-                                      cx={pt.x}
-                                      cy={pt.y}
-                                      r="12"
-                                      fill="none"
-                                      stroke="#ffffff"
-                                      strokeWidth="2"
-                                    />
-                                  )}
-                                  <circle
-                                    cx={pt.x}
-                                    cy={pt.y}
-                                    r={isSelected ? '7' : '5.5'}
-                                    fill={fill}
-                                    stroke="#0f172a"
-                                    strokeWidth="1.5"
-                                  />
-                                  <text
-                                    x={pt.x + 8}
-                                    y={pt.y + 3}
-                                    fill="#e2e8f0"
-                                    fontSize="8.5"
-                                    fontFamily="monospace"
-                                  >
-                                    #{pt.idx + 1}
-                                  </text>
-                                </g>
-                              );
-                            })}
-                          </svg>
-
-                          {/* Selected Waypoint Inspector Bar */}
-                          {activePt && (
-                            <div className="mt-2.5 p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className={`px-2 py-0.5 rounded font-mono font-black text-[10px] ${
-                                    !activePt.crumb.insideGeofence
-                                      ? 'bg-rose-600 text-white'
-                                      : activePt.crumb.event === 'BREAK'
-                                      ? 'bg-amber-500 text-slate-950'
-                                      : 'bg-emerald-600 text-white'
-                                  }`}
-                                >
-                                  {activePt.crumb.event || 'PATROL_PING'}
-                                </span>
-                                <span className="font-bold text-white">
-                                  {activePt.crumb.label || `Telemetry Fix #${activePt.idx + 1}`}
-                                </span>
-                              </div>
-                              <div className="font-mono text-[11px] text-slate-300 flex items-center gap-3">
-                                <span>Time: {formatTimeAmPm(activePt.crumb.timestamp)}</span>
-                                <span>
-                                  GPS: {activePt.crumb.lat.toFixed(5)}, {activePt.crumb.lng.toFixed(5)} (±{activePt.crumb.accuracy}m)
-                                </span>
-                                <span
-                                  className={
-                                    activePt.crumb.insideGeofence ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'
-                                  }
-                                >
-                                  {activePt.crumb.insideGeofence ? '🟢 INSIDE GEOFENCE' : '🔴 OUTSIDE GEOFENCE'}
-                                </span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
+                      selectedBreadcrumbIndex={selectedBreadcrumbIndex}
+                      onSelectBreadcrumbIndex={setSelectedBreadcrumbIndex}
+                      formatTimeAmPm={formatTimeAmPm}
+                    />
                   </div>
 
                   {/* Chronological Breadcrumb Waypoint List */}

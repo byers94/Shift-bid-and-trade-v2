@@ -34,6 +34,7 @@ import { ManageClientLoginsModal } from '../client/ClientPortal';
 import { ResidentPortalConfigModal } from '../resident/ResidentPortal';
 import { PortalsAccessConfigConsole, PortalsAccessConfigModal } from './PortalsAccessConfigConsole';
 import { ShiftAuditArchive } from '../cad/ShiftAuditArchive';
+import { RegionalClientSitesMap } from '../cad/RegionalClientSitesMap';
 import { 
   ShieldCheck, 
   BookOpen, 
@@ -126,7 +127,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
   const isDarkMode = theme === 'dark';
 
   const [activeMainTab, setActiveMainTabState] = useState<
-    'command_dashboard' | 'shift_archive' | 'site_issues' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'resources_training' | 'portals_access_config' | 'audit_terminal'
+    'command_dashboard' | 'shift_archive' | 'site_issues' | 'operations' | 'live_tracking' | 'live_map' | 'regional_sites_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'resources_training' | 'portals_access_config' | 'audit_terminal'
   >(() => {
     try {
       const saved = localStorage.getItem(STORAGE_OPS_MAIN_TAB_KEY);
@@ -137,6 +138,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
         saved === 'operations' || 
         saved === 'live_tracking' || 
         saved === 'live_map' || 
+        saved === 'regional_sites_map' ||
         saved === 'rover_routing' || 
         saved === 'mpu_performance' || 
         saved === 'calendar_schedule' || 
@@ -160,7 +162,7 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
     return 'command_dashboard';
   });
 
-  const setActiveMainTab = (tab: 'command_dashboard' | 'shift_archive' | 'site_issues' | 'operations' | 'live_tracking' | 'live_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'resources_training' | 'portals_access_config' | 'audit_terminal') => {
+  const setActiveMainTab = (tab: 'command_dashboard' | 'shift_archive' | 'site_issues' | 'operations' | 'live_tracking' | 'live_map' | 'regional_sites_map' | 'rover_routing' | 'mpu_performance' | 'calendar_schedule' | 'set_schedules' | 'guard_availability' | 'call_off_queue' | 'calls_for_service' | 'standard_reports' | 'site_tasks' | 'site_directory' | 'guard_directory' | 'top_performers' | 'coaching_analytics' | 'resources_training' | 'portals_access_config' | 'audit_terminal') => {
     setActiveMainTabState(tab);
     try {
       localStorage.setItem(STORAGE_OPS_MAIN_TAB_KEY, tab);
@@ -334,7 +336,8 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
                    activeMainTab === 'shift_archive' ? 'Shift & Report Audit Archive' :
                    activeMainTab === 'operations' ? 'Shift & Trade Operations' :
                    activeMainTab === 'live_tracking' ? 'Live Guard Roster' :
-                   activeMainTab === 'live_map' ? 'GPS Tactical Radar' :
+                   activeMainTab === 'live_map' ? 'GPS Tactical Street Map' :
+                   activeMainTab === 'regional_sites_map' ? 'Regional Client Sites Map' :
                    activeMainTab === 'rover_routing' ? 'Mobile Route Optimization' :
                    activeMainTab === 'mpu_performance' ? 'MPU Sector Performance' :
                    activeMainTab === 'calendar_schedule' ? 'Shift Calendar' :
@@ -773,6 +776,20 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
                 GPS
               </span>
             )}
+          </button>
+
+          {/* Regional Client Sites Map Dedicated Sub-Nav Tab */}
+          <button
+            id="tab-regional-sites-map-btn"
+            type="button"
+            onClick={() => setActiveMainTab('regional_sites_map')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              activeMainTab === 'regional_sites_map'
+                ? 'bg-emerald-600 text-white font-black shadow-xs ring-1 ring-emerald-400'
+                : 'bg-emerald-500/15 text-emerald-300 hover:text-white hover:bg-emerald-500/30 border border-emerald-500/40'
+            }`}
+          >
+            <span>[ 🗺️ Regional Client Sites Map ]</span>
           </button>
 
           {/* Mobile Fleet Route Optimization & Dispatch Sub-Nav Tab */}
@@ -1297,6 +1314,27 @@ export const OpsAdminView: React.FC<OpsAdminViewProps> = ({
               }}
               onSelectSite={(siteName) => {
                 setActiveMainTab('site_directory');
+              }}
+              onConfigurePortals={(siteId) => {
+                setPortalConfigTargetSiteId(siteId);
+                setActiveMainTab('portals_access_config');
+              }}
+            />
+          </div>
+        )}
+
+        {activeMainTab === 'regional_sites_map' && (
+          <div className="p-3 sm:p-4 lg:p-5 max-w-7xl mx-auto w-full">
+            <RegionalClientSitesMap
+              onOpenSiteDirectory={() => {
+                setActiveMainTab('site_directory');
+              }}
+              onConfigurePortals={(siteId) => {
+                setPortalConfigTargetSiteId(siteId);
+                setActiveMainTab('portals_access_config');
+              }}
+              onSwitchToLiveGuardMap={() => {
+                setActiveMainTab('live_map');
               }}
             />
           </div>

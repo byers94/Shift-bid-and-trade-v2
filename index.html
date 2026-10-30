@@ -8,6 +8,68 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <style>
+      .leaflet-container {
+        background-color: #020617 !important;
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
+        touch-action: pan-x pan-y !important;
+      }
+      .leaflet-popup-content-wrapper {
+        background: #0f172a !important;
+        color: #f8fafc !important;
+        border: 1px solid #334155 !important;
+        border-radius: 12px !important;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.7), 0 8px 10px -6px rgba(0, 0, 0, 0.7) !important;
+        padding: 0 !important;
+      }
+      .leaflet-popup-content {
+        margin: 10px 12px !important;
+        line-height: 1.4 !important;
+      }
+      .leaflet-popup-tip {
+        background: #0f172a !important;
+        border: 1px solid #334155 !important;
+      }
+      .leaflet-control-attribution {
+        background: rgba(2, 6, 23, 0.85) !important;
+        color: #64748b !important;
+        font-size: 9px !important;
+        font-family: 'JetBrains Mono', monospace !important;
+        border-top: 1px solid #1e293b !important;
+        border-left: 1px solid #1e293b !important;
+        border-top-left-radius: 6px !important;
+        padding: 2px 6px !important;
+      }
+      .leaflet-control-attribution a {
+        color: #38bdf8 !important;
+      }
+      @keyframes cadPulseRed {
+        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.85); }
+        70% { transform: scale(1.05); box-shadow: 0 0 0 14px rgba(244, 63, 94, 0); }
+        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(244, 63, 94, 0); }
+      }
+      @keyframes cadPulseGreen {
+        0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+        70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+      }
+      @keyframes cadPulseAmber {
+        0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.75); }
+        70% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+      }
+      .cad-pin-red-pulse {
+        animation: cadPulseRed 1.6s infinite;
+      }
+      .cad-pin-green-pulse {
+        animation: cadPulseGreen 2.4s infinite;
+      }
+      .cad-pin-amber-pulse {
+        animation: cadPulseAmber 2s infinite;
+      }
+    </style>
   </head>
   <body class="h-full bg-slate-100 font-sans text-slate-900 antialiased overflow-hidden">
     <div id="root" class="h-full"></div>
